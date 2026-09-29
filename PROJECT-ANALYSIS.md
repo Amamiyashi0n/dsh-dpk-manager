@@ -40,7 +40,7 @@
 | `asar-extracted/` | 归档 | 311 MB | 官方桌面 3.14.1 的 asar 解包（main/host/preload/renderer/scheduler） | 归档 |
 | `zcode-unpacked/` | 归档 | 731 MB | 官方桌面 Electron 安装目录（`ZCode.exe` 213 MB、app.asar 328 MB） | 归档 |
 | `.artifacts/official/` | 归档 | 170 MB | 官方安装包原件 `ZCode-3.14.1-win-x64.exe` | 归档 |
-| `dsh-zcode-bridge/` | 早期实现 | ~4 KB | 第一代 DSH 桥接插件（90 行），未接入 profile | **已废** |
+| `dsh-zcode-bridge/` | 早期实现 | ~4 KB | 第一代 DSH 桥接插件（90 行），未接入 profile | **已删除（2026-09-29）** |
 | `src/`（`src/agent`、`src/tools`） | 空目录 | 0 | 无内容残留 | 死目录 |
 
 另有 `PROJECT-ANALYSIS.md`（本报告）。
@@ -110,7 +110,7 @@ DSH UI / history / tools / agent loop
 
 | 代 | 位置 | 形态 | 现状 |
 |---|---|---|---|
-| ① 桥接 | `dsh-zcode-bridge/index.ts`（90 行） | DSH Cordis 插件，直接读 `~/.zcode/v2/config.json`，复用 `DeepSeekAdapter` 注册路由 | 未接入任何 profile，被②取代 |
+| ① 桥接 | `dsh-zcode-bridge/index.ts`（90 行） | DSH Cordis 插件，直接读 `~/.zcode/v2/config.json`，复用 `DeepSeekAdapter` 注册路由 | 未接入任何 profile，被②取代（目录已于 2026-09-29 删除） |
 | ② 补丁 | `zcode-cli/` | 从官方安装包提取 CLI 后打 2 处 patch + 注入 `ZCODE_APP_VERSION`，使**默认出站的归因头与官方桌面一致**（`cli`→`electron`） | 可用但依赖官方 bundle；已被 `zcode-unpacked` 版本覆盖 |
 | ③ Rust | `zcode-cli-rs/` | v0.1 ConPTY 驱动抓帧/渲染；v0.2 原生 agent 核心（双协议 SSE、bash/read/write/edit/glob/grep、jsonl 会话、复用桌面凭证）；`src/bin/zcode-rs.rs`（**83 KB，未提交**）= 纯 Rust 引擎 + 全屏 TUI（无 Bun、无 `zcode.cjs`），实现 AES-256-GCM 凭证解密 → Provider 注册 → 双协议直调 → TUI（规格取自 `@zcode/tui`） | **活跃**，`target/release/zcode-rs.exe` 已构建 |
 | ④ 插件 | `dpk/zcode-provider/` | 成熟、可发布、有测试与权益面板的 DSH 插件（本文 §3） | **主线** |
@@ -199,14 +199,14 @@ node --expose-internals --import <dsh>/node_modules/tsx/dist/esm/index.mjs ^
 
 **工程卫生**
 - 版本口径不统一：产物是 **3.14.1**（build `cead36fd`，2026-09-20），而 `official-wire.ts` 自报 **3.14.3**（build `ab4d5e6b`，2026-09-22），本机未找到 3.14.3 安装；`zcode-cli/README.md` 又写 3.14.1；`ZCode-open` 源码是 3.14.0。
-- 重复与残留：`zcode-cli/`（250 MB）已被 `zcode-unpacked/` 取代；`dsh-zcode-bridge/` 已废；`src/agent`、`src/tools` 为空；`tui-probe-*` 46 个目录、`.zcode-analysis` 里混放 DPK 与源码包边界样例；两套 DSH home（`~/.dsh` 与 `.debug/dsh-runtime`）。
+- 重复与残留：`zcode-cli/`（250 MB）已被 `zcode-unpacked/` 取代；`dsh-zcode-bridge/` 已删除；`src/agent`、`src/tools` 为空；`tui-probe-*` 46 个目录、`.zcode-analysis` 里混放 DPK 与源码包边界样例；两套 DSH home（`~/.dsh` 与 `.debug/dsh-runtime`）。
 - 3 个 Rust 二进制（`zcode-cli-rs.exe`、`zcode-rs.exe`、`zcode-cli.exe`、`pty-run.exe`）与 83 KB 单文件 `zcode-rs.rs` 均未提交、无 README 覆盖 `zcode-rs.rs`（README 只写到 v0.2）。
 - `tui-build` 无 README、无 Git 元数据，来源（手写还是从 bundle/asar 重建）无法从仓库内确定。
 
 **整理建议（按性价比）**
 1. 把 `~/.dsh/profiles/web/cordis.patch.yml` 的明文 key 改成引用插件凭证存储，或把它纳入更严的忽略/加密策略。
 2. 统一版本口径：确定“当前对标的官方桌面版本”，并让 `ZCODE_CLIENT_VERSION`、产物目录名、README 一致。
-3. 给每个 `dpk`/`.debug/dsh-runtime`/`zcode-cli` 明确“归档/可删”标记，把 `zcode-cli/`、`dsh-zcode-bridge/`、空 `src/` 归档或删除。
+3. 给每个 `dpk`/`.debug/dsh-runtime`/`zcode-cli` 明确“归档/可删”标记，把 `zcode-cli/`、空 `src/` 归档或删除（`dsh-zcode-bridge/` 已于 2026-09-29 删除）。
 4. 补 `zcode-cli-rs` 的 v0.3 文档（`zcode-rs.rs` 的架构、构建、与插件的分工），并提交或明确忽略。
 5. 修掉 `packages/boot/config-editor/src/index.ts:5` 同类 const-enum 值导入（如上游未修）。
 
