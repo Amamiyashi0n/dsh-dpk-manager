@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "ZCode Provider",
+    "description": "A standalone white-box implementation of the ZCode-compatible wire protocol, prompts, and account entitlements for DSH; no ZCode application runtime is loaded."
+  }
+}

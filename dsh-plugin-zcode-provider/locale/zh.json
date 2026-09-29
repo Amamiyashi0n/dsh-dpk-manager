@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "ZCode 提供商",
+    "description": "在插件内白盒实现 ZCode-compatible 协议、提示词与账号权益，脱离 ZCode 主程序独立接入 DSH。"
+  }
+}

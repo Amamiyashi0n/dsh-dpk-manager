@@ -1,0 +1,44 @@
+{
+  "_source": "实机抓包:占住官方 mock 网关端口(45197)让官方引擎把请求打过来(asar 的 EADDRINUSE 复用语义)",
+  "_note": "官方 ticket 客户端(host 侧 Electron net)的应用层头;另有 6 个传输层头由 Electron net 自动附加,不在这里断言。",
+  "ticketClient": {
+    "transportHeaders": ["accept", "accept-encoding", "accept-language", "connection", "host", "sec-fetch-mode"],
+    "availabilityHeaderNames": [
+      "accept", "accept-encoding", "accept-language", "authorization", "connection", "host",
+      "http-referer", "sec-fetch-mode", "user-agent", "x-client-language", "x-client-timezone",
+      "x-coding-plan-api-key", "x-device-mid", "x-os-category", "x-os-version", "x-platform",
+      "x-release-channel", "x-request-id", "x-title", "x-zcode-app-version"
+    ],
+    "postHeaderNames": [
+      "accept", "accept-encoding", "accept-language", "authorization", "connection", "content-length",
+      "content-type", "host", "http-referer", "sec-fetch-mode", "user-agent", "x-client-language",
+      "x-client-timezone", "x-coding-plan-api-key", "x-device-mid", "x-os-category", "x-os-version",
+      "x-platform", "x-release-channel", "x-request-id", "x-title", "x-zcode-app-version"
+    ],
+    "sampleValues": {
+      "http-referer": "https://zcode.z.ai",
+      "user-agent": "ZCode/3.14.3",
+      "x-client-language": "zh-CN",
+      "x-client-timezone": "Asia/Shanghai",
+      "x-os-category": "windows",
+      "x-platform": "win32-x64",
+      "x-release-channel": "production",
+      "x-title": "Z Code@electron",
+      "x-zcode-app-version": "3.14.3"
+    },
+    "bodyShape": {
+      "ticket": { "task_id": "offpeak-<uuid>" },
+      "status": { "ticket_ids": ["<ticket id>"] }
+    }
+  },
+  "modelRequest": {
+    "_source": "引擎 model-io 实录(provider 之前的头;传输/供应商追加的头不在其中)",
+    "headerNames": [
+      "authorization", "http-referer", "user-agent", "x-client-language", "x-client-timezone",
+      "x-coding-plan-api-key", "x-off-peak-ticket-id", "x-os-category", "x-os-version", "x-platform",
+      "x-query-id", "x-release-channel", "x-request-id", "x-session-id", "x-title", "x-zcode-agent",
+      "x-zcode-app-version", "x-zcode-session-type", "x-zcode-trace-id"
+    ],
+    "_note": "模型请求有 x-zcode-agent、没有 x-device-mid;ticket 客户端恰好相反。"
+  }
+}

@@ -1,0 +1,40 @@
+# This directory is a workspace containing several nested repositories.
+# Keep local reverse-engineering notes, unpacked applications, and runtime data
+# out of any future workspace-level Git repository.
+
+# Local investigation and runtime output
+/.debug/
+/.zcode-analysis/
+/.zcode-rs/
+/.artifacts/
+/.tmp/
+/.cache/
+/.sessions/
+/.storages/
+
+# Extracted/vendor application trees
+/asar-extracted/
+/zcode-unpacked/
+/ZCode-*.exe
+
+# Generated package archives and local package-manager state
+/**/*.dpk
+/**/.dpk/
+/**/node_modules/
+/**/.pnpm-store/
+/**/dist/
+/**/build/
+/**/target/
+/**/coverage/
+/**/*.tsbuildinfo
+
+# Local credentials and diagnostics
+/**/*.env
+/**/*.env.*
+/**/*.log
+/.debug/**/credentials*.json
+/.zcode-analysis/**/credentials*.json
+/**/.dsh/credentials*.json
+/**/.dsh/telemetry-state.json
+/.DS_Store
+Thumbs.db

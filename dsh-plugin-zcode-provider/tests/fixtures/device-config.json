@@ -1,0 +1,19 @@
+{
+  "provider": {
+    "builtin:bigmodel-coding-plan": {
+      "name": "BigModel - Coding Plan",
+      "kind": "anthropic",
+      "enabled": true,
+      "models": {
+        "GLM-5.3": {
+          "reasoning": { "enabled": true, "variants": ["low", "max", "high"], "defaultVariant": "max" },
+          "limit": { "context": 1000000, "output": 128000 }
+        }
+      },
+      "options": {
+        "baseURL": "https://open.bigmodel.cn/api/anthropic",
+        "apiKey": "test-key-id.test-key-secret"
+      }
+    }
+  }
+}

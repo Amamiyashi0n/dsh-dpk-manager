@@ -1,0 +1,139 @@
+{
+  "name": "zcode-provider",
+  "description": "Standalone white-box ZCode-compatible provider for DeepSeek Harness",
+  "version": "2.5.34",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./official-wire": {
+      "types": "./lib/types/official-wire.d.ts",
+      "default": "./lib/official-wire.js"
+    },
+    "./credentials": {
+      "types": "./lib/types/credentials.d.ts",
+      "default": "./lib/credentials.js"
+    },
+    "./usage": {
+      "types": "./lib/types/usage.d.ts",
+      "default": "./lib/usage.js"
+    },
+    "./entitlements": {
+      "types": "./lib/types/entitlements.d.ts",
+      "default": "./lib/entitlements.js"
+    },
+    "./usage-remote": {
+      "types": "./lib/types/usage-remote.d.ts",
+      "default": "./lib/usage-remote.js"
+    },
+    "./captcha": {
+      "types": "./lib/types/captcha.d.ts",
+      "default": "./lib/captcha.js"
+    },
+    "./captcha-remote": {
+      "types": "./lib/types/captcha-remote.d.ts",
+      "default": "./lib/captcha-remote.js"
+    },
+    "./offpeak": {
+      "types": "./lib/types/offpeak.d.ts",
+      "default": "./lib/offpeak.js"
+    },
+    "./official-prompt": {
+      "types": "./lib/types/official-prompt.d.ts",
+      "default": "./lib/official-prompt.js"
+    },
+    "./openzcode-app-server": {
+      "types": "./lib/types/openzcode-app-server.d.ts",
+      "default": "./lib/openzcode-app-server.js"
+    },
+    "./auth-backend": {
+      "types": "./lib/types/auth-backend.d.ts",
+      "default": "./lib/auth-backend.js"
+    },
+    "./client": "./client.js",
+    "./storage": {
+      "types": "./lib/types/storage.d.ts",
+      "default": "./lib/storage.js"
+    },
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/official-wire.js",
+    "lib/credentials.js",
+    "lib/usage.js",
+    "lib/entitlements.js",
+    "lib/usage-remote.js",
+    "lib/captcha.js",
+    "lib/captcha-remote.js",
+    "lib/prompt-remote.js",
+    "lib/prompt-storage.js",
+    "lib/offpeak.js",
+    "lib/official-prompt.js",
+    "lib/openzcode-app-server.js",
+    "lib/auth-backend.js",
+    "lib/storage.js",
+    "lib/types/**/*.d.ts",
+    "client.js",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "src",
+    "tests",
+    "tsconfig.json"
+  ],
+  "icon": "./icon.svg",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/sync-client-prompts.mjs",
+    "test": "node tests/equivalence.mjs && node tests/storage.mjs && node tests/prompt-remote.mjs && node tests/auth-backend.mjs && node tests/credentials.mjs && node tests/route-resolution.mjs && node tests/entitlements.mjs && node tests/usage.mjs && node tests/usage-remote.mjs && node tests/client.mjs && node tests/offpeak.mjs && node tests/official-prompt.mjs && node tests/captcha.mjs && node tests/captcha-remote.mjs && node tests/image-wire.mjs && node tests/official-wire.mjs && node tests/app-server.mjs && node tests/loader-composition.mjs && node tests/standalone-package.mjs"
+  },
+  "license": "MIT",
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ],
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/cordis-plugin-loader": "*",
+    "@deepseek-ai/dsh-client-ui-primitives": "*",
+    "@deepseek-ai/dsh-client-ui-settings": "*",
+    "@deepseek-ai/dsh-llm": "*",
+    "@deepseek-ai/schemastery": "*",
+    "react": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis-plugin-loader": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis-plugin-include": "^1.0.9",
+    "@deepseek-ai/dsh-system-prompt": "link:../deepseek-harness/packages/core/system-prompt",
+    "@deepseek-ai/dsh-tools": "link:../deepseek-harness/packages/core/tools",
+    "@types/node": "^22.20.0",
+    "typescript": "^6.0.3"
+  }
+}
