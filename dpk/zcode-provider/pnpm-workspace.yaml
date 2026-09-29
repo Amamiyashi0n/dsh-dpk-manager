@@ -6,5 +6,5 @@
 # install.  Pin both UI peers to the local DeepSeek Harness checkout instead
 # — the same packages the host provides at runtime.
 overrides:
-  "@deepseek-ai/dsh-client-ui-settings": "link:../deepseek-harness/packages/client/ui-settings"
-  "@deepseek-ai/dsh-client-ui-primitives": "link:../deepseek-harness/packages/client/ui-primitives"
+  "@deepseek-ai/dsh-client-ui-settings": "link:../../deepseek-harness/packages/client/ui-settings"
+  "@deepseek-ai/dsh-client-ui-primitives": "link:../../deepseek-harness/packages/client/ui-primitives"

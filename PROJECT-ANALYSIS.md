@@ -4,7 +4,7 @@
 > ① MSYS2 已整体删除,全部 Node/npm/pnpm 迁至传统 Node(`C:\Program Files\nodejs`);
 > ② 新增 `re-app-server/`(官方 app-server 白盒逆向工作区,README 含宿主剧本/事实链/前缀门 §0.7);
 > ③ 主线插件已演进到 `zcode-provider@2.5.34`(引擎会话委托、通道标签、提示词前置注入/后置覆写、
-> 前缀门等效覆写;详见 `dsh-plugin-zcode-provider/README.md`);④ `launcher/dsh.cmd` 已固定传统 Node。
+> 前缀门等效覆写;详见 `dpk/zcode-provider/README.md`);④ `launcher/dsh.cmd` 已固定传统 Node。
 > 以下原文作为历史盘点保留。
 
 > 只读盘点，生成于本次会话。工作区根目录无 Git 仓库（只有一份为“未来工作区仓库”准备的 `.gitignore`），
@@ -27,10 +27,10 @@
 | 目录 | 性质 | 规模(含全部内容) | 作用 | 状态 |
 |---|---|---|---|---|
 | `deepseek-harness/` | 上游 Git 仓库 | 4.71 GB | DeepSeek Harness 本体（宿主）。`master`，HEAD=`00102833df`，tag `dsh-v0.1.7-alpha.2`，与 origin 齐平，**8 个文件未提交** | **活跃**（有本地改动） |
-| `dsh-plugin-zcode-provider/` | 自研源码 | 55 MB（多为 node_modules） | 主线交付物：白盒 ZCode-compatible DSH 插件 `zcode-provider@2.5.26` | **活跃主线** |
+| `dpk/zcode-provider/` | 自研源码 | 55 MB（多为 node_modules） | 主线交付物：白盒 ZCode-compatible DSH 插件 `zcode-provider@2.5.26` | **活跃主线** |
 | `zcode-cli-rs/` | 自研源码（Rust） | 411 MB（多为 `target/`） | Rust 复刻：ConPTY 驱动 → 原生 agent → 纯 Rust 引擎+TUI | **活跃**（未提交） |
 | `tui-build/` | 自研/抽取源码 | 131 MB | ZCode CLI/TUI 前端的独立 TypeScript 可构建副本（`@zcode/{tui,shared,contracts,i18n,model-option-map}`） | **活跃** |
-| `dpk/zcode-provider/` | 构建产物 | 8.3 MB | 33 个插件发布包 `2.0.0`→`2.5.26` | **活跃** |
+| `dpk/zcode-provider/dist/` | 构建产物 | 11 MB | 40 个插件发布包 `2.0.0`→`2.5.34`（2026-09-29 起统一收纳于 `dist/`） | **活跃** |
 | `launcher/` | 脚本 | 0.1 MB | Windows 单入口 `dsh.cmd`（提权 + 固定 51080 + MSYS2 native 修复） | **活跃** |
 | `.zcode-analysis/` | 逆向证据 | 19.8 MB / 430 文件 | 主分析报告（1316 行）+ 2 篇深挖 + 复核脚本 + 原始抓包/提取件 | **活跃** |
 | `.debug/` | 实验/草稿 | 249 MB / 1716 文件 | 抓包 Hook、探针、代码生成补丁脚本、46 个 `tui-probe-*` 抓帧、构建日志 | **实验**（内含 3 个可复用件） |
@@ -69,7 +69,7 @@
 
 ---
 
-## 3. 主线交付物：`dsh-plugin-zcode-provider`（v2.5.26）
+## 3. 主线交付物：`dpk/zcode-provider`（v2.5.26）
 
 **定位**：一个可独立打包成 DPK 的 DSH 插件，在包内以可读 TS/JS **完整实现** ZCode 兼容的模型协议与账号权益接入；**运行时不启动也不依赖 ZCode 主程序**。
 
@@ -97,7 +97,7 @@ DSH UI / history / tools / agent loop
 
 **测试**：`tests/` 20 个 `.mjs`，含真实 Cordis Loader 组合、协议等价、签名、验证码桥接、SSE tool-call、独立包边界扫描；报告记录全套件用例数（equivalence / cred 13 / route 19 / usage 79 / offpeak 110 / prompt 30 / captcha 68 / wire 62 / loader 23）。
 
-**发布形态**：`dpk/zcode-provider/zcode-provider-2.5.26.dpk` → 用 `.debug/dsh-package-manager-1.1.1/dpk.mjs pack|verify|install --profile web` 安装到 `~/.dsh/profiles/web`；安装记录在 `~/.dsh/dpk/index.json`（含 1.4.0→2.5.26 共 40+ 次安装的完整历史）。
+**发布形态**：`dpk/zcode-provider/dist/zcode-provider-2.5.26.dpk` → 用 `.debug/dsh-package-manager-1.1.1/dpk.mjs pack|verify|install --profile web` 安装到 `~/.dsh/profiles/web`；安装记录在 `~/.dsh/dpk/index.json`（含 1.4.0→2.5.26 共 40+ 次安装的完整历史）。
 
 **当前运行期接线**（`~/.dsh/profiles/web/cordis.patch.yml`）
 - 路由：`builtin:bigmodel-coding-plan`（`open.bigmodel.cn/api/anthropic`，GLM-5.3/5.3-Flash/5.2）、`builtin:bigmodel-start-plan`（`zcode.z.ai/api/v1/zcode-plan/anthropic`）、以及两条第三方路由（deepseek、agnes）。
@@ -113,9 +113,9 @@ DSH UI / history / tools / agent loop
 | ① 桥接 | `dsh-zcode-bridge/index.ts`（90 行） | DSH Cordis 插件，直接读 `~/.zcode/v2/config.json`，复用 `DeepSeekAdapter` 注册路由 | 未接入任何 profile，被②取代 |
 | ② 补丁 | `zcode-cli/` | 从官方安装包提取 CLI 后打 2 处 patch + 注入 `ZCODE_APP_VERSION`，使**默认出站的归因头与官方桌面一致**（`cli`→`electron`） | 可用但依赖官方 bundle；已被 `zcode-unpacked` 版本覆盖 |
 | ③ Rust | `zcode-cli-rs/` | v0.1 ConPTY 驱动抓帧/渲染；v0.2 原生 agent 核心（双协议 SSE、bash/read/write/edit/glob/grep、jsonl 会话、复用桌面凭证）；`src/bin/zcode-rs.rs`（**83 KB，未提交**）= 纯 Rust 引擎 + 全屏 TUI（无 Bun、无 `zcode.cjs`），实现 AES-256-GCM 凭证解密 → Provider 注册 → 双协议直调 → TUI（规格取自 `@zcode/tui`） | **活跃**，`target/release/zcode-rs.exe` 已构建 |
-| ④ 插件 | `dsh-plugin-zcode-provider/` | 成熟、可发布、有测试与权益面板的 DSH 插件（本文 §3） | **主线** |
+| ④ 插件 | `dpk/zcode-provider/` | 成熟、可发布、有测试与权益面板的 DSH 插件（本文 §3） | **主线** |
 
-补充：`.debug/patch-*.py`（约 20 个）并非改 bundle，而是**代码生成器**，反复重写 `zcode-cli-rs/src/bin/zcode-rs.rs` 与 `dsh-plugin-zcode-provider/src/index.ts`（输入面板、MCP、delegate、effort 历史、diff 渲染、快捷键等），配 `.debug/agent-tools.rs`、`.debug/tui-section.rs` 作为片段来源。
+补充：`.debug/patch-*.py`（约 20 个）并非改 bundle，而是**代码生成器**，反复重写 `zcode-cli-rs/src/bin/zcode-rs.rs` 与 `dpk/zcode-provider/src/index.ts`（输入面板、MCP、delegate、effort 历史、diff 渲染、快捷键等），配 `.debug/agent-tools.rs`、`.debug/tui-section.rs` 作为片段来源。
 
 ---
 
@@ -219,7 +219,7 @@ node --expose-internals --import <dsh>/node_modules/tsx/dist/esm/index.mjs ^
 | 主结论与 15 轮对齐史 | `.zcode-analysis/权益差异分析报告.md` |
 | 桌面版权益判定细节 | `.zcode-analysis/sub-a/desktop-entitlement.md` |
 | CLI 真实线格式细节 | `.zcode-analysis/sub-b/cli-wire.md` |
-| 插件源码/测试 | `dsh-plugin-zcode-provider/src|tests` |
+| 插件源码/测试 | `dpk/zcode-provider/src|tests` |
 | 已安装插件与 profile | `~/.dsh/profiles/web/{package.json,cordis.patch.yml}`、`~/.dsh/dpk/index.json` |
 | 纯 Rust 引擎/TUI | `zcode-cli-rs/src/bin/zcode-rs.rs` |
 | TUI 前端源码副本 | `tui-build/{tui,shared,contracts,i18n,model-option-map}/src` |
