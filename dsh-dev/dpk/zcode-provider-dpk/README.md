@@ -142,6 +142,9 @@ node ../../../.debug/dsh-package-manager-1.1.1/dpk.mjs verify dist/zcode-provide
 node ../../../.debug/dsh-package-manager-1.1.1/dpk.mjs install dist/zcode-provider-<version>.dpk -p web --home "%USERPROFILE%\.dsh"
 ~~~
 
+安装后**必须核实** profile 链接已更新(`~/.dsh/profiles/web/package.json` 中 `zcode-provider` 指向新 digest 的 store 目录)。dpk 工具经 `~/.dsh/node_modules/@deepseek-ai` junction 定位 DSH CLI——工作区搬移后该 junction 会悬空,install 只解包到 store 却报 `the DSH CLI was not found`,profile 停留旧版(2026-09-30 实际发生:2.5.35/2.5.36 两版"安装成功"实则未生效,线上一直是 2.5.34,靠 wire 抓包才发现)。修复:`rmdir` 旧 junction 后 `mklink /J` 重指 `dsh-dev\deepseek-harness
+ode_modules\@deepseek-ai`。
+
 当前版本 **2.5.35**。近版本要点：
 
 - **2.5.31** start-plan/off-peak 改走引擎会话委托（session/send 流式 + 60K 历史预算）；模型名追加通道后缀 `· Start Plan` / `· Coding Plan` / `· 错峰`；generateText 直连加 10 分钟硬超时。
