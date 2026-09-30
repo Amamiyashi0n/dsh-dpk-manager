@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Reverse Skill">
+  <rect width="64" height="64" rx="14" fill="#0f172a"/>
+  <path d="M32 8l18 6v16c0 11-7.5 19.5-18 26C21.5 43.5 14 35 14 14V14z" fill="none" stroke="#38bdf8" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M40 26H26l5-5M24 38h14l-5 5" fill="none" stroke="#e2e8f0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

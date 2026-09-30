@@ -1,0 +1,47 @@
+# Bundle layer for @local/dsh-reverse-skill: one Host plugin row that registers
+# the `reverse-skill` skill provider on ctx.skills.
+#
+# 「只要逆向功能」:roots 逐个列出逆向模块目录,而不是用 `skills` 全目录。
+# 对应 skills/config/routing.json 里以逆向为主的路由:
+#   R0 reverse-engineering(+ 嵌套的 R4 dsl-vm-reverse)、R6 ida-reverse、R22 ghidra-reverse、
+#   R7 radare2、R45 binary-ninja-reverse、R15 binary-diff、R21 protocol-reverse、
+#   R1 apk-reverse、R2 mobile-reverse、R3 js-reverse、R31 macos-reverse、R5 dotnet-reverse、
+#   R33 go-rust-reverse、R30 browser-extension-reverse、R9 malware-analysis、R18 edr-bypass-re
+# 共 17 个技能。
+#
+# 不含:示例/演示类内容(CTF-Sandbox-Orchestrator/** 42 个竞赛场景、examples/ctf-demo、
+# reports/、docs/reviews|plans|superpowers、skills/tests/**),以及非逆向模块
+# (渗透/取证/威胁情报/编排/文档:attack-chain、pentest-tools、src-hunter、api-security、
+# cloud-k8s、code-audit、database-security、email-security、identity-federation、
+# llm-security、ot-ics、radio-sdr、supply-chain-security、wifi-wireless、windows-ad、
+# digital-forensics、threat-hunting、threat-intelligence、case-review、docs-generator、
+# diagram-generator、browser-automation、ctf-sandbox)。
+#
+# 想放开某个模块:把 `skills/<模块名>` 加进 roots。想让交付物是「利用」的模块也进来,
+# 再补 skills/firmware-pentest、skills/hardware-security、skills/thick-client、
+# skills/patch-diff-exploit、skills/pwn-chain。
+# 共享 provider 另支持 include/exclude 白名单(见 dsh-skill-dir/README.md);它需要新的
+# 模块代次,进程重启后可用更简洁的 `roots: [skills]` + `include: [...]` 表达同一集合。
+- insert:
+    - id: dsh-reverse-skill
+      name: '@local/dsh-reverse-skill'
+      config:
+        repoRoot: 'C:\Users\Amamiya\Documents\deepseek-harness\默认工作区\vendor\reverse-skill'
+        roots:
+          - skills/reverse-engineering
+          - skills/ida-reverse
+          - skills/ghidra-reverse
+          - skills/radare2
+          - skills/binary-ninja-reverse
+          - skills/binary-diff
+          - skills/protocol-reverse
+          - skills/apk-reverse
+          - skills/mobile-reverse
+          - skills/js-reverse
+          - skills/macos-reverse
+          - skills/dotnet-reverse
+          - skills/go-rust-reverse
+          - skills/browser-extension-reverse
+          - skills/malware-analysis
+          - skills/edr-bypass-re
+        rank: 600
