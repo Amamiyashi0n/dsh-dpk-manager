@@ -46,7 +46,6 @@ window.__ModuleLoader__.load({
       storePath: '本地仓库路径',
       profileState: '当前状态',
       store: '本地 DPK 仓库',
-      hint: '此包由 dpk 管理：上方「导出 DPK」可重新打包，「卸载」会从 profile 移除并不留副本（仍有其它 profile 引用时除外）。',
     }
     const en = {
       importTitle: 'Import a DPK package',
@@ -76,7 +75,6 @@ window.__ModuleLoader__.load({
       storePath: 'Local store path',
       profileState: 'State',
       store: 'Local DPK store',
-      hint: 'Managed by dpk: “Export DPK” re-packs it, “Uninstall” removes it without leaving a copy (unless another profile still uses it).',
     }
 
     const requestCodec = method => ({
@@ -312,7 +310,6 @@ window.__ModuleLoader__.load({
                 h('dt', { key: `${label}-k`, style: labelStyle }, label),
                 h('dd', { key: `${label}-v`, style: { ...valueStyle, margin: 0 } }, String(value)),
               ])),
-              h('div', { key: 'hint', style: { opacity: 0.7 } }, tr('hint')),
             ]),
             h(DpkActions, { key: 'actions', subject: { kind: 'bundle', pkg: { name: entry.name } } }),
           ])
