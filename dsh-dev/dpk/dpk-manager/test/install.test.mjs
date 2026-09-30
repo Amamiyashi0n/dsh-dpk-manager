@@ -6,15 +6,31 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { packDirectory } from '../lib/pack.mjs'
-import { installArchive } from '../lib/install.mjs'
+import { installArchive, installOverwriting } from '../lib/install.mjs'
 import { disableReleaseAgeCooldown } from '../lib/profile-policy.mjs'
 import { dpkRoot, readIndex, storeDir } from '../lib/store.mjs'
 import { makeHome, makePackage } from './helpers.mjs'
 
-/** An installer that records the package directory instead of running pnpm. */
+/** An installer that records the call instead of running pnpm. */
 function recorder() {
   const calls = []
-  return { calls, installer: async (packageDir) => { calls.push(packageDir) } }
+  return { calls, installer: async (packageDir, meta) => { calls.push([packageDir, meta]) } }
+}
+
+/** A manager whose first install cannot diff the unchanged row, like the official one on a re-import. */
+function ambiguousManager() {
+  const seen = []
+  const manager = {
+    seen,
+    installBundle: async (dir) => {
+      seen.push(['install', dir])
+      return seen.filter(call => call[0] === 'install').length === 1
+        ? { application: 'failed', error: { diagnostic: 'ambiguous-install' } }
+        : { application: 'applied', changed: true }
+    },
+    removeBundle: async (name) => { seen.push(['remove', name]); return { changed: true } },
+  }
+  return manager
 }
 
 async function packFixture(manifest) {
@@ -48,7 +64,8 @@ test('verifies, extracts into the store, and hands the official installer an abs
   assert.ok(existsSync(join(storeDir(root, packed.manifest.integrity.digest), 'dpk.json')), 'the manifest copy is kept')
 
   assert.equal(exec.calls.length, 1)
-  assert.equal(exec.calls[0], packageDir)
+  assert.equal(exec.calls[0][0], packageDir)
+  assert.deepEqual(exec.calls[0][1], { name: '@local/dpk-fixture', version: '1.0.0', digest: packed.manifest.integrity.digest })
   assert.equal(result.via, 'service')
 
   const index = await readIndex(root)
@@ -190,4 +207,36 @@ test('disableReleaseAgeCooldown creates the workspace file when absent', async (
   assert.equal(await disableReleaseAgeCooldown(dir), true)
   assert.equal(await readFile(join(dir, 'pnpm-workspace.yaml'), 'utf8'), 'minimumReleaseAge: 0\n')
   assert.equal(await disableReleaseAgeCooldown(dir), false, 'the second call changes nothing')
+})
+
+test('installOverwriting retries an ambiguous re-import as remove+install', async () => {
+  const manager = ambiguousManager()
+  const outcome = await installOverwriting(manager, 'C:/store/pkg', 'fixture')
+  assert.equal(outcome.application, 'applied')
+  assert.deepEqual(manager.seen, [
+    ['install', 'C:/store/pkg'],
+    ['remove', 'fixture'],
+    ['install', 'C:/store/pkg'],
+  ])
+})
+
+test('installOverwriting surfaces a failure that is not the ambiguous case', async () => {
+  const manager = {
+    installBundle: async () => ({ application: 'failed', error: { diagnostic: 'registry refused' } }),
+    removeBundle: async () => { throw new Error('must not be reached') },
+  }
+  const outcome = await installOverwriting(manager, 'C:/store/pkg', 'fixture')
+  assert.equal(outcome.application, 'failed')
+  assert.equal(outcome.error.diagnostic, 'registry refused')
+})
+
+test('installOverwriting reports a failing remove during the retry', async () => {
+  const manager = {
+    installBundle: async () => ({ application: 'failed', error: { code: 'ambiguous-install' } }),
+    removeBundle: async () => ({ application: 'failed', error: { diagnostic: 'unload refused' } }),
+  }
+  await assert.rejects(
+    installOverwriting(manager, 'C:/store/pkg', 'fixture'),
+    error => error.message.includes('unload refused'),
+  )
 })

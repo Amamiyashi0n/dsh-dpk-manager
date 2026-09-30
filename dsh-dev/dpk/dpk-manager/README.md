@@ -34,6 +34,9 @@ DSH 桌面版 / Web → **插件** → **添加插件** → 填 `dsh-dpk-manager
 
 - **安装一个 `.dpk`**：左侧栏 →「本地 DPK」→「导入 DPK 安装包」→ 选择 `.dpk` 文件。
   面板走的是与插件页完全相同的 `pluginManager` 服务，装完即出现在插件列表里。
+- **覆盖安装**：导入已安装包的新版本直接升级（依赖行变化，走普通安装）；重复导入
+  **同一版本**时官方安装器 diff 不到依赖变化、会答 `ambiguous-install`，dpk 此时自动
+  改为「先卸载再安装」完成重装——两种情况导入即覆盖，无需先手动卸载。
 - **打包**（对任意标准 DSH 包目录）：在 DSH 会话里让 agent 调 `dpk` 工具
   （`action=pack directory=… output=…`），或在构建脚本里编程调用
   `dsh-dpk-manager/lib/pack.mjs` 的 `packDirectory()`（库随包发布，`exports` 已导出）。

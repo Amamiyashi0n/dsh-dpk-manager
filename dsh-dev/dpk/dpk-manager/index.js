@@ -20,6 +20,7 @@
 
 import { DPK_ACTIONS, runDpkAction } from './lib/actions.mjs'
 import { REMOTE_NAMESPACE, createDpkRemoteService } from './host-service.js'
+import { installOverwriting } from './lib/install.mjs'
 import { detectProfileName } from './lib/profile-policy.mjs'
 import { defaultDshHome } from './lib/store.mjs'
 
@@ -183,7 +184,7 @@ async function judgeEscalation(ctx, exec, request) {
  * same service the official management tool uses.
  */
 function createInstaller(ctx, exec, args) {
-  return async (packageDir) => {
+  return async (packageDir, meta) => {
     const manager = ctx.get('pluginManager')
     if (manager === undefined) {
       throw new Error(
@@ -196,7 +197,10 @@ function createInstaller(ctx, exec, args) {
       subject: 'package installation',
       justification: `dpk install ${args.file ?? packageDir}. Installing a package changes this profile for every session, and installed Host code runs outside the workspace sandbox.`,
     })
-    const result = await manager.installBundle(packageDir, {})
+    // Installing over an existing installation must succeed: an unchanged
+    // dependency row makes the official installer answer `ambiguous-install`,
+    // so retry as remove+install (same version or newer alike).
+    const result = await installOverwriting(manager, packageDir, meta.name)
     if (result?.application === 'failed') {
       throw new Error(
         `dpk: the plugin manager could not install ${packageDir}:`

@@ -32,6 +32,33 @@ export class DpkInstallError extends Error {
 }
 
 /**
+ * Drive one install through the official manager, retrying as remove+install
+ * when the manager cannot see a change: re-importing the very same digest
+ * leaves the dependency row identical, and the official installer's diff then
+ * answers `ambiguous-install` instead of installing. Removing the bundle first
+ * turns the re-import into an ordinary install, so importing over an existing
+ * installation — same version or newer — always succeeds.
+ * @param manager - the plugin manager service (`installBundle`/`removeBundle`).
+ * @param packageDir - the absolute store directory to install.
+ * @param packageName - the bundle name the manager knows the package by.
+ * @returns the last install outcome; throws nothing the caller would not.
+ */
+export async function installOverwriting(manager, packageDir, packageName) {
+  const isAmbiguous = outcome => outcome?.application === 'failed'
+    && [outcome.error?.diagnostic, outcome.error?.code]
+      .some(field => typeof field === 'string' && field.includes('ambiguous-install'))
+  let outcome = await manager.installBundle(packageDir, {})
+  if (isAmbiguous(outcome)) {
+    const removed = await manager.removeBundle(packageName)
+    if (removed?.application === 'failed') {
+      throw new Error(`dpk: removing the previous installation failed: ${removed.error?.diagnostic ?? removed.error?.code ?? 'unknown failure'}`)
+    }
+    outcome = await manager.installBundle(packageDir, {})
+  }
+  return outcome
+}
+
+/**
  * Extract a verified archive into the content-addressed store.
  * @returns `{ digest, packageDir, created }`; `created: false` means the digest was already present.
  */
@@ -131,7 +158,11 @@ export async function installArchive(options) {
   }
 
   log(`install  plugin manager service -> ${placed.packageDir}`)
-  await options.installer(placed.packageDir)
+  await options.installer(placed.packageDir, {
+    name: manifest.name,
+    version: manifest.version,
+    digest: placed.digest,
+  })
 
   await recordInstall(root, {
     name: manifest.name,

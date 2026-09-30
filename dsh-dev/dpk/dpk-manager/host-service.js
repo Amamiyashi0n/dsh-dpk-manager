@@ -20,6 +20,7 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { runDpkAction } from './lib/actions.mjs'
+import { installOverwriting } from './lib/install.mjs'
 import { packDirectory } from './lib/pack.mjs'
 import { latestByName, latestEntry, matchEntries, readIndex, removeStoreDir, storeDir, writeIndex, defaultDshHome} from './lib/store.mjs'
 import { dpkRoot } from './lib/store.mjs'
@@ -113,8 +114,11 @@ export function createDpkRemoteService(ctx, config = {}) {
         const result = await runDpkAction('install', { file: path }, {
           home,
           profile: profileName(),
-          installer: async (packageDir) => {
-            const outcome = await manager.installBundle(packageDir, {})
+          installer: async (packageDir, meta) => {
+            // Importing over an existing installation must succeed: when the
+            // official installer cannot diff the unchanged dependency row it
+            // answers `ambiguous-install`, so retry as remove+install.
+            const outcome = await installOverwriting(manager, packageDir, meta.name)
             if (outcome?.application === 'failed') {
               throw new Error(`dpk: install failed: ${outcome.error?.diagnostic ?? outcome.error?.code ?? 'unknown failure'}`)
             }

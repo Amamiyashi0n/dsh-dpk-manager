@@ -7,8 +7,9 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { createDpkRemoteService, REMOTE_NAMESPACE } from '../host-service.js'
 import { detectProfileName } from '../lib/profile-policy.mjs'
+import { packDirectory } from '../lib/pack.mjs'
 import { dpkRoot, readIndex, recordInstall, storeDir } from '../lib/store.mjs'
-import { makeHome } from './helpers.mjs'
+import { makeHome, makePackage } from './helpers.mjs'
 
 const REMOTE_METHOD_DESCRIPTOR = '@deepseek-ai/dsh-typert-protocol/remote-methods'
 
@@ -137,4 +138,30 @@ test('detectProfileName finds the profile whose node_modules holds this package'
   } finally {
     if (previous !== undefined) process.env.DSH_PROFILE = previous
   }
+})
+
+test('importArchive installs over an unchanged dependency row by removing first', async () => {
+  const home = await makeHome()
+  const packed = await packDirectory(await makePackage())
+  const seen = []
+  const manager = {
+    installBundle: async () => {
+      seen.push('install')
+      return seen.filter(call => call === 'install').length === 1
+        ? { application: 'failed', error: { diagnostic: 'ambiguous-install' } }
+        : { application: 'applied', changed: true }
+    },
+    removeBundle: async name => { seen.push(`remove:${name}`); return { changed: true } },
+  }
+  const service = createDpkRemoteService(makeCtx({ pluginManager: manager }), { home })
+
+  const result = await service.importArchive({
+    fileName: 'fixture.dpk',
+    base64: packed.buffer.toString('base64'),
+  })
+
+  assert.deepEqual(seen, ['install', 'remove:@local/dpk-fixture', 'install'])
+  assert.equal(result.name, '@local/dpk-fixture')
+  const index = await readIndex(dpkRoot(home))
+  assert.equal(index.entries.length, 1, 'the re-import records in the ledger')
 })
