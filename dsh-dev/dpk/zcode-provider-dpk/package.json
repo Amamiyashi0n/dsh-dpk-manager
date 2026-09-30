@@ -1,7 +1,7 @@
 {
   "name": "zcode-provider",
   "description": "Standalone white-box ZCode-compatible provider for DeepSeek Harness",
-  "version": "2.5.37",
+  "version": "2.5.38",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -94,7 +94,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/sync-client-prompts.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/sync-client-prompts.mjs && node scripts/bundle-entry.mjs",
     "test": "node tests/equivalence.mjs && node tests/storage.mjs && node tests/prompt-remote.mjs && node tests/auth-backend.mjs && node tests/credentials.mjs && node tests/route-resolution.mjs && node tests/entitlements.mjs && node tests/usage.mjs && node tests/usage-remote.mjs && node tests/client.mjs && node tests/offpeak.mjs && node tests/official-prompt.mjs && node tests/captcha.mjs && node tests/captcha-remote.mjs && node tests/image-wire.mjs && node tests/official-wire.mjs && node tests/app-server.mjs && node tests/loader-composition.mjs && node tests/standalone-package.mjs"
   },
   "license": "MIT",
@@ -120,8 +120,6 @@
     "@deepseek-ai/cordis-plugin-loader": "*",
     "@deepseek-ai/dsh-client-ui-primitives": "*",
     "@deepseek-ai/dsh-client-ui-settings": "*",
-    "@deepseek-ai/dsh-llm": "*",
-    "@deepseek-ai/schemastery": "*",
     "react": "*"
   },
   "peerDependenciesMeta": {
@@ -134,6 +132,11 @@
     "@deepseek-ai/dsh-system-prompt": "link:../../deepseek-harness/packages/core/system-prompt",
     "@deepseek-ai/dsh-tools": "link:../../deepseek-harness/packages/core/tools",
     "@types/node": "^22.20.0",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "@deepseek-ai/dsh-llm": "0.0.1-rc.1",
+    "@deepseek-ai/schemastery": "3.18.4",
+    "@deepseek-ai/dsh-timeout": "0.0.1-rc.1",
+    "@deepseek-ai/cosmokit": "1.8.5",
+    "esbuild": "0.25.0"
   }
 }

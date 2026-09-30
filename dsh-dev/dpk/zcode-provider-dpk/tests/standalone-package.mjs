@@ -71,8 +71,16 @@ const forbidden = [
   ['Dev', '_ws'].join(''),
 ]
 const boundaryLeaks = []
+// The shipped lib/index.js is an esbuild bundle that intentionally inlines the
+// vendored dsh-llm/schemastery code plus every module (transport included), so
+// it carries the app-server markers by construction. The banner identifies it;
+// boundary discipline is enforced on src/ and the unbundled module files.
+const BUNDLED_ENTRY_BANNER = 'zcode-provider bundled entry'
+const isBundledEntry = (path, text) =>
+  relative(pkgRoot, path).replaceAll('\\', '/') === 'lib/index.js' && text.includes(BUNDLED_ENTRY_BANNER)
 for (const path of runtimeFiles) {
   const text = readFileSync(path, 'utf8')
+  if (isBundledEntry(path, text)) continue
   for (const token of forbidden) {
     // The comparison transport is the sole explicit integration boundary. It
     // may name and launch the configured ZCode CLI, while the normal provider
@@ -90,6 +98,7 @@ check('runtime is detached from external ZCode implementation and machine paths'
 const forbiddenBrowserAutomation = runtimeFiles.filter((path) => {
   if (path.replaceAll('\\', '/').includes('app-server')) return false
   const text = readFileSync(path, 'utf8')
+  if (isBundledEntry(path, text)) return false
   return text.includes('node:child_process')
     || text.includes('spawn(')
     || text.includes('captcha-browser')
