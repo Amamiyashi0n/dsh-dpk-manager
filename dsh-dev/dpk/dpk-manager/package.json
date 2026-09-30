@@ -1,9 +1,8 @@
 {
-  "name": "@local/dsh-package-manager",
+  "name": "dsh-dpk-manager",
   "version": "1.1.5",
-  "private": true,
   "type": "module",
-  "description": "DSH 安装包管理助手 — pack, verify, and install local DSH plugin packages (.dpk) from its own DPK panel",
+  "description": "DPK toolchain for DeepSeek Harness — pack, verify and install local DSH plugin packages (.dpk) via CLI (`dpk` bin)",
   "license": "MIT",
   "engines": {
     "node": ">=20"
@@ -49,5 +48,18 @@
   },
   "scripts": {
     "test": "node --test"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com:Amamiyashi0n/dsh-dpk-manager.git",
+    "directory": "dsh-dev/dpk/dpk-manager"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dpk",
+    "plugin",
+    "package-manager",
+    "cli"
+  ]
 }
