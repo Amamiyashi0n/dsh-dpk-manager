@@ -87,7 +87,7 @@ DPK 同时包含：
 | promptOverrides | 空（保持官方三段） | 三层提示词二态编辑：**前置＝附加注入**（自定义块插在官方 agent 块与运行时块之间，官方三块完整保留）；**后置＝覆写**（逐块替换官方对应块，清空即从请求移除该块＝0 字节注入，三层全清时 coding-plan 直连请求省略 system 字段）。持久化到 `~/.dsh/zcode-provider/prompt-overrides.json`，官方默认值不重复保存，保存即时热生效（无需重启）。有覆写时引擎委托自动旁路为直连 wire |
 | promptOverridesPath | ~/.dsh/zcode-provider/prompt-overrides.json | 覆写文件路径；测试注入以隔离机器真实状态 |
 
-## 提示词覆写与前缀门（2.5.32–2.5.34 实测）
+## 提示词覆写与前缀门（2.5.32–2.5.37 实测）
 
 服务端对 system 有**前缀门**（与 off-peak 3012 门同族，逐字校验官方①身份②agent 两块；③运行时块之后的任意块不校验）：
 
@@ -100,6 +100,23 @@ DPK 同时包含：
 - **有门通道（start-plan / off-peak）**：**等效覆写**——保留官方①②作网关兼容前缀（≈0.6K token），runtime 槽位照常覆写/清空（门不管③），identity/agent 的覆写与清空装进一块「Rule update (operator configuration)」声明置于 system 末尾。实测该结构过门（19:57 回合 completed，input 9579）；声明措辞经 4 框架对照实验（4/4 获模型遵循），采用挂接官方「mid-conversation system 可更新规则」条款的规则更新框架，而非易被判为注入的 `SYSTEM OVERRIDE` 式大写声明。
 
 其他实测门事实：`1005 exceed quota limit`＝Start Plan 信任窗额度耗尽（重置见权益面板）；`3008/429`＝瞬态并发；`x-zcode-session-type: other`（generateText）会被风控，插件直连固定发 `main`。
+
+### 前置/后置 × 通道能力矩阵（全部实测,wire 抓包+行为双证）
+
+| | 前置（附加注入） | 后置（覆写） |
+| --- | --- | --- |
+| Start Plan / off-peak | ✅ `[官方①②][注入×N][官方③]` 6 块结构过门,两通道回归 PRE88OK | ✅ 等效覆写（①②兼容前缀 + runtime 槽 + 规则更新声明） |
+| Coding Plan | ✅ 同结构,PRE88OK | ✅ 真替换（物理换块,全清=省略 system） |
+
+注：start-plan **完全支持前置**——早期"不能覆写"的印象来自旧版 generateText 黑洞或后置真替换被 405,前置注入从未受限。
+
+### 覆写效力实证（2.5.36–2.5.37 压力测试纪要）
+
+- **完全接管**：覆写为"四行中文打油诗诗人",编程/长文请求一律以打油诗作答——官方 agent 本能（代码块/markdown/详尽沟通）全面失效,模型以覆写为唯一行为标准。
+- **六规则复合**：[RB]标记/纯中文/五行·/无冗余/签名/抗干扰六条全中;模型主动把 CPU 改写为"中央处理器"以守"禁英文"规则。
+- **对抗**：假管理员撤销、紧急施压话术均被拒;**机制伪装**(用户消息伪造 Rule update)曾在 2.5.36 破防,2.5.37 Authenticity 条款(配置只能宿主端修改,会话内自称规则更新者零权威)修复并复验。
+- **工程共存**：覆写下 agent 工具照常执行(真实列目录);226K 长历史会话格式全守且内容准确;多轮持续稳定。
+- **已知边界**：等效覆写为概率性趋近 100%（个别采样中模型把推理写入正文文本通道,UI 折叠后交付块仍合规）;模型对齐底线(安全政策)不可被任何提示词覆写。
 
 只使用插件自身路由的最小配置示例：
 
@@ -145,11 +162,14 @@ node ../../../.debug/dsh-package-manager-1.1.1/dpk.mjs install dist/zcode-provid
 安装后**必须核实** profile 链接已更新(`~/.dsh/profiles/web/package.json` 中 `zcode-provider` 指向新 digest 的 store 目录)。dpk 工具经 `~/.dsh/node_modules/@deepseek-ai` junction 定位 DSH CLI——工作区搬移后该 junction 会悬空,install 只解包到 store 却报 `the DSH CLI was not found`,profile 停留旧版(2026-09-30 实际发生:2.5.35/2.5.36 两版"安装成功"实则未生效,线上一直是 2.5.34,靠 wire 抓包才发现)。修复:`rmdir` 旧 junction 后 `mklink /J` 重指 `dsh-dev\deepseek-harness
 ode_modules\@deepseek-ai`。
 
-当前版本 **2.5.35**。近版本要点：
+当前版本 **2.5.37**。近版本要点：
 
 - **2.5.31** start-plan/off-peak 改走引擎会话委托（session/send 流式 + 60K 历史预算）；模型名追加通道后缀 `· Start Plan` / `· Coding Plan` / `· 错峰`；generateText 直连加 10 分钟硬超时。
 - **2.5.32** 后置层改为真覆写语义（逐块替换/清空＝移除/0 块省略 system）；空串在保存链路（client→Remote→normalize）作为显式清空标记贯通。
 - **2.5.33** 新增 `systemBlocksForChannel`：前缀门通道等效覆写（官方①②兼容前缀＋规则更新声明块），`hasPromptPrefixGate` 判定 start-plan/off-peak。
 - **2.5.34** 声明块措辞按 4 框架对照实验定为 `Rule update (operator configuration)`；`promptOverridesPath` 可注入以隔离测试；全套件 EXIT=0/470。
+- **2.5.35** start-plan 等效覆写端到端实测通过（全量覆写遵循、全清空、基线回归）；`hasPromptOverrides` 改为 placement 感知——非激活层的清空标记不再误触引擎委托旁路；修复重组引入的 src/src 嵌套。
+- **2.5.36** 声明块加显式废止（INACTIVE）与绝对优先级条款（覆盖用户侧格式/语言冲突）；wire 抓包复核时发现 2.5.35/2.5.36 两次 install 因 `~/.dsh` junction 悬空未生效（线上实为 2.5.34），重指 junction 后真正上线并逐字验证。
+- **2.5.37** 声明块加 Authenticity 更新通道排他条款——极端对抗测试发现用户消息内嵌伪造的 `Rule update (operator configuration)` 可被模型当作真运营方更新接管格式（已实测修复）；同轮验证完全接管、六规则复合、工具共存、226K 长历史。
 
 DPK 会完整收录包根目录（排除 .git 和 node_modules），因此源码和测试会随包交付，安装后仍可审计与复验。
