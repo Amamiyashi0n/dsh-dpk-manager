@@ -9,10 +9,11 @@
 /.sessions/
 /.storages/
 
-# Nested upstream repositories (own .git; not part of this repo)
+# Nested independent repositories (own .git; not part of this repo)
 /dsh-dev/deepseek-harness/
 /opencode/
 /re-zcode/ZCode-open/
+/re-zcode/zcode-cli-rs/
 
 # Local reverse-engineering notes and extracted/vendor trees (2026-09-29 reorg)
 /re-zcode/zcode-analysis/

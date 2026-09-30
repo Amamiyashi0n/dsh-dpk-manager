@@ -137,9 +137,9 @@ Web 客户端会把当前会话选择的 Coding Plan / Start Plan 权益与剩�
 ## DPK
 
 ~~~bash
-node ../../.debug/dsh-package-manager-1.1.1/dpk.mjs pack .   # 产出 ./zcode-provider-<version>.dpk,归档进 dist/
-node ../../.debug/dsh-package-manager-1.1.1/dpk.mjs verify dist/zcode-provider-<version>.dpk
-node ../../.debug/dsh-package-manager-1.1.1/dpk.mjs install dist/zcode-provider-<version>.dpk -p web --home "%USERPROFILE%\.dsh"
+node ../../../.debug/dsh-package-manager-1.1.1/dpk.mjs pack .   # 产出 ./zcode-provider-<version>.dpk,归档进 dist/
+node ../../../.debug/dsh-package-manager-1.1.1/dpk.mjs verify dist/zcode-provider-<version>.dpk
+node ../../../.debug/dsh-package-manager-1.1.1/dpk.mjs install dist/zcode-provider-<version>.dpk -p web --home "%USERPROFILE%\.dsh"
 ~~~
 
 当前版本 **2.5.34**。近版本要点：
