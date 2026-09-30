@@ -21,7 +21,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { runDpkAction } from './lib/actions.mjs'
 import { packDirectory } from './lib/pack.mjs'
-import { forgetProfile, matchEntries, readIndex, removeStoreDir, storeDir, defaultDshHome} from './lib/store.mjs'
+import { forgetProfile, latestByName, latestEntry, matchEntries, readIndex, removeStoreDir, storeDir, defaultDshHome} from './lib/store.mjs'
 import { dpkRoot } from './lib/store.mjs'
 
 /** Wire namespace: the browser calls `ctx.remote.dpk.<method>`. */
@@ -73,11 +73,9 @@ export function createDpkRemoteService(ctx, config = {}) {
       }
       const byName = new Map(bundles.map(bundle => [bundle.name, bundle]))
       const index = await readIndex(dpkRoot(home))
-      const latestByName = new Map()
-      for (const entry of index.entries) latestByName.set(entry.name, entry)
       return {
         store: dpkRoot(home),
-        entries: [...latestByName.values()].map(entry => ({
+        entries: latestByName(index.entries).map(entry => ({
           name: entry.name,
           version: entry.version,
           digest: entry.digest,
@@ -133,11 +131,11 @@ export function createDpkRemoteService(ctx, config = {}) {
      */
     async exportArchive(request) {
       const root = dpkRoot(home)
-      const matches = matchEntries((await readIndex(root)).entries, String(request?.name ?? ''))
-      if (matches.length === 0) throw new Error(`dpk: no stored package matches ${String(request?.name ?? '')}`)
+      const requested = String(request?.name ?? '')
       const entry = request?.version === undefined
-        ? matches[matches.length - 1]
-        : matches.find(candidate => candidate.version === request.version) ?? matches[matches.length - 1]
+        ? latestEntry((await readIndex(root)).entries, requested)
+        : matchEntries((await readIndex(root)).entries, `${requested}@${request.version}`)[0]
+      if (entry === undefined) throw new Error(`dpk: no stored package matches ${requested}`)
       const packageDir = storeDir(root, entry.digest) + '/package'
       const packed = await packDirectory(packageDir)
       return {
@@ -186,9 +184,8 @@ export function createDpkRemoteService(ctx, config = {}) {
 /** Read a stored archive back as bytes (used by tests and the CLI). */
 export async function readStoredArchive(home, name) {
   const root = dpkRoot(home)
-  const matches = matchEntries((await readIndex(root)).entries, name)
-  if (matches.length === 0) return undefined
-  const entry = matches[matches.length - 1]
+  const entry = latestEntry((await readIndex(root)).entries, name)
+  if (entry === undefined) return undefined
   const bytes = await readFile(join(storeDir(root, entry.digest), 'dpk.json'))
   return { entry, manifest: JSON.parse(bytes.toString('utf8')) }
 }

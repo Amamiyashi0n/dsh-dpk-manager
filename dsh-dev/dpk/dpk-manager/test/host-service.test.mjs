@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 import { createDpkRemoteService, REMOTE_NAMESPACE } from '../host-service.js'
 
@@ -37,4 +40,29 @@ test('host service registers the structural Typert source-mode contract', () => 
   )
   assert.equal(Object.isFrozen(descriptor), true)
   assert.equal(Object.isFrozen(descriptor.methods), true)
+})
+
+test('managed ranks versions numerically, not by ledger order', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dpk-home-'))
+  const root = join(home, 'dpk')
+  await mkdir(root, { recursive: true })
+  // Ledger order is insertion order; '2.5.9' is lexically the greatest and
+  // appended last, so a last-row-wins read reports the wrong version.
+  await writeFile(join(root, 'index.json'), `${JSON.stringify({
+    version: 1,
+    entries: [
+      { name: 'some-pkg', version: '2.5.37', digest: 'b', installedAt: '', source: '', profiles: [], path: '' },
+      { name: 'some-pkg', version: '2.5.9', digest: 'a', installedAt: '', source: '', profiles: [], path: '' },
+    ],
+  }, undefined, 2)}\n`)
+
+  const ctx = {
+    provide() {},
+    async get() { return undefined },
+  }
+  const service = createDpkRemoteService(ctx, { home })
+  const listed = await service.managed()
+  assert.equal(listed.entries.length, 1)
+  assert.equal(listed.entries[0].version, '2.5.37')
+  assert.equal(listed.entries[0].digest, 'b')
 })
