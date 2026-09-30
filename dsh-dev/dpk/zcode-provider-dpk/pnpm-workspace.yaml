@@ -1,5 +1,5 @@
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true
 # Dev-time peer wiring for this standalone plugin.
 #
 # The @deepseek-ai/dsh-client-ui-* peers are not fully published: resolving
