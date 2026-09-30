@@ -21,7 +21,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { runDpkAction } from './lib/actions.mjs'
 import { packDirectory } from './lib/pack.mjs'
-import { forgetProfile, matchEntries, readIndex, removeStoreDir, storeDir } from './lib/store.mjs'
+import { forgetProfile, matchEntries, readIndex, removeStoreDir, storeDir, defaultDshHome} from './lib/store.mjs'
 import { dpkRoot } from './lib/store.mjs'
 
 /** Wire namespace: the browser calls `ctx.remote.dpk.<method>`. */
@@ -60,7 +60,7 @@ function markRemote(prototype, methodName) {
  * @returns the service instance registered as `dpk` in the current plugin fiber.
  */
 export function createDpkRemoteService(ctx, config = {}) {
-  const home = config.home ?? process.env.DSH_HOME
+  const home = config.home ?? defaultDshHome()
 
   class DpkRemoteService {
     /** Packages this assistant installed locally, joined with what the profile really holds. */

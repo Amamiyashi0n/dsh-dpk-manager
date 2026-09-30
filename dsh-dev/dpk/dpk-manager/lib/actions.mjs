@@ -14,7 +14,7 @@ import { resolve } from 'node:path'
 import { archiveFileName, packDirectory } from './pack.mjs'
 import { describeManifest, verifyArchive } from './verify.mjs'
 import { installArchive } from './install.mjs'
-import { dpkRoot, matchEntries, readIndex, storeDir } from './store.mjs'
+import { dpkRoot, matchEntries, readIndex, storeDir, defaultDshHome} from './store.mjs'
 
 /** Actions the tool and CLI expose. */
 export const DPK_ACTIONS = ['inspect', 'verify', 'pack', 'install', 'list', 'which']
@@ -56,7 +56,7 @@ function summarise(result) {
  * @throws {DpkActionError} for a caller mistake; archive/package errors otherwise.
  */
 export async function runDpkAction(action, args = {}, context = {}) {
-  const home = context.home ?? process.env.DSH_HOME
+  const home = context.home ?? defaultDshHome()
 
   switch (action) {
     case 'inspect': {

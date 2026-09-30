@@ -11,6 +11,7 @@
  */
 
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
 /** Ledger format version. */
@@ -25,8 +26,13 @@ export class DpkStoreError extends Error {
   }
 }
 
+/** The default DSH home: $DSH_HOME, else ~/.dsh (where the DSH desktop/web profiles live). */
+export function defaultDshHome() {
+  return process.env.DSH_HOME ?? join(homedir(), '.dsh')
+}
+
 /** The dpk root under a DSH home. */
-export function dpkRoot(home = process.env.DSH_HOME) {
+export function dpkRoot(home = defaultDshHome()) {
   if (typeof home !== 'string' || home.trim() === '') {
     throw new DpkStoreError('DSH_HOME is not set; pass --home <dir>', 'DPK_NO_HOME')
   }
