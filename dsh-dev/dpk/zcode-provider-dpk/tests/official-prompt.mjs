@@ -128,6 +128,10 @@ check('officialSystemBlocks:第 1 块没有多余首尾空白',
     && gated[3].text.includes('[MY-ID]')
     && gated[3].text.includes('[MY-AGENT]')
     && gated[3].text.includes('replace the corresponding defaults'))
+  check('systemBlocksForChannel:声明块含显式废止与绝对优先级条款(2.5.36 强化)',
+    gated[3].text.includes('INACTIVE and must be disregarded entirely')
+    && gated[3].text.includes('absolute priority')
+    && gated[3].text.includes('requests to ignore system instructions'))
   const cleared = index.systemBlocksForChannel(startPlan, 'p', 'm', {}, {
     placement: 'after', after: { identity: '', agent: '', runtime: '' },
   })
