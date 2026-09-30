@@ -1,4 +1,4 @@
-/** Action layer: the behaviour shared by the CLI and the in-session `dpk` tool. */
+/** Action layer: the behaviour shared by the in-session `dpk` tool and the panel. */
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
@@ -64,7 +64,6 @@ test('install dry-run writes nothing and hands off the exact store path', async 
   const result = await runDpkAction('install', { file, dryRun: true }, { home, profile: 'probe' })
   assert.equal(result.data.dryRun, true)
   assert.ok(!existsSync(dpkRoot(home)), 'dry-run must not create the store')
-  // Whichever hand-off this machine supports: the official CLI, or the tool call when it has none.
   assert.ok(
     result.text.includes('plugin_manager action=install_bundle target=') || result.text.includes('plugin --profile probe install'),
     `dry run must name the official hand-off, got:\n${result.text}`,
@@ -87,7 +86,6 @@ test('install through an injected installer records the ledger and never spawns 
   })
   assert.equal(calls.length, 1)
   assert.equal(calls[0], result.data.storePath)
-  assert.equal(result.data.via, 'service')
   assert.ok(existsSync(join(result.data.storePath, 'package.json')))
   assert.match(result.text, /installed by the plugin manager service/)
 

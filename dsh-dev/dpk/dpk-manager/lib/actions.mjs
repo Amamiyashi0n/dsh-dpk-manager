@@ -1,9 +1,9 @@
 /**
  * The `dpk` actions, independent of the tool registration layer.
  *
- * Keeping the behaviour here means the same code serves the CLI
- * (`dpk install …`) and the in-session `dpk` tool, and that both are testable
- * without a Harness runtime.
+ * Keeping the behaviour here means the same code serves the in-session `dpk`
+ * tool and the Plugins-page panel, and that both are testable without a
+ * Harness runtime.
  *
  * @module dpk/lib/actions
  */
@@ -16,7 +16,7 @@ import { describeManifest, verifyArchive } from './verify.mjs'
 import { installArchive } from './install.mjs'
 import { dpkRoot, matchEntries, readIndex, storeDir, defaultDshHome} from './store.mjs'
 
-/** Actions the tool and CLI expose. */
+/** Actions the in-session tool exposes. */
 export const DPK_ACTIONS = ['inspect', 'verify', 'pack', 'install', 'list', 'which']
 
 /** A caller mistake: reported as text, never as a stack trace. */
@@ -51,7 +51,7 @@ function summarise(result) {
  * @param args - action arguments (`file`, `directory`, `output`, `name`,
  * `profile`, `dryRun`, `force`, `keepArchive`).
  * @param context - `{ home, profile, installer, log }`; `installer(packageDir)`
- * replaces the CLI hand-off (the in-session tool passes the plugin manager).
+ * is the official plugin manager service every caller passes.
  * @returns `{ action, text, data }`.
  * @throws {DpkActionError} for a caller mistake; archive/package errors otherwise.
  */
@@ -135,11 +135,9 @@ export async function runDpkAction(action, args = {}, context = {}) {
       ]
       if (result.dryRun === true) {
         lines.push('dry-run  nothing was written')
-        lines.push(result.command === null
-          ? `next     plugin_manager action=install_bundle target=${result.packageDir}`
-          : `next     ${result.command.join(' ')}`)
+        lines.push(`next     plugin_manager action=install_bundle target=${result.packageDir}`)
       } else {
-        lines.push(`profile  ${result.profile} (installed by ${result.via === 'service' ? 'the plugin manager service' : 'DSH'})`)
+        lines.push(`profile  ${result.profile} (installed by the plugin manager service)`)
         if (!result.created) lines.push('reuse    this digest was already in the store')
       }
       return {
@@ -153,8 +151,6 @@ export async function runDpkAction(action, args = {}, context = {}) {
           profile: result.profile,
           dryRun: result.dryRun === true,
           created: result.created,
-          via: result.via,
-          command: result.command,
         },
       }
     }

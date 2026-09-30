@@ -19,7 +19,7 @@ export function apply(ctx) {
     name: 'dpk-hello',
     description: 'Smoke test installed from a .dpk archive by the dpk tool. Confirms the package was unpacked, selected as a bundle, and loaded.',
     source: 'custom',
-    content: '# dpk-hello\n\nA `.dpk` archive was verified, unpacked into the local store, installed through the DSH plugin CLI, and loaded.\n',
+    content: '# dpk-hello\n\nA `.dpk` archive was verified, unpacked into the local store, installed through the official plugin manager service, and loaded.\n',
   }))
   ctx.logger?.info?.('dpk-hello: registered the dpk smoke-test skill')
 }

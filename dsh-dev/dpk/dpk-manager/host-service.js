@@ -181,7 +181,7 @@ export function createDpkRemoteService(ctx, config = {}) {
   return service
 }
 
-/** Read a stored archive back as bytes (used by tests and the CLI). */
+/** Read a stored archive back as bytes (used by tests). */
 export async function readStoredArchive(home, name) {
   const root = dpkRoot(home)
   const entry = latestEntry((await readIndex(root)).entries, name)

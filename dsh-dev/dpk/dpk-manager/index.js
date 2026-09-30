@@ -102,12 +102,12 @@ export function apply(ctx, config = {}) {
 
   // The browser half (import / export / uninstall / provenance on the Plugins
   // page) talks to this namespace. A missing protocol package degrades to the
-  // CLI and the tool, never to a failed bundle.
+  // in-session tool, never to a failed bundle.
   const remote = tryRemoteService(ctx, config)
   if (remote === undefined) {
     ctx.logger?.warn?.(
       `${name}: the Web UI half is unavailable (${remoteFailure ?? 'unknown reason'});`
-      + ' the dpk CLI and the dpk tool keep working.',
+      + ' the in-session dpk tool keeps working.',
     )
   } else {
     ctx.logger?.info?.(`${name}: remote namespace "${REMOTE_NAMESPACE}" is available to the Plugins page`)
@@ -118,8 +118,8 @@ export function apply(ctx, config = {}) {
 let remoteFailure
 
 /**
- * Build the remote service without ever failing the bundle: the tool and the
- * CLI must survive a Host that cannot host the browser half.
+ * Build the remote service without ever failing the bundle: the in-session
+ * tool must survive a Host that cannot host the browser half.
  */
 function tryRemoteService(ctx, config) {
   try {
