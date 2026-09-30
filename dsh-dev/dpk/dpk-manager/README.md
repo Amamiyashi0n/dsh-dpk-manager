@@ -1,6 +1,6 @@
 # DSH 安装包管理助手（dpk）
 
-`@local/dsh-package-manager` —— 把**一个标准 DSH 包目录**打包成单个 `.dpk` 文件（本质是 zip），
+`dsh-dpk-manager` —— 把**一个标准 DSH 包目录**打包成单个 `.dpk` 文件（本质是 zip），
 并在本地可靠地安装它。它是一个**标准 DSH bundle**（`dsh.bundle.patch` + 中文标题的插件卡片 +
 图标），同时保留独立的 `dpk` 命令行：
 

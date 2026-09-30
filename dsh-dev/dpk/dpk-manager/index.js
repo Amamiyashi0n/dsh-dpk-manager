@@ -15,14 +15,14 @@
  * arrives through `ctx` (services) or is defined locally, which also keeps the
  * package self-contained enough to travel as a `.dpk`.
  *
- * @module @local/dsh-package-manager
+ * @module dsh-dpk-manager
  */
 
 import { DPK_ACTIONS, runDpkAction } from './lib/actions.mjs'
 import { REMOTE_NAMESPACE, createDpkRemoteService } from './host-service.js'
 
 /** Cordis plugin name. */
-export const name = 'dsh-package-manager'
+export const name = 'dsh-dpk-manager'
 /** Tool registry the agent-facing tool registers into. */
 export const inject = ['tools']
 

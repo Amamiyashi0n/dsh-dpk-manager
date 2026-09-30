@@ -16,7 +16,7 @@ test('client mounts its local Remote contribution before reading the namespace',
   }
   vm.runInNewContext(source, { window })
 
-  assert.equal(registration.id, '@local/dsh-package-manager')
+  assert.equal(registration.id, 'dsh-dpk-manager')
   const plugin = registration.factory((name) => {
     if (name === 'react') return { createElement() {} }
     assert.equal(name, '@deepseek-ai/dsh-client-ui-primitives')
@@ -78,7 +78,7 @@ test('client mounts its local Remote contribution before reading the namespace',
 
   await plugin.apply(ctx)
   assert.deepEqual([...accessed].sort(), ['locale', 'remote', 'slots'])
-  assert.equal(contribution.package, '@local/dsh-package-manager')
+  assert.equal(contribution.package, 'dsh-dpk-manager')
   assert.deepEqual(
     [...contribution.descriptors].map(value => [value.namespace, value.method, value.parameters.length]),
     [

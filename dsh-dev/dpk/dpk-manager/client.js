@@ -11,7 +11,7 @@
  */
 
 window.__ModuleLoader__.load({
-  id: '@local/dsh-package-manager',
+  id: 'dsh-dpk-manager',
   factory(require) {
     const React = require('react')
     const { IconArchiveOutlineRegular } = require('@deepseek-ai/dsh-client-ui-primitives')
@@ -81,14 +81,14 @@ window.__ModuleLoader__.load({
 
     const requestCodec = method => ({
       mode: 'strict',
-      typeSymbol: `@local/dsh-package-manager#${method}Request`,
+      typeSymbol: `dsh-dpk-manager#${method}Request`,
       // The Client carrier forwards JSON values unchanged. The factory is kept
       // for the strict generated-descriptor contract and is never materialized
       // by this source-only contribution.
       create: () => ({ parse: value => value }),
     })
     const descriptor = (method, parameter) => ({
-      id: `@local/dsh-package-manager#dpk/${method}`,
+      id: `dsh-dpk-manager#dpk/${method}`,
       service: 'dpk',
       namespace: 'dpk',
       method,
@@ -102,7 +102,7 @@ window.__ModuleLoader__.load({
       result: { mode: 'src-json' },
     })
     const DPK_REMOTE = {
-      package: '@local/dsh-package-manager',
+      package: 'dsh-dpk-manager',
       descriptors: [
         descriptor('managed'),
         descriptor('importArchive', 'input'),

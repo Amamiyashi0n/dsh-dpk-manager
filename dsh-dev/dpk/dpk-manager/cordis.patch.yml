@@ -1,4 +1,4 @@
-# Bundle layer for @local/dsh-package-manager（DSH 安装包管理助手）：
+# Bundle layer for dsh-dpk-manager（DSH 安装包管理助手）：
 # 一行 Host 插件，注册面向 agent 的 `dpk` 工具。
 #
 # dpk 工具的动作：inspect / verify / pack / install / list / which。
@@ -10,6 +10,6 @@
 # 可选配置：
 #   home: 本地 dpk 仓库根（默认 $DSH_HOME，即 <home>/dpk）。
 - insert:
-    - id: dsh-package-manager
-      name: '@local/dsh-package-manager'
+    - id: dsh-dpk-manager
+      name: 'dsh-dpk-manager'
       config: {}
