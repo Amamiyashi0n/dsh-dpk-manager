@@ -27,7 +27,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const providers = JSON.parse(readFileSync(`${process.env.USERPROFILE}/.dsh/zcode-provider/providers.json`, 'utf-8'))
 
 // 官方三段从插件构建产物读取(与源码常量逐字一致,避免双份维护)
-const lib = await import(pathToFileURL(join(here, '..', 'dpk', 'zcode-provider', 'lib', 'official-prompt.js')).href)
+const lib = await import(pathToFileURL(join(here, '..', '..', 'dsh-dev', 'dpk', 'zcode-provider-dpk', 'lib', 'official-prompt.js')).href)
 const ID = lib.OFFICIAL_SYSTEM_IDENTITY
 const AGENT = lib.OFFICIAL_SYSTEM_AGENT_PROMPT
 const RUNTIME_TPL = lib.OFFICIAL_SYSTEM_RUNTIME_PROMPT

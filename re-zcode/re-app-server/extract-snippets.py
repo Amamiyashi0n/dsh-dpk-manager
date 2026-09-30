@@ -6,7 +6,7 @@ of the bundle with a header documenting byte offsets and the symbols inside.
 """
 import os
 
-BUNDLE = r'C:\Users\Amamiya\Dev-ws-next\repos\zcode-dev\zcode-unpacked\resources\glm\zcode.cjs'
+BUNDLE = r'C:\Users\Amamiya\Dev-ws-next\repos\zcode-dev\re-zcode\zcode-unpacked\resources\glm\zcode.cjs'
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'snippets')
 
 REGIONS = [

@@ -13,7 +13,7 @@ import { createHash } from 'node:crypto'
 import { resolve } from 'node:path'
 
 const nodePath = 'C:\\Program Files\\nodejs\\node.exe'
-const cliPath = 'C:\\Users\\Amamiya\\Dev-ws-next\\repos\\zcode-dev\\zcode-unpacked\\resources\\glm\\zcode.cjs'
+const cliPath = 'C:\\Users\\Amamiya\\Dev-ws-next\\repos\\zcode-dev\\re-zcode\\zcode-unpacked\\resources\\glm\\zcode.cjs'
 const cwd = 'C:\\Users\\Amamiya\\Dev-ws-next\\repos\\zcode-dev'
 const waitMs = Number(process.argv[2] || 3000)
 const providers = process.argv.slice(3).length
@@ -38,7 +38,7 @@ const env = {
     ZCODE_APP_VERSION: '3.14.3',
     ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: 'C:/Users/Amamiya/.zcode/v2/runtime/provider/windows-x86_64/3.14.3/endpoint-78d7c3bef4024722642626fe3669a799/zcode-builtin.json',
   } : {}),
-  ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: 'C:\\Users\\Amamiya\\Dev-ws-next\\repos\\zcode-dev\\zcode-unpacked\\resources\\config\\provider\\zcode-builtin.json',
+  ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: 'C:\\Users\\Amamiya\\Dev-ws-next\\repos\\zcode-dev\\re-zcode\\zcode-unpacked\\resources\\config\\provider\\zcode-builtin.json',
   ZCODE_PERSONAL_PROVIDER_CONFIG_FILE: 'C:\\Users\\Amamiya\\.zcode\\v2\\provider_config.json',
 }
 

@@ -4,18 +4,29 @@
 
 # Local investigation and runtime output
 /.debug/
-/.zcode-analysis/
-/.zcode-rs/
-/.artifacts/
 /.tmp/
 /.cache/
 /.sessions/
 /.storages/
 
-# Extracted/vendor application trees
-/asar-extracted/
-/zcode-unpacked/
+# Nested upstream repositories (own .git; not part of this repo)
+/dsh-dev/deepseek-harness/
+/opencode/
+/re-zcode/ZCode-open/
+
+# Local reverse-engineering notes and extracted/vendor trees (2026-09-29 reorg)
+/re-zcode/zcode-analysis/
+/re-zcode/asar-extracted/
+/re-zcode/artifacts/
+/re-zcode/zcode-unpacked/
+/re-zcode/.zcode-rs/
+/re-zcode/tui-build/
+/re-zcode/zcode-cli/
 /ZCode-*.exe
+
+# tsc mirrored build outputs (tracked copies are lib/*.js and lib/types/*.d.ts)
+/dsh-dev/dpk/zcode-provider-dpk/lib/src/
+/dsh-dev/dpk/zcode-provider-dpk/lib/types/src/
 
 # Generated package archives and local package-manager state
 /**/*.dpk
@@ -33,7 +44,7 @@
 /**/*.env.*
 /**/*.log
 /.debug/**/credentials*.json
-/.zcode-analysis/**/credentials*.json
+/re-zcode/zcode-analysis/**/credentials*.json
 /**/.dsh/credentials*.json
 /**/.dsh/telemetry-state.json
 /.DS_Store

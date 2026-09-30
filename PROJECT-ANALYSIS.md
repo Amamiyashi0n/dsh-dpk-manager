@@ -2,9 +2,15 @@
 
 > **⚠️ 状态更新(2026-09-29 晚)**:本报告为当日早间快照,此后主要变化——
 > ① MSYS2 已整体删除,全部 Node/npm/pnpm 迁至传统 Node(`C:\Program Files\nodejs`);
-> ② 新增 `re-app-server/`(官方 app-server 白盒逆向工作区,README 含宿主剧本/事实链/前缀门 §0.7);
+> ② 新增 `re-zcode/re-app-server/`(官方 app-server 白盒逆向工作区,README 含宿主剧本/事实链/前缀门 §0.7);
 > ③ 主线插件已演进到 `zcode-provider@2.5.34`(引擎会话委托、通道标签、提示词前置注入/后置覆写、
-> 前缀门等效覆写;详见 `dpk/zcode-provider/README.md`);④ `launcher/dsh.cmd` 已固定传统 Node。
+> 前缀门等效覆写;详见 `dsh-dev/dpk/zcode-provider-dpk/README.md`);④ `dsh-dev/launcher/dsh.cmd` 已固定传统 Node;
+> ⑤ 当日晚间重组:所有 ZCode 相关目录(插件工程、逆向证据、官方产物三层、参考源码、Rust 复刻线)
+> 统一收纳至 `re-zcode/`(索引见 `re-zcode/README.md`),`dsh-zcode-bridge/` 已删除,
+> 根目录仅保留 DSH 宿主(`dsh-dev/deepseek-harness/`、`dsh-dev/launcher/`)、`opencode/` 参考仓库与 `.debug/` 草稿区;
+> ⑥ 主线插件工程最终落位 `dsh-dev/dpk/zcode-provider-dpk/`(DSH 开发区,与逆向区 `re-zcode/` 分离);
+> ⑦ DSH 宿主与启动器一并迁入 `dsh-dev/`(`dsh-dev/deepseek-harness/`、`dsh-dev/launcher/`),
+> 根目录最终仅剩 `re-zcode/`、`dsh-dev/`、`opencode/`、`.debug/` 与本文档。
 > 以下原文作为历史盘点保留。
 
 > 只读盘点，生成于本次会话。工作区根目录无 Git 仓库（只有一份为“未来工作区仓库”准备的 `.gitignore`），
@@ -26,20 +32,20 @@
 
 | 目录 | 性质 | 规模(含全部内容) | 作用 | 状态 |
 |---|---|---|---|---|
-| `deepseek-harness/` | 上游 Git 仓库 | 4.71 GB | DeepSeek Harness 本体（宿主）。`master`，HEAD=`00102833df`，tag `dsh-v0.1.7-alpha.2`，与 origin 齐平，**8 个文件未提交** | **活跃**（有本地改动） |
-| `dpk/zcode-provider/` | 自研源码 | 55 MB（多为 node_modules） | 主线交付物：白盒 ZCode-compatible DSH 插件 `zcode-provider@2.5.26` | **活跃主线** |
-| `zcode-cli-rs/` | 自研源码（Rust） | 411 MB（多为 `target/`） | Rust 复刻：ConPTY 驱动 → 原生 agent → 纯 Rust 引擎+TUI | **活跃**（未提交） |
-| `tui-build/` | 自研/抽取源码 | 131 MB | ZCode CLI/TUI 前端的独立 TypeScript 可构建副本（`@zcode/{tui,shared,contracts,i18n,model-option-map}`） | **活跃** |
-| `dpk/zcode-provider/dist/` | 构建产物 | 11 MB | 40 个插件发布包 `2.0.0`→`2.5.34`（2026-09-29 起统一收纳于 `dist/`） | **活跃** |
-| `launcher/` | 脚本 | 0.1 MB | Windows 单入口 `dsh.cmd`（提权 + 固定 51080 + MSYS2 native 修复） | **活跃** |
-| `.zcode-analysis/` | 逆向证据 | 19.8 MB / 430 文件 | 主分析报告（1316 行）+ 2 篇深挖 + 复核脚本 + 原始抓包/提取件 | **活跃** |
+| `dsh-dev/deepseek-harness/` | 上游 Git 仓库 | 4.71 GB | DeepSeek Harness 本体（宿主）。`master`，HEAD=`00102833df`，tag `dsh-v0.1.7-alpha.2`，与 origin 齐平，**8 个文件未提交** | **活跃**（有本地改动） |
+| `dsh-dev/dpk/zcode-provider-dpk/` | 自研源码 | 55 MB（多为 node_modules） | 主线交付物：白盒 ZCode-compatible DSH 插件 `zcode-provider@2.5.26` | **活跃主线** |
+| `re-zcode/zcode-cli-rs/` | 自研源码（Rust） | 411 MB（多为 `target/`） | Rust 复刻：ConPTY 驱动 → 原生 agent → 纯 Rust 引擎+TUI | **活跃**（未提交） |
+| `re-zcode/tui-build/` | 自研/抽取源码 | 131 MB | ZCode CLI/TUI 前端的独立 TypeScript 可构建副本（`@zcode/{tui,shared,contracts,i18n,model-option-map}`） | **活跃** |
+| `dsh-dev/dpk/zcode-provider-dpk/dist/` | 构建产物 | 11 MB | 40 个插件发布包 `2.0.0`→`2.5.34`（2026-09-29 起统一收纳于 `dist/`） | **活跃** |
+| `dsh-dev/launcher/` | 脚本 | 0.1 MB | Windows 单入口 `dsh.cmd`（提权 + 固定 51080 + MSYS2 native 修复） | **活跃** |
+| `re-zcode/zcode-analysis/` | 逆向证据 | 19.8 MB / 430 文件 | 主分析报告（1316 行）+ 2 篇深挖 + 复核脚本 + 原始抓包/提取件 | **活跃** |
 | `.debug/` | 实验/草稿 | 249 MB / 1716 文件 | 抓包 Hook、探针、代码生成补丁脚本、46 个 `tui-probe-*` 抓帧、构建日志 | **实验**（内含 3 个可复用件） |
-| `zcode-cli/` | 抽取产物 | 250 MB | 从官方安装包提取的独立 CLI 运行时（`glm/zcode.cjs` 14.8 MB + 15 插件 + rg/ugrep/cua） | 半归档（被 zcode-unpacked 取代） |
-| `ZCode-open/` | 上游 Git 仓库 | 393 MB | 官方开源的 ZCode 源码（`zai-org/ZCode`，Apache-2.0，v3.14.0，仅 2 个提交） | 参考（clean） |
+| `re-zcode/zcode-cli/` | 抽取产物 | 250 MB | 从官方安装包提取的独立 CLI 运行时（`glm/zcode.cjs` 14.8 MB + 15 插件 + rg/ugrep/cua） | 半归档（被 re-zcode/zcode-unpacked 取代） |
+| `re-zcode/ZCode-open/` | 上游 Git 仓库 | 393 MB | 官方开源的 ZCode 源码（`zai-org/ZCode`，Apache-2.0，v3.14.0，仅 2 个提交） | 参考（clean） |
 | `opencode/` | 上游 Git 仓库 | 654 MB | 第三方开源 agent（`anomalyco/opencode` v1.18.32，branch `dev`） | 参考（clean） |
-| `asar-extracted/` | 归档 | 311 MB | 官方桌面 3.14.1 的 asar 解包（main/host/preload/renderer/scheduler） | 归档 |
-| `zcode-unpacked/` | 归档 | 731 MB | 官方桌面 Electron 安装目录（`ZCode.exe` 213 MB、app.asar 328 MB） | 归档 |
-| `.artifacts/official/` | 归档 | 170 MB | 官方安装包原件 `ZCode-3.14.1-win-x64.exe` | 归档 |
+| `re-zcode/asar-extracted/` | 归档 | 311 MB | 官方桌面 3.14.1 的 asar 解包（main/host/preload/renderer/scheduler） | 归档 |
+| `re-zcode/zcode-unpacked/` | 归档 | 731 MB | 官方桌面 Electron 安装目录（`ZCode.exe` 213 MB、app.asar 328 MB） | 归档 |
+| `re-zcode/artifacts/official/` | 归档 | 170 MB | 官方安装包原件 `ZCode-3.14.1-win-x64.exe` | 归档 |
 | `dsh-zcode-bridge/` | 早期实现 | ~4 KB | 第一代 DSH 桥接插件（90 行），未接入 profile | **已删除（2026-09-29）** |
 | `src/`（`src/agent`、`src/tools`） | 空目录 | 0 | 无内容残留 | 死目录 |
 
@@ -50,18 +56,18 @@
 ## 2. 结构关系：四层
 
 ```
-[第四层 参考源码]   ZCode-open(官方开源) 、opencode(第三方) 、tui-build(前端副本)
+[第四层 参考源码]   re-zcode/ZCode-open(官方开源) 、opencode(第三方) 、re-zcode/tui-build(前端副本)
                        │ 用来对照协议、字段、TUI 规格
                        ▼
-[第三层 逆向资产]   .artifacts(安装包) → zcode-unpacked(解包) → asar-extracted(asar 解出)
-                    zcode-cli(提取的独立 CLI)  .zcode-analysis(证据/报告)  .debug(探针)
+[第三层 逆向资产]   re-zcode/artifacts(安装包) → re-zcode/zcode-unpacked(解包) → re-zcode/asar-extracted(asar 解出)
+                    zcode-cli(提取的独立 CLI)  re-zcode/zcode-analysis(证据/报告)  .debug(探针)
                        │ 提取线格式：头、签名、票据、验证码、权益端点
                        ▼
 [第二层 自研接入]   zcode-provider 插件(主线) ← 演进自 → zcode-rs(Rust 引擎+TUI)
-                    zcode-cli(打补丁的官方 bundle) 、zcode-cli-rs(v0.1/0.2) 、zcode-bridge(最早期)
+                    zcode-cli(打补丁的官方 bundle) 、re-zcode/zcode-cli-rs(v0.1/0.2) 、zcode-bridge(最早期)
                        │ DPK 打包 + profile 安装
                        ▼
-[第一层 宿主]       DeepSeek Harness(deepseek-harness) + launcher/dsh.cmd + ~/.dsh profile
+[第一层 宿主]       DeepSeek Harness(dsh-dev/deepseek-harness) + dsh-dev/launcher/dsh.cmd + ~/.dsh profile
                     本会话的 Web GUI 就跑在这一层（127.0.0.1:51080，PID 9088）
 ```
 
@@ -69,7 +75,7 @@
 
 ---
 
-## 3. 主线交付物：`dpk/zcode-provider`（v2.5.26）
+## 3. 主线交付物：`dsh-dev/dpk/zcode-provider-dpk`（v2.5.26）
 
 **定位**：一个可独立打包成 DPK 的 DSH 插件，在包内以可读 TS/JS **完整实现** ZCode 兼容的模型协议与账号权益接入；**运行时不启动也不依赖 ZCode 主程序**。
 
@@ -97,11 +103,11 @@ DSH UI / history / tools / agent loop
 
 **测试**：`tests/` 20 个 `.mjs`，含真实 Cordis Loader 组合、协议等价、签名、验证码桥接、SSE tool-call、独立包边界扫描；报告记录全套件用例数（equivalence / cred 13 / route 19 / usage 79 / offpeak 110 / prompt 30 / captcha 68 / wire 62 / loader 23）。
 
-**发布形态**：`dpk/zcode-provider/dist/zcode-provider-2.5.26.dpk` → 用 `.debug/dsh-package-manager-1.1.1/dpk.mjs pack|verify|install --profile web` 安装到 `~/.dsh/profiles/web`；安装记录在 `~/.dsh/dpk/index.json`（含 1.4.0→2.5.26 共 40+ 次安装的完整历史）。
+**发布形态**：`dsh-dev/dpk/zcode-provider-dpk/dist/zcode-provider-2.5.26.dpk` → 用 `.debug/dsh-package-manager-1.1.1/dpk.mjs pack|verify|install --profile web` 安装到 `~/.dsh/profiles/web`；安装记录在 `~/.dsh/dpk/index.json`（含 1.4.0→2.5.26 共 40+ 次安装的完整历史）。
 
 **当前运行期接线**（`~/.dsh/profiles/web/cordis.patch.yml`）
 - 路由：`builtin:bigmodel-coding-plan`（`open.bigmodel.cn/api/anthropic`，GLM-5.3/5.3-Flash/5.2）、`builtin:bigmodel-start-plan`（`zcode.z.ai/api/v1/zcode-plan/anthropic`）、以及两条第三方路由（deepseek、agnes）。
-- `appServer`：node=`msys64/clang64/bin/node.exe`，cliPath=`zcode-unpacked/resources/glm/zcode.cjs`，storageDir=`~/.zcode/v2`。
+- `appServer`：node=`msys64/clang64/bin/node.exe`，cliPath=`re-zcode/zcode-unpacked/resources/glm/zcode.cjs`，storageDir=`~/.zcode/v2`。
 - ⚠️ 该文件以**明文**保存了解密后的 `apiKey`（Coding Plan key、Start Plan JWT、DeepSeek/Agnes key）。插件 README 明确说“凭证不写入 DPK”，但 profile patch 里确实存在明文——两者是不同层面，但值得注意。
 
 ---
@@ -111,17 +117,17 @@ DSH UI / history / tools / agent loop
 | 代 | 位置 | 形态 | 现状 |
 |---|---|---|---|
 | ① 桥接 | `dsh-zcode-bridge/index.ts`（90 行） | DSH Cordis 插件，直接读 `~/.zcode/v2/config.json`，复用 `DeepSeekAdapter` 注册路由 | 未接入任何 profile，被②取代（目录已于 2026-09-29 删除） |
-| ② 补丁 | `zcode-cli/` | 从官方安装包提取 CLI 后打 2 处 patch + 注入 `ZCODE_APP_VERSION`，使**默认出站的归因头与官方桌面一致**（`cli`→`electron`） | 可用但依赖官方 bundle；已被 `zcode-unpacked` 版本覆盖 |
-| ③ Rust | `zcode-cli-rs/` | v0.1 ConPTY 驱动抓帧/渲染；v0.2 原生 agent 核心（双协议 SSE、bash/read/write/edit/glob/grep、jsonl 会话、复用桌面凭证）；`src/bin/zcode-rs.rs`（**83 KB，未提交**）= 纯 Rust 引擎 + 全屏 TUI（无 Bun、无 `zcode.cjs`），实现 AES-256-GCM 凭证解密 → Provider 注册 → 双协议直调 → TUI（规格取自 `@zcode/tui`） | **活跃**，`target/release/zcode-rs.exe` 已构建 |
-| ④ 插件 | `dpk/zcode-provider/` | 成熟、可发布、有测试与权益面板的 DSH 插件（本文 §3） | **主线** |
+| ② 补丁 | `re-zcode/zcode-cli/` | 从官方安装包提取 CLI 后打 2 处 patch + 注入 `ZCODE_APP_VERSION`，使**默认出站的归因头与官方桌面一致**（`cli`→`electron`） | 可用但依赖官方 bundle；已被 `re-zcode/zcode-unpacked` 版本覆盖 |
+| ③ Rust | `re-zcode/zcode-cli-rs/` | v0.1 ConPTY 驱动抓帧/渲染；v0.2 原生 agent 核心（双协议 SSE、bash/read/write/edit/glob/grep、jsonl 会话、复用桌面凭证）；`src/bin/zcode-rs.rs`（**83 KB，未提交**）= 纯 Rust 引擎 + 全屏 TUI（无 Bun、无 `zcode.cjs`），实现 AES-256-GCM 凭证解密 → Provider 注册 → 双协议直调 → TUI（规格取自 `@zcode/tui`） | **活跃**，`target/release/zcode-rs.exe` 已构建 |
+| ④ 插件 | `dsh-dev/dpk/zcode-provider-dpk/` | 成熟、可发布、有测试与权益面板的 DSH 插件（本文 §3） | **主线** |
 
-补充：`.debug/patch-*.py`（约 20 个）并非改 bundle，而是**代码生成器**，反复重写 `zcode-cli-rs/src/bin/zcode-rs.rs` 与 `dpk/zcode-provider/src/index.ts`（输入面板、MCP、delegate、effort 历史、diff 渲染、快捷键等），配 `.debug/agent-tools.rs`、`.debug/tui-section.rs` 作为片段来源。
+补充：`.debug/patch-*.py`（约 20 个）并非改 bundle，而是**代码生成器**，反复重写 `re-zcode/zcode-cli-rs/src/bin/zcode-rs.rs` 与 `dsh-dev/dpk/zcode-provider-dpk/src/index.ts`（输入面板、MCP、delegate、effort 历史、diff 渲染、快捷键等），配 `.debug/agent-tools.rs`、`.debug/tui-section.rs` 作为片段来源。
 
 ---
 
 ## 5. 逆向证据资产
 
-### `.zcode-analysis/`（完整：248 文件 + 3 子目录）
+### `re-zcode/zcode-analysis/`（完整：248 文件 + 3 子目录）
 - **主报告 `权益差异分析报告.md`**：1316 行、§0–§20，**15 轮对齐记录**（v1.0.0→v1.13.0 命名，对应插件后来的 1.x/2.x）。
   - §0 结论：BigModel 通道**确实在用 Coding Plan 权益**（端点与凭证逐字节等价 E1、归因头对结果无影响 E2、额度计数随调用前进 E3）；「和官方不一样 ⇒ 用不到权益」不成立；真正丢权益的是 Start Plan/off-peak 通道（需阿里云验证码头）。
   - 差异清单 D1–D7：只有 D2（captcha/JWT 通道）当天真丢权益，D1（客户端签名）是将来风险，其余为行为/观感差异。
@@ -138,15 +144,15 @@ DSH UI / history / tools / agent loop
 - ⚠️ 存在敏感文件：`credentials.json.bak-100920`、`dsh-api-key.txt`（本次未读取）。
 
 ### 官方产物三层
-`.artifacts/official/ZCode-3.14.1-win-x64.exe`（原件）→ `zcode-unpacked/`（安装目录，含 `resources/app.asar` 328 MB、`resources/glm/zcode.cjs` 14.79 MB、`config/provider/zcode-builtin.json` 188 KB）→ `asar-extracted/`（`out/{main,host,preload,renderer,scheduler}` + `metadata/build-meta.json`：`appVersion 3.14.1`，`buildCommitId cead36fd`，`buildTime 2026-09-20T07:37:29Z`）。
+`re-zcode/artifacts/official/ZCode-3.14.1-win-x64.exe`（原件）→ `re-zcode/zcode-unpacked/`（安装目录，含 `resources/app.asar` 328 MB、`resources/glm/zcode.cjs` 14.79 MB、`config/provider/zcode-builtin.json` 188 KB）→ `re-zcode/asar-extracted/`（`out/{main,host,preload,renderer,scheduler}` + `metadata/build-meta.json`：`appVersion 3.14.1`，`buildCommitId cead36fd`，`buildTime 2026-09-20T07:37:29Z`）。
 
 ---
 
 ## 6. 参考源码仓库
 
-- **ZCode-open**（`zai-org/ZCode`，Apache-2.0，v3.14.0）：三个表面（Electron 桌面 / Web / 终端 CLI+TUI）共用一套 agent core；pnpm monorepo，`packages/` 14 个包 + `apps/zcode-cli` 内嵌 16 包工作区（turbo）。**注意**：无 `docs/` 目录但被多处配置引用；`@zcode/zcode-cua`（Computer Use）与 `swift-bridge` 是**明确的 fail-closed 占位包**；`packages/stream-animate` 只在 `.gitignore` 中出现；AGENTS.md 明文要求“不自行恢复已移除的模块或内部依赖”；历史被压成 2 个提交（`Initial commit` + `feat: open source`，作者 wuweiqi，2026-09-21）；**仓库内没有统一测试运行器**，只有 4 个测试文件。
+- **re-zcode/ZCode-open**（`zai-org/ZCode`，Apache-2.0，v3.14.0）：三个表面（Electron 桌面 / Web / 终端 CLI+TUI）共用一套 agent core；pnpm monorepo，`packages/` 14 个包 + `apps/zcode-cli` 内嵌 16 包工作区（turbo）。**注意**：无 `docs/` 目录但被多处配置引用；`@zcode/zcode-cua`（Computer Use）与 `swift-bridge` 是**明确的 fail-closed 占位包**；`packages/stream-animate` 只在 `.gitignore` 中出现；AGENTS.md 明文要求“不自行恢复已移除的模块或内部依赖”；历史被压成 2 个提交（`Initial commit` + `feat: open source`，作者 wuweiqi，2026-09-21）；**仓库内没有统一测试运行器**，只有 4 个测试文件。
 - **opencode**（`anomalyco/opencode`，MIT，1.18.32，branch `dev`，Bun+Effect）：CLI/TUI + desktop + web + console + SDK，33 个 `packages/*`。与 ZCode 双向**无代码引用**，属“同赛道参考实现”。
-- **tui-build**：把 ZCode 前端包抽成 npm workspaces（`shared`/`contracts`/`i18n`/`tui`/`model-option-map`）后可独立 `tsc` 构建；`tui/` 内有 ~85 个 `app-*.ts(x)` 与 `SUBAGENTS.md`（TUI 中观察 subagent 的行为契约）。用途推断为：脱离官方 bundle 研究/改造 TUI。
+- **re-zcode/tui-build**：把 ZCode 前端包抽成 npm workspaces（`shared`/`contracts`/`i18n`/`tui`/`model-option-map`）后可独立 `tsc` 构建；`tui/` 内有 ~85 个 `app-*.ts(x)` 与 `SUBAGENTS.md`（TUI 中观察 subagent 的行为契约）。用途推断为：脱离官方 bundle 研究/改造 TUI。
 
 ---
 
@@ -163,13 +169,13 @@ DSH UI / history / tools / agent loop
 | `packages/subprocess/win32-process/src/ffi.ts` | 新增 `uvGetOsfhandleBinding()`：先 `koffi.load(null)`，失败且 win32 时回退 `koffi.load('libnode.dll')` | MSYS2 把 Node 拆成 exe+dll，该导出在 dll 上；否则 Job 进程 spawn 在绑定阶段即失败 |
 | 3 个测试文件 | 同步上述改动（新增 `requireBuiltin()` helper、libnode 分支断言） | 测试对齐 |
 
-**同类的潜在未修问题**（本次盘点发现，未改动）：`packages/boot/config-editor/src/index.ts:5` 仍以值方式导入 `FiberState` 并在第 90 行读取 `FiberState.ACTIVE`。另：仓库内 `rg 51080` 为 0 命中，51080 来自 `launcher/dsh.cmd` 的显式 `--port`（上游默认是 3080）。
+**同类的潜在未修问题**（本次盘点发现，未改动）：`packages/boot/config-editor/src/index.ts:5` 仍以值方式导入 `FiberState` 并在第 90 行读取 `FiberState.ACTIVE`。另：仓库内 `rg 51080` 为 0 命中，51080 来自 `dsh-dev/launcher/dsh.cmd` 的显式 `--port`（上游默认是 3080）。
 
 ---
 
 ## 8. 启动链（当前实际运行形态）
 
-`launcher/dsh.cmd`：校验管理员+High 完整性（必要时 `RunAs` 自提权）→ 固定传统 Node `C:\Program Files\nodejs\node.exe` → `DSH_HOME=%USERPROFILE%\.dsh` → 从 `.debug\dsh-api-key.txt` 取 `DEEPSEEK_API_KEY`（若环境未设）→ `cd` 到工作区根（会话历史按 cwd 分组）→ 停 3080/51080 上的旧实例（只杀命令行含本 checkout `apps\cli\src\bin.ts` 的监听者）→
+`dsh-dev/launcher/dsh.cmd`：校验管理员+High 完整性（必要时 `RunAs` 自提权）→ 固定传统 Node `C:\Program Files\nodejs\node.exe` → `DSH_HOME=%USERPROFILE%\.dsh` → 从 `.debug\dsh-api-key.txt` 取 `DEEPSEEK_API_KEY`（若环境未设）→ `cd` 到工作区根（会话历史按 cwd 分组）→ 停 3080/51080 上的旧实例（只杀命令行含本 checkout `apps\cli\src\bin.ts` 的监听者）→
 
 ```
 node --expose-internals --import <dsh>/node_modules/tsx/dist/esm/index.mjs ^
@@ -194,20 +200,20 @@ node --expose-internals --import <dsh>/node_modules/tsx/dist/esm/index.mjs ^
 
 **安全/合规**
 - `~/.dsh/profiles/web/cordis.patch.yml`、`~/.dsh/zcode-provider/*`、`.debug/credentials.json.bak-100920`、`.debug/dsh-api-key.txt` 中存放**明文/可解密凭证**；工作区 `.gitignore` 只覆盖 `*.env`、部分 `credentials*.json`，未覆盖 DPK 内的 profile patch 副本。
-- `zcode-cli/README.md` 明说做过**归因伪装**（把独立 CLI 伪装成官方桌面 `Z Code@electron`）。这是绕过服务端客户端识别的一层，属灰色地带；`zcode-provider` 的 `official-wire.ts` 延续了同一做法（并已把版本对齐到官方常量）。
-- 工作区内含官方二进制的解包/提取副本（`zcode-unpacked`、`asar-extracted`、`zcode-cli/glm/zcode.cjs`、`.debug/zcode-capture.cjs`）。这些受 ZCode 自身许可与 `NOTICE.md` 约束，不应再分发。
+- `re-zcode/zcode-cli/README.md` 明说做过**归因伪装**（把独立 CLI 伪装成官方桌面 `Z Code@electron`）。这是绕过服务端客户端识别的一层，属灰色地带；`zcode-provider` 的 `official-wire.ts` 延续了同一做法（并已把版本对齐到官方常量）。
+- 工作区内含官方二进制的解包/提取副本（`re-zcode/zcode-unpacked`、`re-zcode/asar-extracted`、`re-zcode/zcode-cli/glm/zcode.cjs`、`.debug/zcode-capture.cjs`）。这些受 ZCode 自身许可与 `NOTICE.md` 约束，不应再分发。
 
 **工程卫生**
-- 版本口径不统一：产物是 **3.14.1**（build `cead36fd`，2026-09-20），而 `official-wire.ts` 自报 **3.14.3**（build `ab4d5e6b`，2026-09-22），本机未找到 3.14.3 安装；`zcode-cli/README.md` 又写 3.14.1；`ZCode-open` 源码是 3.14.0。
-- 重复与残留：`zcode-cli/`（250 MB）已被 `zcode-unpacked/` 取代；`dsh-zcode-bridge/` 已删除；`src/agent`、`src/tools` 为空；`tui-probe-*` 46 个目录、`.zcode-analysis` 里混放 DPK 与源码包边界样例；两套 DSH home（`~/.dsh` 与 `.debug/dsh-runtime`）。
+- 版本口径不统一：产物是 **3.14.1**（build `cead36fd`，2026-09-20），而 `official-wire.ts` 自报 **3.14.3**（build `ab4d5e6b`，2026-09-22），本机未找到 3.14.3 安装；`re-zcode/zcode-cli/README.md` 又写 3.14.1；`re-zcode/ZCode-open` 源码是 3.14.0。
+- 重复与残留：`re-zcode/zcode-cli/`（250 MB）已被 `re-zcode/zcode-unpacked/` 取代；`dsh-zcode-bridge/` 已删除；`src/agent`、`src/tools` 为空；`tui-probe-*` 46 个目录、`re-zcode/zcode-analysis` 里混放 DPK 与源码包边界样例；两套 DSH home（`~/.dsh` 与 `.debug/dsh-runtime`）。
 - 3 个 Rust 二进制（`zcode-cli-rs.exe`、`zcode-rs.exe`、`zcode-cli.exe`、`pty-run.exe`）与 83 KB 单文件 `zcode-rs.rs` 均未提交、无 README 覆盖 `zcode-rs.rs`（README 只写到 v0.2）。
-- `tui-build` 无 README、无 Git 元数据，来源（手写还是从 bundle/asar 重建）无法从仓库内确定。
+- `re-zcode/tui-build` 无 README、无 Git 元数据，来源（手写还是从 bundle/asar 重建）无法从仓库内确定。
 
 **整理建议（按性价比）**
 1. 把 `~/.dsh/profiles/web/cordis.patch.yml` 的明文 key 改成引用插件凭证存储，或把它纳入更严的忽略/加密策略。
 2. 统一版本口径：确定“当前对标的官方桌面版本”，并让 `ZCODE_CLIENT_VERSION`、产物目录名、README 一致。
-3. 给每个 `dpk`/`.debug/dsh-runtime`/`zcode-cli` 明确“归档/可删”标记，把 `zcode-cli/`、空 `src/` 归档或删除（`dsh-zcode-bridge/` 已于 2026-09-29 删除）。
-4. 补 `zcode-cli-rs` 的 v0.3 文档（`zcode-rs.rs` 的架构、构建、与插件的分工），并提交或明确忽略。
+3. 给每个 `dpk`/`.debug/dsh-runtime`/`zcode-cli` 明确“归档/可删”标记，把 `re-zcode/zcode-cli/`、空 `src/` 归档或删除（`dsh-zcode-bridge/` 已于 2026-09-29 删除）。
+4. 补 `re-zcode/zcode-cli-rs` 的 v0.3 文档（`zcode-rs.rs` 的架构、构建、与插件的分工），并提交或明确忽略。
 5. 修掉 `packages/boot/config-editor/src/index.ts:5` 同类 const-enum 值导入（如上游未修）。
 
 ---
@@ -216,14 +222,14 @@ node --expose-internals --import <dsh>/node_modules/tsx/dist/esm/index.mjs ^
 
 | 需要什么 | 去哪里 |
 |---|---|
-| 主结论与 15 轮对齐史 | `.zcode-analysis/权益差异分析报告.md` |
-| 桌面版权益判定细节 | `.zcode-analysis/sub-a/desktop-entitlement.md` |
-| CLI 真实线格式细节 | `.zcode-analysis/sub-b/cli-wire.md` |
-| 插件源码/测试 | `dpk/zcode-provider/src|tests` |
+| 主结论与 15 轮对齐史 | `re-zcode/zcode-analysis/权益差异分析报告.md` |
+| 桌面版权益判定细节 | `re-zcode/zcode-analysis/sub-a/desktop-entitlement.md` |
+| CLI 真实线格式细节 | `re-zcode/zcode-analysis/sub-b/cli-wire.md` |
+| 插件源码/测试 | `dsh-dev/dpk/zcode-provider-dpk/src|tests` |
 | 已安装插件与 profile | `~/.dsh/profiles/web/{package.json,cordis.patch.yml}`、`~/.dsh/dpk/index.json` |
-| 纯 Rust 引擎/TUI | `zcode-cli-rs/src/bin/zcode-rs.rs` |
-| TUI 前端源码副本 | `tui-build/{tui,shared,contracts,i18n,model-option-map}/src` |
-| 官方源码对照 | `ZCode-open/{apps,packages}` |
-| 官方二进制对照 | `zcode-unpacked/resources/{app.asar,glm/zcode.cjs}`、`asar-extracted/out` |
+| 纯 Rust 引擎/TUI | `re-zcode/zcode-cli-rs/src/bin/zcode-rs.rs` |
+| TUI 前端源码副本 | `re-zcode/tui-build/{tui,shared,contracts,i18n,model-option-map}/src` |
+| 官方源码对照 | `re-zcode/ZCode-open/{apps,packages}` |
+| 官方二进制对照 | `re-zcode/zcode-unpacked/resources/{app.asar,glm/zcode.cjs}`、`re-zcode/asar-extracted/out` |
 | DPK 工具 | `.debug/dsh-package-manager-1.1.1/dpk.mjs` |
-| 启动/停止 | `launcher/dsh.cmd`、`launcher/stop-dsh.ps1` |
+| 启动/停止 | `dsh-dev/launcher/dsh.cmd`、`dsh-dev/launcher/stop-dsh.ps1` |

@@ -920,7 +920,7 @@ export function defaultAppServerPaths(): {
   personalProviderConfigPath: string
 } {
   const repo = process.env.DSH_ZCODE_REPO?.trim() || ''
-  const zcodeRoot = repo ? join(repo, 'zcode-unpacked', 'resources') : ''
+  const zcodeRoot = repo ? join(repo, 're-zcode', 'zcode-unpacked', 'resources') : ''
   const storageDir = process.env.ZCODE_STORAGE_DIR?.trim() || join(homedir(), '.zcode', 'v2')
   return {
     nodePath: process.env.DSH_NODE_PATH?.trim() || 'node',

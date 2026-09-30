@@ -2,7 +2,7 @@
 
 > 目标:把 `zcode.cjs app-server --stdio`(官方 CLI 引擎的 NDJSON 服务模式)从"黑盒"变"白盒"。
 >
-> 对象:`zcode-unpacked/resources/glm/zcode.cjs`(14,796,911 字节,3.14.1,build cead36fd)。
+> 对象:`re-zcode/zcode-unpacked/resources/glm/zcode.cjs`(14,796,911 字节,3.14.1,build cead36fd)。
 > 方法:静态偏移提取(snippets/)+ 动态 NDJSON 探针(probe-registry.mjs)+ Zod 自报错 schema 挖掘。
 
 ---

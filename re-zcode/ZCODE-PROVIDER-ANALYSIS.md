@@ -4,10 +4,10 @@
 > 版本现为 **2.5.34**;MSYS2 nodePath 已废除(统一传统 Node);start-plan/off-peak 无覆写时
 > 走引擎会话委托(session/send 流式+60K 历史预算),coding-plan 及一切带覆写请求走直连 wire;
 > 后置提示词层已是**逐块覆写**语义(清空=0 字节移除),start-plan 前缀门以官方①②兼容前缀+
-> 规则更新声明等效覆写。现行事实以 `dpk/zcode-provider/README.md` 与
-> `re-app-server/README.md`(§0.7 前缀门)为准;本文其余内容作为历史分析保留。
+> 规则更新声明等效覆写。现行事实以 `dsh-dev/dpk/zcode-provider-dpk/README.md` 与
+> `re-zcode/re-app-server/README.md`(§0.7 前缀门)为准;本文其余内容作为历史分析保留。
 
-对象：`dpk/zcode-provider`（`zcode-provider@2.5.26`，MIT，白盒 ZCode-compatible DSH 插件）
+对象：`dsh-dev/dpk/zcode-provider-dpk`（`zcode-provider@2.5.26`，MIT，白盒 ZCode-compatible DSH 插件）
 分析方式：源码逐文件通读 + 安装态/运行态实测 + 三路并行深挖（wire/凭证、权益/用量/错峰、验证码/app-server/客户端/打包）+ DPK 校验。
 标注约定：**✅ 实测**（本次命令/文件直接验证）｜**📄 代码实证**（读到具体行）｜**🔍 推断**。
 
@@ -19,11 +19,11 @@
 |---|---|
 | 版本 | `2.5.26`，`private`，MIT，`type: module`，`main=lib/index.js` |
 | 安装位置 | `~/.dsh/dpk/store/a730a5fc…/package` → profile `web` 以 `link:` 引用 |
-| 归档 | `dpk/zcode-provider/dist/zcode-provider-2.5.26.dpk`（2026-09-29 起全部 DPK 归档于 `dist/`），`dpk verify` 通过：81 条目 / 80 文件 sha256 全对 / digest 与安装记录一致 |
+| 归档 | `dsh-dev/dpk/zcode-provider-dpk/dist/zcode-provider-2.5.26.dpk`（2026-09-29 起全部 DPK 归档于 `dist/`），`dpk verify` 通过：81 条目 / 80 文件 sha256 全对 / digest 与安装记录一致 |
 | **安装态 == 工作区源码** | 5/5 文件 sha256 相同（`lib/index.js`、`src/index.ts`、`lib/official-wire.js`、`cordis.patch.yml`、`client.js`）→ **本目录就是线上运行的那份代码** |
 | 运行态 | 正在运行的 DSH Web（`127.0.0.1:51080`，PID 9088）加载了本 profile；插件注册的 `zcode_usage` 工具在本会话可用 |
 | 当前鉴权链路 | `~/.dsh/zcode-provider/auth-backend.json` = `openzcode-app-server` |
-| 当前 appServer 配置 | profile patch 里显式 `enabled: true`、`cliPath=zcode-unpacked/resources/glm/zcode.cjs`、`nodePath=msys64/clang64/bin/node.exe` |
+| 当前 appServer 配置 | profile patch 里显式 `enabled: true`、`cliPath=re-zcode/zcode-unpacked/resources/glm/zcode.cjs`、`nodePath=msys64/clang64/bin/node.exe` |
 | 提示词覆盖 | `prompt-overrides.json` = `{}`（无自定义层）→ **不触发 app-server 旁路** |
 
 结论见 §5 的 P0-1：**当前配置下，账号类路由的模型请求实际是交给官方 CLI 子进程执行的**，不是走插件自己的直连白盒线路。
