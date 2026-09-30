@@ -61,5 +61,8 @@
     "plugin",
     "package-manager",
     "cli"
-  ]
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  }
 }
