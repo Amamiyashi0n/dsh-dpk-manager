@@ -21,8 +21,9 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { runDpkAction } from './lib/actions.mjs'
 import { packDirectory } from './lib/pack.mjs'
-import { forgetProfile, latestByName, latestEntry, matchEntries, readIndex, removeStoreDir, storeDir, defaultDshHome} from './lib/store.mjs'
+import { latestByName, latestEntry, matchEntries, readIndex, removeStoreDir, storeDir, writeIndex, defaultDshHome} from './lib/store.mjs'
 import { dpkRoot } from './lib/store.mjs'
+import { detectProfileName } from './lib/profile-policy.mjs'
 
 /** Wire namespace: the browser calls `ctx.remote.dpk.<method>`. */
 export const REMOTE_NAMESPACE = 'dpk'
@@ -61,6 +62,8 @@ function markRemote(prototype, methodName) {
  */
 export function createDpkRemoteService(ctx, config = {}) {
   const home = config.home ?? defaultDshHome()
+  /** This service serves the profile whose node_modules physically holds this package. */
+  const profileName = () => process.env.DSH_PROFILE ?? detectProfileName(home) ?? 'default'
 
   class DpkRemoteService {
     /** Packages this assistant installed locally, joined with what the profile really holds. */
@@ -109,7 +112,7 @@ export function createDpkRemoteService(ctx, config = {}) {
         if (manager === undefined) throw new Error('dpk: the plugin manager service is not composed')
         const result = await runDpkAction('install', { file: path }, {
           home,
-          profile: process.env.DSH_PROFILE,
+          profile: profileName(),
           installer: async (packageDir) => {
             const outcome = await manager.installBundle(packageDir, {})
             if (outcome?.application === 'failed') {
@@ -149,24 +152,31 @@ export function createDpkRemoteService(ctx, config = {}) {
     }
 
     /**
-     * Uninstall a package through the official manager, then drop the stored copy.
-     * @param request - `{ name, prune? }`.
+     * Uninstall a package through the official manager, forgetting this profile.
+     * Nothing is retained: a ledger entry no profile references any more is
+     * dropped together with its stored copy.
+     * @param request - `{ name }`.
      */
     async removeArchive(request) {
       const name = String(request?.name ?? '')
       const root = dpkRoot(home)
-      const matches = matchEntries((await readIndex(root)).entries, name)
       const manager = ctx.get('pluginManager')
       if (manager === undefined) throw new Error('dpk: the plugin manager service is not composed')
       const outcome = await manager.removeBundle(name)
       if (outcome?.application === 'failed') {
         throw new Error(`dpk: uninstall failed: ${outcome.error?.diagnostic ?? outcome.error?.code ?? 'unknown failure'}`)
       }
-      for (const entry of matches) {
-        await forgetProfile(root, entry.name, process.env.DSH_PROFILE ?? '')
-        if (request?.prune === true) await removeStoreDir(root, entry.digest)
+      const profile = profileName()
+      const index = await readIndex(root)
+      const dropped = []
+      for (const entry of matchEntries(index.entries, name)) {
+        entry.profiles = entry.profiles.filter(item => item !== profile)
+        if (entry.profiles.length === 0) dropped.push(entry)
       }
-      return { name, removed: true, pruned: request?.prune === true, changed: outcome?.changed === true }
+      index.entries = index.entries.filter(entry => entry.profiles.length > 0)
+      await writeIndex(root, index)
+      for (const entry of dropped) await removeStoreDir(root, entry.digest)
+      return { name, removed: true, pruned: dropped.length > 0, changed: outcome?.changed === true }
     }
   }
 

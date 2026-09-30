@@ -34,7 +34,7 @@ window.__ModuleLoader__.load({
       exported: '已导出',
       uninstall: '卸载',
       uninstalling: '卸载中…',
-      confirmUninstall: '卸载该插件？这会把它从当前 profile 移除，store 里的归档副本保留。',
+      confirmUninstall: '卸载该插件？这会把它从当前 profile 移除；没有其它 profile 引用时，本地仓库中的副本会一并删除。',
       badge: '由 DPK 安装',
       badgeTitle: '该插件由「DSH 安装包管理助手」以 .dpk 归档安装（内容寻址、可校验）。',
       sectionTitle: 'DPK 安装信息',
@@ -46,7 +46,7 @@ window.__ModuleLoader__.load({
       storePath: '本地仓库路径',
       profileState: '当前状态',
       store: '本地 DPK 仓库',
-      hint: '此包由 dpk 管理：上方「导出 DPK」可重新打包，「卸载」会同时从 profile 移除。',
+      hint: '此包由 dpk 管理：上方「导出 DPK」可重新打包，「卸载」会从 profile 移除并不留副本（仍有其它 profile 引用时除外）。',
     }
     const en = {
       importTitle: 'Import a DPK package',
@@ -64,7 +64,7 @@ window.__ModuleLoader__.load({
       exported: 'Exported',
       uninstall: 'Uninstall',
       uninstalling: 'Uninstalling…',
-      confirmUninstall: 'Uninstall this plugin? It is removed from this profile; the stored archive copy stays.',
+      confirmUninstall: 'Uninstall this plugin? It is removed from this profile; with no other profile using it, the stored copy is deleted too.',
       badge: 'Installed by DPK',
       badgeTitle: 'This plugin was installed from a .dpk archive by the DSH package manager assistant (content-addressed and verifiable).',
       sectionTitle: 'DPK installation',
@@ -76,7 +76,7 @@ window.__ModuleLoader__.load({
       storePath: 'Local store path',
       profileState: 'State',
       store: 'Local DPK store',
-      hint: 'Managed by dpk: “Export DPK” re-packs it, “Uninstall” also removes it from the profile.',
+      hint: 'Managed by dpk: “Export DPK” re-packs it, “Uninstall” removes it without leaving a copy (unless another profile still uses it).',
     }
 
     const requestCodec = method => ({

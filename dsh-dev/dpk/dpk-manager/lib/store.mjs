@@ -107,16 +107,6 @@ export async function recordInstall(root, entry) {
   return index.entries
 }
 
-/** Forget one profile's use of a package; the extracted content stays. */
-export async function forgetProfile(root, name, profile) {
-  const index = await readIndex(root)
-  for (const entry of index.entries) {
-    if (entry.name !== name) continue
-    entry.profiles = entry.profiles.filter(item => item !== profile)
-  }
-  await writeIndex(root, index)
-}
-
 /** Find ledger entries matching `name` or `name@version`. */
 export function matchEntries(entries, request) {
   const at = request.startsWith('@') ? request.indexOf('@', 1) : request.indexOf('@')

@@ -20,6 +20,8 @@
 
 import { DPK_ACTIONS, runDpkAction } from './lib/actions.mjs'
 import { REMOTE_NAMESPACE, createDpkRemoteService } from './host-service.js'
+import { detectProfileName } from './lib/profile-policy.mjs'
+import { defaultDshHome } from './lib/store.mjs'
 
 /** Cordis plugin name. */
 export const name = 'dsh-dpk-manager'
@@ -78,13 +80,13 @@ export function apply(ctx, config = {}) {
       render: (_args, value) => [{ type: 'text', text: value.text }],
     },
     async execute(args, exec) {
-      const home = config.home ?? process.env.DSH_HOME
+      const home = config.home ?? process.env.DSH_HOME ?? undefined
       const installer = args.action === 'install' && args.dryRun !== true
         ? createInstaller(ctx, exec, args)
         : undefined
       const result = await runDpkAction(args.action, args, {
         home,
-        profile: args.profile ?? process.env.DSH_PROFILE,
+        profile: args.profile ?? detectProfileName(home ?? defaultDshHome()),
         installer,
         log: (message) => { ctx.logger?.info?.(`dpk: ${message.trim()}`) },
       })

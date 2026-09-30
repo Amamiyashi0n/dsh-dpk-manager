@@ -19,7 +19,7 @@ import { join } from 'node:path'
 import { verifyArchive, extractPackageTree } from './verify.mjs'
 import { retainArchive, recordInstall, storeDir, dpkRoot, defaultDshHome } from './store.mjs'
 import { archiveFileName } from './dpk-manifest.mjs'
-import { disableReleaseAgeCooldown } from './profile-policy.mjs'
+import { detectProfileName, disableReleaseAgeCooldown } from './profile-policy.mjs'
 
 /** An install that could not complete. */
 export class DpkInstallError extends Error {
@@ -82,7 +82,11 @@ export async function installArchive(options) {
   const root = options.root ?? dpkRoot(options.home)
   const digest = manifest.integrity.digest
   const packageDir = join(storeDir(root, digest), 'package')
-  const profile = options.profile ?? process.env.DSH_PROFILE ?? 'default'
+  const home = options.home ?? process.env.DSH_HOME ?? defaultDshHome()
+  const profile = options.profile
+    ?? process.env.DSH_PROFILE
+    ?? detectProfileName(home)
+    ?? 'default'
 
   // A dry run is read-only: it reports the deterministic paths without writing.
   if (options.dryRun === true) {
@@ -117,7 +121,6 @@ export async function installArchive(options) {
   // published ones (this manager included). The import is deliberate and
   // digest-verified, so opt the profile out before pnpm starts. A policy we
   // cannot write only risks the cooldown, never the install itself.
-  const home = options.home ?? process.env.DSH_HOME ?? defaultDshHome()
   const profileDir = process.env.DSH_PROFILE_DIR ?? join(home, 'profiles', profile)
   try {
     if (await disableReleaseAgeCooldown(profileDir)) {
