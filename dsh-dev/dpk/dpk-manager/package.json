@@ -1,0 +1,53 @@
+{
+  "name": "@local/dsh-package-manager",
+  "version": "1.1.5",
+  "private": true,
+  "type": "module",
+  "description": "DSH 安装包管理助手 — pack, verify, and install local DSH plugin packages (.dpk) from its own DPK panel",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": "*",
+    "react": "*"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./lib/*": "./lib/*",
+    "./schemas/*": "./schemas/*",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "dpk": "./dpk.mjs"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "host-service.js",
+    "dpk.mjs",
+    "lib",
+    "schemas",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml",
+    "SPEC.md",
+    "README.md"
+  ],
+  "icon": "./icon.svg",
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}

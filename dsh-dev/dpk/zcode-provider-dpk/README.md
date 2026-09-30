@@ -154,9 +154,9 @@ Web 客户端会把当前会话选择的 Coding Plan / Start Plan 权益与剩�
 ## DPK
 
 ~~~bash
-node ../../../.debug/dsh-package-manager-1.1.1/dpk.mjs pack .   # 产出 ./zcode-provider-<version>.dpk,归档进 dist/
-node ../../../.debug/dsh-package-manager-1.1.1/dpk.mjs verify dist/zcode-provider-<version>.dpk
-node ../../../.debug/dsh-package-manager-1.1.1/dpk.mjs install dist/zcode-provider-<version>.dpk -p web --home "%USERPROFILE%\.dsh"
+node ../dpk-manager/dpk.mjs pack .   # 产出 ./zcode-provider-<version>.dpk,归档进 dist/
+node ../dpk-manager/dpk.mjs verify dist/zcode-provider-<version>.dpk
+node ../dpk-manager/dpk.mjs install dist/zcode-provider-<version>.dpk -p web --home "%USERPROFILE%\.dsh"
 ~~~
 
 安装后**必须核实** profile 链接已更新(`~/.dsh/profiles/web/package.json` 中 `zcode-provider` 指向新 digest 的 store 目录)。dpk 工具经 `~/.dsh/node_modules/@deepseek-ai` junction 定位 DSH CLI——工作区搬移后该 junction 会悬空,install 只解包到 store 却报 `the DSH CLI was not found`,profile 停留旧版(2026-09-30 实际发生:2.5.35/2.5.36 两版"安装成功"实则未生效,线上一直是 2.5.34,靠 wire 抓包才发现)。修复:`rmdir` 旧 junction 后 `mklink /J` 重指 `dsh-dev\deepseek-harness

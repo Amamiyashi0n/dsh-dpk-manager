@@ -103,7 +103,7 @@ DSH UI / history / tools / agent loop
 
 **测试**：`tests/` 20 个 `.mjs`，含真实 Cordis Loader 组合、协议等价、签名、验证码桥接、SSE tool-call、独立包边界扫描；报告记录全套件用例数（equivalence / cred 13 / route 19 / usage 79 / offpeak 110 / prompt 30 / captcha 68 / wire 62 / loader 23）。
 
-**发布形态**：`dsh-dev/dpk/zcode-provider-dpk/dist/zcode-provider-2.5.26.dpk` → 用 `.debug/dsh-package-manager-1.1.1/dpk.mjs pack|verify|install --profile web` 安装到 `~/.dsh/profiles/web`；安装记录在 `~/.dsh/dpk/index.json`（含 1.4.0→2.5.26 共 40+ 次安装的完整历史）。
+**发布形态**：`dsh-dev/dpk/zcode-provider-dpk/dist/zcode-provider-2.5.26.dpk` → 用 `dsh-dev/dpk/dpk-manager/dpk.mjs pack|verify|install --profile web`(2026-09-30 自 .debug 抽出) 安装到 `~/.dsh/profiles/web`；安装记录在 `~/.dsh/dpk/index.json`（含 1.4.0→2.5.26 共 40+ 次安装的完整历史）。
 
 **当前运行期接线**（`~/.dsh/profiles/web/cordis.patch.yml`）
 - 路由：`builtin:bigmodel-coding-plan`（`open.bigmodel.cn/api/anthropic`，GLM-5.3/5.3-Flash/5.2）、`builtin:bigmodel-start-plan`（`zcode.z.ai/api/v1/zcode-plan/anthropic`）、以及两条第三方路由（deepseek、agnes）。
@@ -137,7 +137,7 @@ DSH UI / history / tools / agent loop
 - 10 个历史 DPK（`1.4.0`→`1.16.0`）也放在这里。
 
 ### `.debug/`（草稿区）
-- 可复用：`dsh-package-manager-1.1.1/`（实为 **1.1.5**，DPK 打包/校验/安装工具，含 GUI 面板与 `SPEC.md`）、`dsh-runtime/`（第二套 DSH home）、`node22/`（便携 Node 22.19.0）。
+- 可复用：DPK 打包/校验/安装工具已抽出至 `dsh-dev/dpk/dpk-manager/`（实为 **1.1.5**，含 GUI 面板与 `SPEC.md`）、`dsh-runtime/`（第二套 DSH home）、`node22/`（便携 Node 22.19.0）。
 - 关键证据件：`system-prompt.txt`（官方三段提示词）、`ticket-client.txt` / `offpeak-server.txt`（票据协议提取）、`zcode-capture.cjs`（14.8 MB bundle 副本）、`header-hook.js`（在 `convergence-backup-114516/_debug-scripts/`，`net.Socket.write` 挂钩抓明文头）。
 - 46 个 `tui-probe-*` 目录 = TUI 逐帧抓取与回归对比（`step-NN.txt`）。
 - 归档：`convergence-backup-114516/`（早期 CLI 收敛工作的完整快照）。
@@ -231,5 +231,5 @@ node --expose-internals --import <dsh>/node_modules/tsx/dist/esm/index.mjs ^
 | TUI 前端源码副本 | `re-zcode/tui-build/{tui,shared,contracts,i18n,model-option-map}/src` |
 | 官方源码对照 | `re-zcode/ZCode-open/{apps,packages}` |
 | 官方二进制对照 | `re-zcode/zcode-unpacked/resources/{app.asar,glm/zcode.cjs}`、`re-zcode/asar-extracted/out` |
-| DPK 工具 | `.debug/dsh-package-manager-1.1.1/dpk.mjs` |
+| DPK 工具 | `dsh-dev/dpk/dpk-manager/dpk.mjs` |
 | 启动/停止 | `dsh-dev/launcher/dsh.cmd`、`dsh-dev/launcher/stop-dsh.ps1` |
