@@ -142,7 +142,7 @@ node ../../../.debug/dsh-package-manager-1.1.1/dpk.mjs verify dist/zcode-provide
 node ../../../.debug/dsh-package-manager-1.1.1/dpk.mjs install dist/zcode-provider-<version>.dpk -p web --home "%USERPROFILE%\.dsh"
 ~~~
 
-当前版本 **2.5.34**。近版本要点：
+当前版本 **2.5.35**。近版本要点：
 
 - **2.5.31** start-plan/off-peak 改走引擎会话委托（session/send 流式 + 60K 历史预算）；模型名追加通道后缀 `· Start Plan` / `· Coding Plan` / `· 错峰`；generateText 直连加 10 分钟硬超时。
 - **2.5.32** 后置层改为真覆写语义（逐块替换/清空＝移除/0 块省略 system）；空串在保存链路（client→Remote→normalize）作为显式清空标记贯通。

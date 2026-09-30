@@ -25,10 +25,6 @@
 /re-zcode/zcode-cli/
 /ZCode-*.exe
 
-# tsc mirrored build outputs (tracked copies are lib/*.js and lib/types/*.d.ts)
-/dsh-dev/dpk/zcode-provider-dpk/lib/src/
-/dsh-dev/dpk/zcode-provider-dpk/lib/types/src/
-
 # Generated package archives and local package-manager state
 /**/*.dpk
 /**/.dpk/

@@ -54,9 +54,11 @@ check('after-layer whitespace normalizes to the cleared marker',
     return promptStorage.readPromptOverrides(path).after.identity === ''
   })())
 check('cleared after-layer counts as an active override',
-  promptStorage.hasPromptOverrides({ after: { identity: '' } }) === true)
+  promptStorage.hasPromptOverrides({ placement: 'after', after: { identity: '' } }) === true)
+check('cleared markers in the inactive layer do not count as an override',
+  promptStorage.hasPromptOverrides({ placement: 'before', after: { identity: '', agent: '', runtime: '' } }) === false)
 check('before-layer empty strings are still stripped (inject mode has no marker)',
-  promptStorage.hasPromptOverrides({ before: { identity: '' } }) === false)
+  promptStorage.hasPromptOverrides({ placement: 'before', before: { identity: '' } }) === false)
 check('write+read round-trips cleared markers',
   (() => {
     const tmp = join(tmpRoot, 'roundtrip.json')

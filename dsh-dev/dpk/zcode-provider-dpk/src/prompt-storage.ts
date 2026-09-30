@@ -65,5 +65,9 @@ export function writePromptOverrides(path: string, value: PromptOverrides): void
 }
 
 export function hasPromptOverrides(value: PromptOverrides): boolean {
-  return Object.keys(normalize(value)).length > 0
+  // 只看**激活层**:placement=before 时,after 层残留的清空标记(空串)不构成
+  // 覆写——否则"后置清空后切回前置"会误触引擎委托旁路(实测边缘状态)。
+  const normalized = normalize(value)
+  const active = normalized[normalized.placement === 'after' ? 'after' : 'before']
+  return active !== undefined && Object.keys(active).length > 0
 }
