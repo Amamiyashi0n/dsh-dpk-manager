@@ -79,16 +79,26 @@ export function createDpkRemoteService(ctx, config = {}) {
       const index = await readIndex(dpkRoot(home))
       return {
         store: dpkRoot(home),
-        entries: latestByName(index.entries).map(entry => ({
-          name: entry.name,
-          version: entry.version,
-          digest: entry.digest,
-          installedAt: entry.installedAt,
-          source: entry.source,
-          profiles: entry.profiles,
-          installed: byName.get(entry.name)?.installed === true,
-          enabled: byName.get(entry.name)?.enabled === true,
-        })),
+        entries: latestByName(index.entries).map(entry => {
+          // The card shows the version that actually runs: the profile's own
+          // (possibly npm-updated) install wins over the ledger's record of
+          // which .dpk generation was imported.
+          const bundle = byName.get(entry.name)
+          const installedVersion = bundle?.version
+          return {
+            name: entry.name,
+            version: installedVersion ?? entry.version,
+            ...(installedVersion !== undefined && installedVersion !== entry.version
+              ? { dpkVersion: entry.version }
+              : {}),
+            digest: entry.digest,
+            installedAt: entry.installedAt,
+            source: entry.source,
+            profiles: entry.profiles,
+            installed: bundle?.installed === true,
+            enabled: bundle?.enabled === true,
+          }
+        }),
       }
     }
 

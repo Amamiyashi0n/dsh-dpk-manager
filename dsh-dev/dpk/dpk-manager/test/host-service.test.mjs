@@ -73,6 +73,33 @@ test('managed ranks versions numerically, not by ledger order', async () => {
   assert.equal(listed.entries[0].digest, 'b')
 })
 
+test('managed reports the installed version over the ledger record when they differ', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dpk-home-'))
+  const root = join(home, 'dpk')
+  await mkdir(root, { recursive: true })
+  await writeFile(join(root, 'index.json'), `${JSON.stringify({
+    version: 1,
+    entries: [
+      { name: 'dsh-dpk-manager', version: '2.0.0', digest: 'c', installedAt: '', source: 'fallback.dpk', profiles: ['web'], path: '' },
+    ],
+  }, undefined, 2)}
+`)
+
+  const ctx = makeCtx({
+    pluginManager: {
+      listBundles: async () => [
+        { name: 'dsh-dpk-manager', version: '2.1.1', installed: true, enabled: true },
+      ],
+    },
+  })
+  const service = createDpkRemoteService(ctx, { home })
+  const listed = await service.managed()
+  assert.equal(listed.entries.length, 1)
+  assert.equal(listed.entries[0].version, '2.1.1', 'the card shows the version that actually runs')
+  assert.equal(listed.entries[0].dpkVersion, '2.0.0', 'the ledger import version stays as provenance')
+  assert.equal(listed.entries[0].installed, true)
+})
+
 /** A minimal host context: services come back from `get`, `provide` records nothing. */
 function makeCtx(services) {
   return { provide() {}, get: name => services[name] }
