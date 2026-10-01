@@ -61,7 +61,6 @@ test('verifies, extracts into the store, and hands the official installer an abs
   assert.equal(result.packageDir, packageDir)
   assert.equal(result.created, true)
   assert.ok(existsSync(join(packageDir, 'package.json')), 'the store holds the package root')
-  assert.ok(existsSync(join(storeDir(root, packed.manifest.integrity.digest), 'dpk.json')), 'the manifest copy is kept')
 
   assert.equal(exec.calls.length, 1)
   assert.equal(exec.calls[0][0], packageDir)

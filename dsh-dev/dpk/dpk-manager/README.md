@@ -105,8 +105,7 @@ profile  dpk-demo (installed by the plugin manager service)
 ```
 $DSH_HOME/dpk/
   index.json                    dpk 的溯源账本（DSH 不读它）
-  store/<digest>/package/       交给官方安装器的那个目录
-  store/<digest>/dpk.json       归档清单副本，供事后审计
+  store/<digest>/package/       交给官方安装器的那个目录（store 里只存这一份）
   archives/<name>-<ver>.dpk     --keep-archive 时的原始归档
 ```
 

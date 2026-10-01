@@ -4,7 +4,6 @@
  * Layout (SPEC.md §8.2):
  *   <home>/dpk/index.json                 ledger, owned by dpk (DSH never reads it)
  *   <home>/dpk/store/<digest>/package/    the extracted package root handed to DSH
- *   <home>/dpk/store/<digest>/dpk.json    the archive manifest, kept for audit
  *   <home>/dpk/archives/<name>-<ver>.dpk  optional retained archive
  *
  * @module dpk/lib/store

@@ -17,12 +17,12 @@
  * @module dpk/host-service
  */
 
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { runDpkAction } from './lib/actions.mjs'
 import { installOverwriting } from './lib/install.mjs'
 import { packDirectory } from './lib/pack.mjs'
-import { latestByName, latestEntry, matchEntries, readIndex, removeStoreDir, storeDir, writeIndex, defaultDshHome} from './lib/store.mjs'
+import { latestByName, matchEntries, readIndex, removeStoreDir, writeIndex, defaultDshHome} from './lib/store.mjs'
 import { dpkRoot } from './lib/store.mjs'
 import { detectProfileName } from './lib/profile-policy.mjs'
 
@@ -193,13 +193,4 @@ export function createDpkRemoteService(ctx, config = {}) {
   })
   ctx.provide(REMOTE_NAMESPACE, service)
   return service
-}
-
-/** Read a stored archive back as bytes (used by tests). */
-export async function readStoredArchive(home, name) {
-  const root = dpkRoot(home)
-  const entry = latestEntry((await readIndex(root)).entries, name)
-  if (entry === undefined) return undefined
-  const bytes = await readFile(join(storeDir(root, entry.digest), 'dpk.json'))
-  return { entry, manifest: JSON.parse(bytes.toString('utf8')) }
 }
