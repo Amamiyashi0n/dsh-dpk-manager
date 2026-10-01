@@ -1,14 +1,13 @@
 /**
- * DSH adapter bundle for the client-neutral `reverse-skill` router.
- *
- * Thin bundle: the provider engine lives in `@local/dsh-skill-dir`; this package
- * owns the `reverse-skill` identity and serves the router's own `skills/` root.
- * See that package's README for the frontmatter and precedence contract.
+ * DSH bundle for the client-neutral `reverse-skill` router, self-contained:
+ * the `SKILL.md` provider engine ships inside this package (`lib/skill-dir.js`)
+ * and the bundle serves the checkout's `skills/` root. One package, one `.dpk`.
+ * See lib/skill-dir.js for the frontmatter and precedence contract.
  *
  * @module @local/dsh-reverse-skill
  */
 
-import { registerSkillDir } from '@local/dsh-skill-dir'
+import { registerSkillDir } from './lib/skill-dir.js'
 
 /** Cordis plugin name. */
 export const name = 'dsh-reverse-skill'

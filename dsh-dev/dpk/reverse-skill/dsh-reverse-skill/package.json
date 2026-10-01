@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-reverse-skill",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "description": "Serves every skill of the client-neutral reverse-skill security router to DSH sessions.",
@@ -15,15 +15,14 @@
   },
   "files": [
     "index.js",
+    "lib",
+    "test",
     "cordis.patch.yml",
     "locale",
     "icon.svg",
     "README.md"
   ],
   "icon": "./icon.svg",
-  "dependencies": {
-    "@local/dsh-skill-dir": "link:../dsh-skill-dir"
-  },
   "dsh": {
     "manifestVersion": 1,
     "bundle": {

@@ -2,7 +2,7 @@
 
 DSH 适配层：把客户端中立的 [reverse-skill](https://github.com/zhaoxuya520/reverse-skill) 安全技能路由包，做成一个标准的 DSH 插件包（bundle），安装后本 profile 的每个会话都能在标准技能目录里看到它的技能。
 
-仓库本身保持唯一真相源：本包**不复制、不修改**仓库内容，只在运行时从 `repoRoot` 指向的检出目录读取 `SKILL.md`。provider 引擎在共享包 [@local/dsh-skill-dir](../dsh-skill-dir) 里，本包只声明 `reverse-skill` 这个身份与要暴露的模块目录。
+仓库本身保持唯一真相源：本包**不复制、不修改**仓库内容，只在运行时从 `repoRoot` 指向的检出目录读取 `SKILL.md`。provider 引擎内置在本包 `lib/skill-dir.js`（2.0 起为自包含单包，不再依赖共享包），本包声明 `reverse-skill` 这个身份与要暴露的模块目录，可直接打成 `.dpk` 安装。
 
 **范围：只保留逆向功能（17 个技能）。** 示例/演示类内容（`CTF-Sandbox-Orchestrator/**` 42 个竞赛场景、`examples/ctf-demo`、`reports/`、`docs/reviews|plans|superpowers`、`skills/tests/**`）以及非逆向模块（渗透/取证/情报/编排/文档）都不进技能目录。逐条依据见
 [notes/reverse-skill-能力分析.md](../../notes/reverse-skill-能力分析.md)。
@@ -51,32 +51,11 @@ JS 代码改动不会——进程的 ESM 模块缓存保留首次加载的代次
 
 ## 安装
 
-```text
-plugin_manager action=install_bundle target=<本目录绝对路径>
-```
+自包含单包，打成 `.dpk` 后从「本地 DPK」面板导入即可（或对任意 profile 走官方
+`install_bundle`）。引擎与身份同包，无需再手工建任何 junction 或第二包的链接；
+导入后 profile 里是一条普通的 `link:` 依赖，Loader 行 id 是 `dsh-reverse-skill`。
 
-`install_bundle` 通过 pnpm 写入 `link:` 依赖并选中 bundle 层。前提是 profile 里其余依赖也能被解析——
-本 profile 原先的 `zcode-provider: "1.0.0"`（registry 上不存在的本地版本）会让每次 `pnpm add` 失败，
-现已改为 `link:` 指向其源码仓库，详见 [zcode-provider README](../../../Dev-ws-next/repos/zcode-dev/dsh-plugin-zcode-provider/README.md)。
-
-手工安装（不经 pnpm）需要三步，缺一不可：
-
-```powershell
-# 1) 让包能被 profile 解析
-New-Item -ItemType Junction -Path "$env:DSH_PROFILE_DIR\node_modules\@local\dsh-reverse-skill" -Target <本目录绝对路径>
-# 2) 共享 provider 也要能被解析（本包 import '@local/dsh-skill-dir'）
-New-Item -ItemType Junction -Path "<plugins>\node_modules\@local\dsh-skill-dir" -Target <plugins>\dsh-skill-dir
-```
-
-```jsonc
-// 3) $DSH_PROFILE_DIR/package.json：登记依赖并选中 bundle 层
-"dependencies": { "@local/dsh-reverse-skill": "link:../../../…/plugins/dsh-reverse-skill" },
-"dsh": { "profile": { "bundles": [ …, "@local/dsh-reverse-skill" ] } }
-```
-
-**第 3 步不能省**：`plugin_manager list_bundles` 的 `installed` 字段取自 profile `dependencies`，而插件页只列出 `installed || optional || error` 的条目。只做软链接而不登记依赖时，插件照常工作、技能照常出现在技能目录里，但插件页看不到卡片。
-
-两种方式都把它登记为 profile 的一个 bundle 层，插入的 Loader 行 id 是 `dsh-reverse-skill`。
+同一 `.dpk` 重复导入会覆盖重装；卸载走面板「卸载」或官方 `remove_bundle`。
 
 ## 配置（`cordis.patch.yml` 里的行 config）
 
@@ -122,5 +101,5 @@ plugin_manager action=remove_bundle target=@local/dsh-reverse-skill
 `test/provider.test.mjs` 直接以假 ctx 调用 `apply()`，校验发现数量、frontmatter 解析（含块标量与 BOM 文件）、去重与 `get()` 正文加载：
 
 ```text
-node test/provider.test.mjs "C:\path\to\reverse-skill"
+node test/provider.test.mjs "C:\path\to\检出仓库根（含 skills/）"
 ```

@@ -14,7 +14,7 @@
  * it. Configuration is validated by {@link resolveSkillDirSettings} because the
  * bundles ship no schemastery `Config` schema.
  *
- * @module @local/dsh-skill-dir
+ * @module @local/dsh-reverse-skill/lib/skill-dir
  */
 
 import { statSync } from 'node:fs'

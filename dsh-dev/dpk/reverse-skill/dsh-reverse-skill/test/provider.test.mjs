@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { dirname, join } from 'node:path'
 
-const { registerSkillDir } = await import('../index.js')
+const { registerSkillDir } = await import('../lib/skill-dir.js')
 
 const repoRoot = process.argv[2]
 if (repoRoot === undefined) {
