@@ -74,16 +74,33 @@ export async function readIndex(root) {
  * `index.json`, because the content lands in a sibling temp file that only a
  * successful rename promotes.
  *
- * On Windows the rename can still lose a transient race — a concurrent reader
- * in another DSH instance (the ledger is shared by every profile's manager)
- * or a real-time scanner holding the fresh temp file — and surfaces as EPERM.
- * The old ledger stays intact when that happens, so retrying shortly is both
- * safe and sufficient; only a persistent loss cleans up the temp and throws.
+ * Two hardenings keep the rename honest under real usage:
+ * - Every write gets its own temp name and writes are serialized in-process.
+ *   Uninstalling and importing in quick succession both rewrite the ledger
+ *   from the same host process; a shared `tmp-<pid>` name let one flow rename
+ *   a file the other was still writing (EPERM), and interleaved writes could
+ *   last-writer-win between concurrent flows. A unique name plus a chain
+ *   removes that entire class.
+ * - On Windows the rename can still lose a transient race — a concurrent
+ *   reader in another DSH instance (the ledger is shared by every profile's
+ *   manager) or a real-time scanner holding the fresh temp file — which also
+ *   surfaces as EPERM while the old ledger stays intact. Retrying shortly is
+ *   both safe and sufficient; only a persistent loss cleans up and throws.
  */
-export async function writeIndex(root, index) {
+let indexWriteChain = Promise.resolve()
+let indexTempCounter = 0
+
+export function writeIndex(root, index) {
+  const run = () => writeIndexSerialized(root, index)
+  const next = indexWriteChain.then(run, run)
+  indexWriteChain = next.catch(() => {})
+  return next
+}
+
+async function writeIndexSerialized(root, index) {
   await mkdir(root, { recursive: true })
   const path = indexFile(root)
-  const temporary = `${path}.tmp-${process.pid}`
+  const temporary = `${path}.tmp-${process.pid}-${indexTempCounter += 1}`
   await writeFile(temporary, `${JSON.stringify({ version: INDEX_VERSION, entries: index.entries }, undefined, 2)}\n`)
   for (let attempt = 0; ; attempt += 1) {
     try {

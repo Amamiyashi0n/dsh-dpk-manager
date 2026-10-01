@@ -1,6 +1,6 @@
 {
   "name": "dsh-dpk-manager",
-  "version": "2.1.6",
+  "version": "2.1.7",
   "type": "module",
   "description": "DPK manager for DeepSeek Harness \u2014 pack, verify and install local DSH plugin packages (.dpk) from the Plugins-page panel and the in-session dpk tool",
   "license": "MIT",

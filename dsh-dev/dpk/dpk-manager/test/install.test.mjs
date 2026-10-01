@@ -275,3 +275,20 @@ test('writeIndex leaves no temp file behind and reads back identically', async (
   assert.deepEqual(files, [], 'no temp file survives a successful write')
   assert.deepEqual((await readIndex(root)).entries, index.entries)
 })
+
+test('concurrent ledger writes serialize: both apply in order, no temp left, no lost rename', async () => {
+  const { writeIndex, readIndex, dpkRoot } = await import('../lib/store.mjs')
+  const { readdir } = await import('node:fs/promises')
+  const home = await makeHome()
+  const root = dpkRoot(home)
+  const entry = suffix => ({ name: '@local/x', version: `1.0.${String(suffix)}`, digest: 'a'.repeat(64), installedAt: '', source: '', profiles: ['test'], path: '' })
+  // 卸载→立刻装新版的真实形态:两个 writeIndex 几乎同时进入
+  await Promise.all([
+    writeIndex(root, { entries: [entry(1)] }),
+    writeIndex(root, { entries: [entry(1), entry(2)] }),
+  ])
+  const files = (await readdir(root)).filter(name => name.includes('.tmp-'))
+  assert.deepEqual(files, [], 'no temp file survives concurrent writes')
+  const after = (await readIndex(root)).entries.map(e => e.version)
+  assert.deepEqual(after, ['1.0.1', '1.0.2'], 'the later write wins whole, never interleaved')
+})
