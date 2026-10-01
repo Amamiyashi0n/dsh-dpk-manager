@@ -4,13 +4,19 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { LlmError } from '@deepseek-ai/dsh-llm';
+import { discoverZcodeInstall } from './app-server-discovery.js';
 // The app-server follows the host's normal Node runtime.  A persisted
 // profile may still provide an explicit executable, but the plugin itself
 // must not silently select a removed MSYS2 toolchain.
 const DEFAULT_NODE_PATH = process.env.DSH_NODE_PATH?.trim() || 'node';
-const DEFAULT_CLI_PATH = process.env.DSH_ZCODE_CLI_PATH?.trim() || '';
+// Env vars remain explicit dev overrides; the default now comes from this
+// machine's real install (registry App Paths, PATH, installed-programs
+// entries, common directories), so a fresh machine needs no hand-set paths.
+const DISCOVERED_INSTALL = discoverZcodeInstall();
+const DEFAULT_CLI_PATH = process.env.DSH_ZCODE_CLI_PATH?.trim() || DISCOVERED_INSTALL?.cliPath || '';
 const DEFAULT_STORAGE_DIR = process.env.ZCODE_STORAGE_DIR?.trim() || '';
-const DEFAULT_BUILTIN_CONFIG = process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE?.trim() || '';
+const DEFAULT_BUILTIN_CONFIG = process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE?.trim()
+    || DISCOVERED_INSTALL?.builtinProviderConfigPath || '';
 const DEFAULT_APP_SERVER_MAX_OUTPUT_TOKENS = 32000;
 /** Hard cap for one delegated Start-Plan agent turn (the engine runs its own loop). */
 const SESSION_TURN_TIMEOUT_MS = 15 * 60 * 1000;
@@ -571,8 +577,11 @@ export class OpenZCodeAppServerTransport {
             return await this.startPromise;
         const nodePath = this.config.nodePath?.trim() || DEFAULT_NODE_PATH;
         const cliPath = this.config.cliPath?.trim() || DEFAULT_CLI_PATH;
-        if (!cliPath)
-            throw new LlmError('app-server cliPath is not configured', 'CONFIGURATION');
+        if (!cliPath) {
+            throw new LlmError('app-server cliPath is not configured and no ZCode install was found'
+                + ' (searched the registry App Paths, PATH, installed-programs entries, and the usual install directories);'
+                + ' install ZCode on this machine, or set appServer.cliPath', 'CONFIGURATION');
+        }
         if (nodePath !== 'node' && !existsSync(nodePath)) {
             throw new LlmError(`app-server nodePath does not exist: ${nodePath}`, 'CONFIGURATION');
         }
@@ -857,14 +866,20 @@ export class OpenZCodeAppServerTransport {
     }
 }
 export function defaultAppServerPaths() {
+    // Priority: explicit env override → this machine's real install (registry,
+    // PATH, installed programs, common directories) → the dev checkout layout.
+    const discovered = discoverZcodeInstall();
     const repo = process.env.DSH_ZCODE_REPO?.trim() || '';
     const zcodeRoot = repo ? join(repo, 're-zcode', 'zcode-unpacked', 'resources') : '';
     const storageDir = process.env.ZCODE_STORAGE_DIR?.trim() || join(homedir(), '.zcode', 'v2');
     return {
         nodePath: process.env.DSH_NODE_PATH?.trim() || 'node',
-        cliPath: process.env.DSH_ZCODE_CLI_PATH?.trim() || (zcodeRoot ? join(zcodeRoot, 'glm', 'zcode.cjs') : ''),
+        cliPath: process.env.DSH_ZCODE_CLI_PATH?.trim()
+            || discovered?.cliPath
+            || (zcodeRoot ? join(zcodeRoot, 'glm', 'zcode.cjs') : ''),
         storageDir,
         builtinProviderConfigPath: process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE?.trim()
+            || discovered?.builtinProviderConfigPath
             || (zcodeRoot ? join(zcodeRoot, 'config', 'provider', 'zcode-builtin.json') : ''),
         personalProviderConfigPath: process.env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE?.trim()
             || join(storageDir, 'provider_config.json'),

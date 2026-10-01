@@ -1,10 +1,10 @@
 /* zcode-provider bundled entry: inlines vendored dsh-llm and schemastery for zero-peer-resolution import; boundary discipline lives in src and unbundled modules */
 
 // lib/index.unbundled.js
-import { existsSync as existsSync4, readFileSync as readFileSync6 } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync6 } from "node:fs";
 import { randomUUID as randomUUID4 } from "node:crypto";
 import { arch as nodeArch, platform as nodePlatform, release as nodeRelease } from "node:os";
-import { join as join5 } from "node:path";
+import { join as join6 } from "node:path";
 
 // ../../deepseek-harness/packages/llm/llm/lib/index.js
 import { createRequire } from "node:module";
@@ -132,8 +132,8 @@ function clone(source, refs = /* @__PURE__ */ new Map()) {
   if (is("RegExp", source)) return new RegExp(source.source, source.flags);
   if (isArrayBufferLike(source)) return source.slice(0);
   if (ArrayBuffer.isView(source)) return source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength);
-  const cached = refs.get(source);
-  if (cached) return cached;
+  const cached2 = refs.get(source);
+  if (cached2) return cached2;
   if (Array.isArray(source)) {
     const result2 = [];
     refs.set(source, result2);
@@ -4099,8 +4099,8 @@ function clone2(source, refs = /* @__PURE__ */ new Map()) {
   if (is2("RegExp", source)) return new RegExp(source.source, source.flags);
   if (isArrayBufferLike2(source)) return source.slice(0);
   if (ArrayBuffer.isView(source)) return source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength);
-  const cached = refs.get(source);
-  if (cached) return cached;
+  const cached2 = refs.get(source);
+  if (cached2) return cached2;
   if (Array.isArray(source)) {
     const result2 = [];
     refs.set(source, result2);
@@ -6946,13 +6946,147 @@ function createPromptRemoteService(ctx, store) {
 // lib/openzcode-app-server.js
 import { spawn } from "node:child_process";
 import { createHash as createHash4, randomUUID as randomUUID3 } from "node:crypto";
-import { existsSync as existsSync2, mkdtempSync, readFileSync as readFileSync4, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
-import { homedir as homedir3, tmpdir } from "node:os";
-import { dirname as dirname2, join as join3, resolve as resolve3 } from "node:path";
+import { existsSync as existsSync3, mkdtempSync, readFileSync as readFileSync4, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { homedir as homedir4, tmpdir } from "node:os";
+import { dirname as dirname3, join as join4, resolve as resolve3 } from "node:path";
+
+// lib/app-server-discovery.js
+import { spawnSync } from "node:child_process";
+import { existsSync as existsSync2 } from "node:fs";
+import { dirname as dirname2, join as join3 } from "node:path";
+import { homedir as homedir3 } from "node:os";
+var CLI_RELATIVE = join3("resources", "glm", "zcode.cjs");
+var BUILTIN_RELATIVE = join3("resources", "config", "provider", "zcode-builtin.json");
+function zcodeInstallFromRoot(root) {
+  const trimmed = root.trim();
+  if (trimmed === "")
+    return void 0;
+  const cliPath = join3(trimmed, CLI_RELATIVE);
+  if (!existsSync2(cliPath))
+    return void 0;
+  const builtinProviderConfigPath = join3(trimmed, BUILTIN_RELATIVE);
+  return {
+    installRoot: trimmed,
+    cliPath,
+    builtinProviderConfigPath: existsSync2(builtinProviderConfigPath) ? builtinProviderConfigPath : void 0
+  };
+}
+function regValue(output, name2) {
+  const lines = output.split(/\r?\n/u);
+  const wanted = name2 === "(default)" ? void 0 : name2;
+  for (const line of lines) {
+    const match = /^\s*(.+?)\s+REG_(?:SZ|EXPAND_SZ)\s+(.+?)\s*$/u.exec(line);
+    if (match === null)
+      continue;
+    if (wanted === void 0 || match[1] === wanted || match[1].startsWith("(")) {
+      return match[2];
+    }
+  }
+  return void 0;
+}
+function regQuery(args) {
+  const run = spawnSync("reg", [...args], { encoding: "utf8", windowsHide: true, timeout: 4e3 });
+  return run.status === 0 && run.stdout.length > 0 ? run.stdout : void 0;
+}
+function windowsRegistryRoots() {
+  const roots = [];
+  const appPaths = [
+    ["HKCU", "SOFTWARE", "Microsoft", "Windows", "CurrentVersion", "App Paths", "zcode.exe"],
+    ["HKLM", "SOFTWARE", "Microsoft", "Windows", "CurrentVersion", "App Paths", "zcode.exe"]
+  ];
+  for (const [hive, ...path] of appPaths) {
+    const output = regQuery([hive, "query", path.join("\\")]);
+    if (output === void 0)
+      continue;
+    const exe = regValue(output, "(default)");
+    const dir = regValue(output, "Path");
+    for (const candidate of exe !== void 0 ? [dirname2(exe)] : [])
+      roots.push(candidate);
+    if (dir !== void 0)
+      roots.push(dir.replace(/[\\/]+$/u, ""));
+  }
+  for (const hive of ["HKCU", "HKLM"]) {
+    for (const view of ["SOFTWARE", "SOFTWARE\\WOW6432Node"]) {
+      const key = `${hive}\\${view}\\Microsoft\\Windows\\CurrentVersion\\Uninstall`;
+      const listing = regQuery([hive, "query", key]);
+      if (listing === void 0)
+        continue;
+      for (const sub of listing.split(/\r?\n/u)) {
+        const keyMatch = /^HKEY_\w+\\(.+)$/u.exec(sub.trim());
+        if (keyMatch === null)
+          continue;
+        const output = regQuery([hive, "query", keyMatch[1]]);
+        if (output === void 0)
+          continue;
+        const display = regValue(output, "DisplayName");
+        if (display === void 0 || !/^zcode(\s|$)/iu.test(display))
+          continue;
+        const location = regValue(output, "InstallLocation");
+        if (location !== void 0 && location !== "")
+          roots.push(location.replace(/[\\/]+$/u, ""));
+      }
+    }
+  }
+  return roots;
+}
+function filesystemRoots() {
+  const roots = [];
+  const lookup = process.platform === "win32" ? spawnSync("where", ["zcode"], { encoding: "utf8", windowsHide: true, timeout: 4e3 }) : spawnSync("which", ["zcode"], { encoding: "utf8", timeout: 4e3 });
+  if (lookup.status === 0) {
+    for (const hit of lookup.stdout.split(/\r?\n/u)) {
+      const exe = hit.trim();
+      if (exe !== "")
+        roots.push(exe.endsWith(".exe") || exe.includes("/") || exe.includes("\\") ? dirname2(exe) : exe);
+    }
+  }
+  if (process.platform === "win32") {
+    const local = process.env.LOCALAPPDATA;
+    if (local !== void 0)
+      roots.push(join3(local, "Programs", "zcode"));
+    for (const program of [process.env["ProgramFiles"], process.env["ProgramFiles(x86)"]]) {
+      if (program !== void 0)
+        roots.push(join3(program, "ZCode"));
+    }
+  } else if (process.platform === "darwin") {
+    roots.push("/Applications/ZCode.app/Contents/Resources");
+  } else {
+    roots.push("/opt/zcode", "/opt/ZCode", "/usr/lib/zcode");
+  }
+  roots.push(join3(homedir3(), ".local", "share", "zcode"));
+  return roots;
+}
+var cached;
+var hasCached = false;
+function discoverZcodeInstall(roots) {
+  if (roots === void 0 && hasCached)
+    return cached;
+  const candidates = roots ?? [...windowsRegistryRoots(), ...filesystemRoots()];
+  let found;
+  const seen = /* @__PURE__ */ new Set();
+  for (const root of candidates) {
+    const key = root.toLowerCase().replaceAll("/", "\\");
+    if (seen.has(key))
+      continue;
+    seen.add(key);
+    const install = zcodeInstallFromRoot(root);
+    if (install !== void 0) {
+      found = install;
+      break;
+    }
+  }
+  if (roots === void 0) {
+    cached = found;
+    hasCached = true;
+  }
+  return found;
+}
+
+// lib/openzcode-app-server.js
 var DEFAULT_NODE_PATH = process.env.DSH_NODE_PATH?.trim() || "node";
-var DEFAULT_CLI_PATH = process.env.DSH_ZCODE_CLI_PATH?.trim() || "";
+var DISCOVERED_INSTALL = discoverZcodeInstall();
+var DEFAULT_CLI_PATH = process.env.DSH_ZCODE_CLI_PATH?.trim() || DISCOVERED_INSTALL?.cliPath || "";
 var DEFAULT_STORAGE_DIR = process.env.ZCODE_STORAGE_DIR?.trim() || "";
-var DEFAULT_BUILTIN_CONFIG = process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE?.trim() || "";
+var DEFAULT_BUILTIN_CONFIG = process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE?.trim() || DISCOVERED_INSTALL?.builtinProviderConfigPath || "";
 var DEFAULT_APP_SERVER_MAX_OUTPUT_TOKENS = 32e3;
 var SESSION_TURN_TIMEOUT_MS = 15 * 60 * 1e3;
 var SESSION_POLL_MS = 900;
@@ -7033,8 +7167,8 @@ function materializePersonalProviderConfig(route, providerId) {
       }
     }
   };
-  const directory = mkdtempSync(join3(tmpdir(), "openzcode-app-server-"));
-  const file = join3(directory, "provider_config.json");
+  const directory = mkdtempSync(join4(tmpdir(), "openzcode-app-server-"));
+  const file = join4(directory, "provider_config.json");
   writeFileSync2(file, JSON.stringify(catalog), "utf8");
   return file;
 }
@@ -7324,7 +7458,7 @@ var OpenZCodeAppServerTransport = class {
     this.accountConfigRevision = void 0;
     if (this.generatedProviderConfigPath) {
       try {
-        rmSync(dirname2(this.generatedProviderConfigPath), { recursive: true, force: true });
+        rmSync(dirname3(this.generatedProviderConfigPath), { recursive: true, force: true });
       } catch {
       }
       this.generatedProviderConfigPath = void 0;
@@ -7468,12 +7602,13 @@ var OpenZCodeAppServerTransport = class {
       return await this.startPromise;
     const nodePath = this.config.nodePath?.trim() || DEFAULT_NODE_PATH;
     const cliPath = this.config.cliPath?.trim() || DEFAULT_CLI_PATH;
-    if (!cliPath)
-      throw new LlmError("app-server cliPath is not configured", "CONFIGURATION");
-    if (nodePath !== "node" && !existsSync2(nodePath)) {
+    if (!cliPath) {
+      throw new LlmError("app-server cliPath is not configured and no ZCode install was found (searched the registry App Paths, PATH, installed-programs entries, and the usual install directories); install ZCode on this machine, or set appServer.cliPath", "CONFIGURATION");
+    }
+    if (nodePath !== "node" && !existsSync3(nodePath)) {
       throw new LlmError(`app-server nodePath does not exist: ${nodePath}`, "CONFIGURATION");
     }
-    if (!existsSync2(cliPath))
+    if (!existsSync3(cliPath))
       throw new LlmError(`app-server cliPath does not exist: ${cliPath}`, "CONFIGURATION");
     this.startPromise = new Promise((resolve4, reject) => {
       const env = {
@@ -7484,16 +7619,16 @@ var OpenZCodeAppServerTransport = class {
         } : {},
         ...this.config.builtinProviderConfigPath?.trim() ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: this.config.builtinProviderConfigPath.trim() } : {}
       };
-      const personalProviderConfigPath = this.config.personalProviderConfigPath?.trim() || this.generatedProviderConfigPath || (this.config.storageDir?.trim() ? join3(this.config.storageDir.trim(), "provider_config.json") : "");
+      const personalProviderConfigPath = this.config.personalProviderConfigPath?.trim() || this.generatedProviderConfigPath || (this.config.storageDir?.trim() ? join4(this.config.storageDir.trim(), "provider_config.json") : "");
       if (personalProviderConfigPath) {
         env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE = personalProviderConfigPath;
       }
-      const toolchainBin = dirname2(nodePath);
+      const toolchainBin = dirname3(nodePath);
       const toolchainRoot = toolchainBin.replace(/[\\/]\w+64[\\/]bin$/i, "");
       const pathParts = [
         toolchainBin,
-        join3(toolchainRoot, "mingw64", "bin"),
-        join3(toolchainRoot, "usr", "bin"),
+        join4(toolchainRoot, "mingw64", "bin"),
+        join4(toolchainRoot, "usr", "bin"),
         env.PATH
       ].filter((value) => typeof value === "string" && value.length > 0);
       env.PATH = pathParts.join(process.platform === "win32" ? ";" : ":");
@@ -7729,30 +7864,31 @@ var OpenZCodeAppServerTransport = class {
   }
 };
 function defaultAppServerPaths() {
+  const discovered = discoverZcodeInstall();
   const repo = process.env.DSH_ZCODE_REPO?.trim() || "";
-  const zcodeRoot = repo ? join3(repo, "re-zcode", "zcode-unpacked", "resources") : "";
-  const storageDir = process.env.ZCODE_STORAGE_DIR?.trim() || join3(homedir3(), ".zcode", "v2");
+  const zcodeRoot = repo ? join4(repo, "re-zcode", "zcode-unpacked", "resources") : "";
+  const storageDir = process.env.ZCODE_STORAGE_DIR?.trim() || join4(homedir4(), ".zcode", "v2");
   return {
     nodePath: process.env.DSH_NODE_PATH?.trim() || "node",
-    cliPath: process.env.DSH_ZCODE_CLI_PATH?.trim() || (zcodeRoot ? join3(zcodeRoot, "glm", "zcode.cjs") : ""),
+    cliPath: process.env.DSH_ZCODE_CLI_PATH?.trim() || discovered?.cliPath || (zcodeRoot ? join4(zcodeRoot, "glm", "zcode.cjs") : ""),
     storageDir,
-    builtinProviderConfigPath: process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE?.trim() || (zcodeRoot ? join3(zcodeRoot, "config", "provider", "zcode-builtin.json") : ""),
-    personalProviderConfigPath: process.env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE?.trim() || join3(storageDir, "provider_config.json")
+    builtinProviderConfigPath: process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE?.trim() || discovered?.builtinProviderConfigPath || (zcodeRoot ? join4(zcodeRoot, "config", "provider", "zcode-builtin.json") : ""),
+    personalProviderConfigPath: process.env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE?.trim() || join4(storageDir, "provider_config.json")
   };
 }
 
 // lib/auth-backend.js
-import { existsSync as existsSync3, mkdirSync as mkdirSync2, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "node:fs";
-import { dirname as dirname3, join as join4 } from "node:path";
+import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "node:fs";
+import { dirname as dirname4, join as join5 } from "node:path";
 var AUTH_BACKEND_REMOTE_NAMESPACE = "zcodeAuthBackend";
 function defaultAuthBackendPath(storageRoot) {
-  return join4(storageRoot?.trim() || defaultStorageRoot(), "auth-backend.json");
+  return join5(storageRoot?.trim() || defaultStorageRoot(), "auth-backend.json");
 }
 function normalizeAuthBackend(value) {
   return value === "closezcode-app-server" ? "closezcode-app-server" : "openzcode-app-server";
 }
 function readAuthBackend(path) {
-  if (!existsSync3(path))
+  if (!existsSync4(path))
     return "openzcode-app-server";
   try {
     const parsed = JSON.parse(readFileSync5(path, "utf8"));
@@ -7762,7 +7898,7 @@ function readAuthBackend(path) {
   }
 }
 function writeAuthBackend(path, backend) {
-  mkdirSync2(dirname3(path), { recursive: true });
+  mkdirSync2(dirname4(path), { recursive: true });
   writeFileSync3(path, `${JSON.stringify({ backend: normalizeAuthBackend(backend) }, null, 2)}
 `, {
     encoding: "utf8",
@@ -8921,15 +9057,15 @@ function apply(ctx, config = {}) {
     });
   };
   const collectEntitlementReport = async (force = false, signal) => {
-    const cached = entitlementCache;
-    if (cached.pending !== void 0) {
-      return await awaitWithSignal(cached.pending, signal);
+    const cached2 = entitlementCache;
+    if (cached2.pending !== void 0) {
+      return await awaitWithSignal(cached2.pending, signal);
     }
-    if (!force && isFresh(cached, ENTITLEMENT_CACHE_TTL_MS))
-      return cached.value;
+    if (!force && isFresh(cached2, ENTITLEMENT_CACHE_TTL_MS))
+      return cached2.value;
     const entry = {
-      ...cached.value === void 0 ? {} : { value: cached.value },
-      fetchedAt: cached.fetchedAt
+      ...cached2.value === void 0 ? {} : { value: cached2.value },
+      fetchedAt: cached2.fetchedAt
     };
     const pending = fetchEntitlementReport(usageDeps(void 0, ENTITLEMENT_REQUEST_TIMEOUT_MS), signal);
     entry.pending = pending;
@@ -8943,22 +9079,22 @@ function apply(ctx, config = {}) {
       return core;
     } catch (error) {
       if (entitlementCache === entry && entry.pending === pending) {
-        entitlementCache = cached.value === void 0 ? { fetchedAt: 0 } : { value: cached.value, fetchedAt: cached.fetchedAt };
+        entitlementCache = cached2.value === void 0 ? { fetchedAt: 0 } : { value: cached2.value, fetchedAt: cached2.fetchedAt };
       }
       throw error;
     }
   };
   const collectUsageSupplement = async (range, force = false, signal) => {
     const cacheKey = range ?? "30d";
-    const cached = supplementCache.get(cacheKey);
-    if (cached?.pending !== void 0) {
-      return await awaitWithSignal(cached.pending, signal);
+    const cached2 = supplementCache.get(cacheKey);
+    if (cached2?.pending !== void 0) {
+      return await awaitWithSignal(cached2.pending, signal);
     }
-    if (!force && isFresh(cached, SUPPLEMENT_CACHE_TTL_MS))
-      return cached.value;
+    if (!force && isFresh(cached2, SUPPLEMENT_CACHE_TTL_MS))
+      return cached2.value;
     const entry = {
-      ...cached?.value === void 0 ? {} : { value: cached.value },
-      fetchedAt: cached?.fetchedAt ?? 0
+      ...cached2?.value === void 0 ? {} : { value: cached2.value },
+      fetchedAt: cached2?.fetchedAt ?? 0
     };
     const pending = fetchUsageSupplement(usageDeps(cacheKey, SUPPLEMENT_REQUEST_TIMEOUT_MS), signal);
     entry.pending = pending;
@@ -8971,10 +9107,10 @@ function apply(ctx, config = {}) {
       return supplement;
     } catch (error) {
       if (supplementCache.get(cacheKey) === entry && entry.pending === pending) {
-        if (cached?.value === void 0)
+        if (cached2?.value === void 0)
           supplementCache.delete(cacheKey);
         else
-          supplementCache.set(cacheKey, { value: cached.value, fetchedAt: cached.fetchedAt });
+          supplementCache.set(cacheKey, { value: cached2.value, fetchedAt: cached2.fetchedAt });
       }
       throw error;
     }
@@ -9037,7 +9173,7 @@ function apply(ctx, config = {}) {
   const runtimePromptContext = (sessionId) => {
     const agents = ctx.get("agents");
     const cwd = sessionId === void 0 ? process.cwd() : agents?.get(sessionId)?.session?.header?.cwd ?? process.cwd();
-    return { cwd, isGitRepository: existsSync4(join5(cwd, ".git")) };
+    return { cwd, isGitRepository: existsSync5(join6(cwd, ".git")) };
   };
   const regs = [];
   for (const key of Object.keys(routes)) {
