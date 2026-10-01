@@ -34,14 +34,8 @@ check('package includes split entitlement projection',
   && clientSource.includes("directDescriptor(CAPTCHA_REMOTE_NAMESPACE, 'complete'")
   && clientSource.includes('loadInitialSnapshot'))
 check('Web client has an explicit package export', packageJson.exports?.['./client'] === './client.js')
-check('Web client declares only public DSH service dependencies',
-  JSON.stringify(packageJson.dsh?.client?.inject) === JSON.stringify([
-    '@deepseek-ai/dsh-api-remotes',
-    '@deepseek-ai/dsh-client-locale',
-    '@deepseek-ai/dsh-client-ui-renderer',
-    '@deepseek-ai/dsh-client-ui-layout',
-    '@deepseek-ai/dsh-client-ui-settings',
-  ]))
+check('Web client declares no phantom inject: the factory requires only what it needs',
+  packageJson.dsh?.client?.inject === undefined)
 check('source and tests are declared as distributable files',
   packageJson.files.includes('src') && packageJson.files.includes('tests') && packageJson.files.includes('tsconfig.json'))
 

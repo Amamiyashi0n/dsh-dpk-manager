@@ -445,19 +445,11 @@ test('client owns the entitlement panel and an additive Web UI captcha overlay',
 test('package manifest declares the Web client and explicit peers', async () => {
   const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
   assert.deepEqual(pkg.dsh.client, {
-    inject: [
-      '@deepseek-ai/dsh-api-remotes',
-      '@deepseek-ai/dsh-client-locale',
-      '@deepseek-ai/dsh-client-ui-renderer',
-      '@deepseek-ai/dsh-client-ui-layout',
-      '@deepseek-ai/dsh-client-ui-settings',
-    ],
     platform: 'web',
     immediately: true,
   })
   assert.equal(pkg.exports['./client'], './client.js')
   assert.equal(pkg.peerDependencies.react, '*')
   assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-client-ui-primitives'], '*')
-  assert.equal(pkg.peerDependencies['@deepseek-ai/dsh-client-ui-settings'], '*')
   assert.ok(pkg.files.includes('client.js'))
 })

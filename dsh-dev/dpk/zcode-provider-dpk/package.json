@@ -1,7 +1,7 @@
 {
   "name": "@local/zcode-provider",
   "description": "Standalone white-box ZCode-compatible provider for DeepSeek Harness",
-  "version": "2.5.41",
+  "version": "2.5.42",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -104,22 +104,12 @@
       "patch": "./cordis.patch.yml"
     },
     "client": {
-      "inject": [
-        "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-renderer",
-        "@deepseek-ai/dsh-client-ui-layout",
-        "@deepseek-ai/dsh-client-ui-settings"
-      ],
       "platform": "web",
       "immediately": true
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "*",
-    "@deepseek-ai/cordis-plugin-loader": "*",
     "@deepseek-ai/dsh-client-ui-primitives": "*",
-    "@deepseek-ai/dsh-client-ui-settings": "*",
     "react": "*"
   },
   "peerDependenciesMeta": {
@@ -128,15 +118,17 @@
     }
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/cordis-plugin-include": "^1.0.9",
-    "@deepseek-ai/dsh-system-prompt": "link:../../deepseek-harness/packages/core/system-prompt",
-    "@deepseek-ai/dsh-tools": "link:../../deepseek-harness/packages/core/tools",
-    "@types/node": "^22.20.0",
-    "typescript": "^6.0.3",
-    "@deepseek-ai/dsh-llm": "0.0.1-rc.1",
-    "@deepseek-ai/schemastery": "3.18.4",
-    "@deepseek-ai/dsh-timeout": "0.0.1-rc.1",
+    "@deepseek-ai/cordis-plugin-loader": "1.0.5",
     "@deepseek-ai/cosmokit": "1.8.5",
-    "esbuild": "0.25.0"
+    "@deepseek-ai/dsh-llm": "0.0.1-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "link:../../deepseek-harness/packages/core/system-prompt",
+    "@deepseek-ai/dsh-timeout": "0.0.1-rc.1",
+    "@deepseek-ai/dsh-tools": "link:../../deepseek-harness/packages/core/tools",
+    "@deepseek-ai/schemastery": "3.18.4",
+    "@types/node": "^22.20.0",
+    "esbuild": "0.25.0",
+    "typescript": "^6.0.3"
   }
 }
