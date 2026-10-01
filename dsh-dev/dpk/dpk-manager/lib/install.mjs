@@ -167,7 +167,9 @@ export async function installArchive(options) {
   })
 
   await recordInstall(root, {
-    name: manifest.name,
+    // The store copy was localized, so the ledger carries the same name the
+    // profile dependency does — a legacy unscoped archive lands as @local/….
+    name: localizeName(manifest.name),
     version: manifest.version,
     digest: placed.digest,
     path: join('store', placed.digest, 'package'),

@@ -11,7 +11,7 @@
 
 import { createHash } from 'node:crypto'
 import { validateArchivePath } from './zip.mjs'
-import { SEMVER, PACKAGE_NAME, PACKAGE_NAME_MAX_LENGTH } from './dsh-package.mjs'
+import { SEMVER, PACKAGE_NAME, PACKAGE_NAME_MAX_LENGTH, NEVER_PACKED, localizeName } from './dsh-package.mjs'
 
 /** The format version this implementation writes and understands. */
 export const DPK_FORMAT_VERSION = 1
@@ -247,7 +247,10 @@ export function validateManifest(value) {
  */
 export function compareManifestToPackage(manifest, source) {
   const problems = []
-  if (manifest.name !== source.name) problems.push(`name: dpk.json says ${manifest.name}, package.json says ${source.name}`)
+  // Both sides read through the same normalization: an archive written before
+  // the @local convention is consistent with its own package.json, not a
+  // contradiction, once the claimed name is localized the same way.
+  if (localizeName(manifest.name) !== source.name) problems.push(`name: dpk.json says ${manifest.name}, package.json says ${source.name}`)
   if (manifest.version !== source.version) {
     problems.push(`version: dpk.json says ${manifest.version}, package.json says ${source.version}`)
   }
@@ -271,6 +274,10 @@ export function compareManifestToPackage(manifest, source) {
   const expectedFiles = new Map(source.files.map(file => [file.path, file]))
   for (const file of manifest.files) {
     const relative = file.path.startsWith(PACKAGE_PREFIX) ? file.path.slice(PACKAGE_PREFIX.length) : file.path
+    // A never-packed directory (dist/, node_modules/, .git/) is skipped by the
+    // package scanner, so older archives that still carry such entries inside
+    // are consistent — their absence from the scan says nothing.
+    if (NEVER_PACKED.has(relative.split('/')[0])) continue
     const actual = expectedFiles.get(relative)
     if (actual === undefined) { problems.push(`files: ${file.path} is listed but absent from the package`); continue }
     if (actual.size !== file.size) problems.push(`files: ${file.path} size ${file.size} != ${actual.size}`)
