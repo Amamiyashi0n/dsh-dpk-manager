@@ -13,14 +13,14 @@ test('quota bars use remaining capacity and the real quota total', () => {
   assert.match(source, /const REMOTE_TIMEOUT_MS = 10_000/)
   assert.match(source, /Promise\.race\(\[/)
   assert.match(source, /const directDescriptor = \(namespace, method, typeSymbol, cancellation = false\)/)
-  assert.match(source, /directDescriptor\('zcodeEntitlements', 'snapshot', 'zcode-provider#UsageSnapshotRequest', true\)/)
-  assert.match(source, /directDescriptor\('zcodeEntitlements', 'usage', 'zcode-provider#UsageSnapshotRequest', true\)/)
+  assert.match(source, /directDescriptor\('zcodeEntitlements', 'snapshot', '@local\/zcode-provider#UsageSnapshotRequest', true\)/)
+  assert.match(source, /directDescriptor\('zcodeEntitlements', 'usage', '@local\/zcode-provider#UsageSnapshotRequest', true\)/)
   assert.match(source, /controller\.abort\(\)/)
   assert.match(source, /const CAPTCHA_REMOTE_NAMESPACE = 'zcodeCaptcha'/)
-  assert.match(source, /directDescriptor\(CAPTCHA_REMOTE_NAMESPACE, 'claim', 'zcode-provider#CaptchaClaimRequest'\)/)
+  assert.match(source, /directDescriptor\(CAPTCHA_REMOTE_NAMESPACE, 'claim', '@local\/zcode-provider#CaptchaClaimRequest'\)/)
   assert.match(source, /cancellation: \{ parameter: 'signal' \}/)
-  assert.match(source, /directDescriptor\(CAPTCHA_REMOTE_NAMESPACE, 'complete', 'zcode-provider#CaptchaCompleteRequest'\)/)
-  assert.match(source, /directDescriptor\(CAPTCHA_REMOTE_NAMESPACE, 'release', 'zcode-provider#CaptchaReleaseRequest'\)/)
+  assert.match(source, /directDescriptor\(CAPTCHA_REMOTE_NAMESPACE, 'complete', '@local\/zcode-provider#CaptchaCompleteRequest'\)/)
+  assert.match(source, /directDescriptor\(CAPTCHA_REMOTE_NAMESPACE, 'release', '@local\/zcode-provider#CaptchaReleaseRequest'\)/)
   assert.match(source, /const CAPTCHA_RELEASE_TIMEOUT_MS = 5_000/)
   assert.match(source, /const CAPTCHA_MAX_RETRY_AFTER_MS = 30_000/)
   assert.match(source, /function captchaClaimRetryDelay\(response\)/)
@@ -250,7 +250,7 @@ test('client owns the entitlement panel and an additive Web UI captcha overlay',
   }
   vm.runInNewContext(source, { window, Intl, Date, AbortController, setTimeout, clearTimeout })
 
-  assert.equal(registration.id, 'zcode-provider')
+  assert.equal(registration.id, '@local/zcode-provider')
   const plugin = registration.factory((name) => {
     if (name === 'react') return {
       createElement(type, props, ...children) { return { type, props: props ?? {}, children } },
@@ -384,7 +384,7 @@ test('client owns the entitlement panel and an additive Web UI captcha overlay',
   }
 
   await plugin.apply(ctx)
-  assert.equal(contribution.package, 'zcode-provider')
+  assert.equal(contribution.package, '@local/zcode-provider')
   assert.equal(
     JSON.stringify(contribution.descriptors.map(value => [value.namespace, value.method, value.parameters.length])),
     JSON.stringify([
@@ -411,7 +411,7 @@ test('client owns the entitlement panel and an additive Web UI captcha overlay',
     registrations.map(value => `${value.spec.name}:${value.spec.id ?? value.spec.key}`).sort(),
     [
       'main:zcode-entitlements',
-      'plugins.bundle.config:zcode-provider',
+      'plugins\.bundle\.config:@local\/zcode-provider',
       'shell.overlay:zcode-captcha',
       'sidebar.panellist:zcode-entitlements',
     ],
@@ -427,7 +427,7 @@ test('client owns the entitlement panel and an additive Web UI captcha overlay',
   assert.doesNotMatch(source, /You are ZCode, an interactive coding agent/)
   assert.doesNotMatch(source, /data-zcode-system-prompts/)
   assert.doesNotMatch(source, /zcode-provider-prompts/)
-  const promptEditor = registrations.find(value => value.spec.key === 'zcode-provider')
+  const promptEditor = registrations.find(value => value.spec.key === '@local/zcode-provider')
   assert.equal(typeof promptEditor.component, 'function')
   assert.match(source, /promptRemote\.mutate\(\{ value \}, signal\)/)
   assert.match(source, /提示词保存成功/)

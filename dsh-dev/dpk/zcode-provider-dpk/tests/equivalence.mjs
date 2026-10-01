@@ -17,7 +17,7 @@ async function registrations(entry) {
   const providers = []
   const warnings = []
   const ctx = {
-    fiber: { entry: { options: { id: 'zcode-provider' } } },
+    fiber: { entry: { options: { id: '@local/zcode-provider' } } },
     llm: {
       registerAdapter(routes, adapter) { for (const route of routes) adapters.set(route, adapter) },
       registerConfigurableProviders(regs) { providers.push(...regs) },

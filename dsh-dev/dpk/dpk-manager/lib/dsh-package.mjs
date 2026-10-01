@@ -17,6 +17,9 @@ import { extname, isAbsolute, join, relative, resolve, sep, win32 } from 'node:p
 export const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/
 /** The registry's name length ceiling (`install-spec.ts:32`). */
 export const PACKAGE_NAME_MAX_LENGTH = 214
+/** Locally distributed packages carry the local scope, so a `.dpk` never
+ * shadows a name on the public registry. */
+export const LOCAL_SCOPE = '@local/'
 /** Semver, permissive about prerelease/build but strict about the core. */
 export const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 /** Locale file language ids (`package-meta.ts:10`). */
@@ -233,6 +236,12 @@ export async function validateDshPackage(directory) {
   if (name === undefined) throw new PackageError('package.json: name is required', 'PACKAGE_NAME')
   if (name.length > PACKAGE_NAME_MAX_LENGTH || !PACKAGE_NAME.test(name)) {
     throw new PackageError(`package.json: name is not one the registry accepts: ${name}`, 'PACKAGE_NAME')
+  }
+  if (!name.startsWith(LOCAL_SCOPE)) {
+    throw new PackageError(
+      `package.json: a locally distributed package carries the ${LOCAL_SCOPE} scope: ${name}`,
+      'PACKAGE_LOCAL_SCOPE',
+    )
   }
   const version = stringField(manifest, 'version')
   if (version === undefined) throw new PackageError('package.json: version is required', 'PACKAGE_VERSION')

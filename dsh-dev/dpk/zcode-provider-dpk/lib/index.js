@@ -7816,7 +7816,7 @@ function createAuthBackendRemoteService(ctx, store) {
 }
 
 // lib/index.unbundled.js
-var name = "zcode-provider";
+var name = "@local/zcode-provider";
 var inject = ["llm"];
 var DEFAULT_CONFIG_PATH = defaultProviderConfigPath();
 var DEFAULT_APP_SERVER_PATHS = defaultAppServerPaths();

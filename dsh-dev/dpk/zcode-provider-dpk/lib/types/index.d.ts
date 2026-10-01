@@ -10,7 +10,7 @@ import { type PromptOverrides, type RuntimePromptContext } from './official-prom
 import { type CredentialSource } from './credentials.js';
 import { type AppServerConfig } from './openzcode-app-server.js';
 import { type AuthBackend } from './auth-backend.js';
-export declare const name = "zcode-provider";
+export declare const name = "@local/zcode-provider";
 export declare const inject: string[];
 interface ZcodeModel {
     id: string;

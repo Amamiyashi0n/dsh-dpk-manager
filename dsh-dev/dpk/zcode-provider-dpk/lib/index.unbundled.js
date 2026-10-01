@@ -24,7 +24,7 @@ import { defaultPromptOverridesPath, hasPromptOverrides, readPromptOverrides, wr
 import { createPromptRemoteService } from './prompt-remote.js';
 import { OpenZCodeAppServerTransport, defaultAppServerPaths, } from './openzcode-app-server.js';
 import { createAuthBackendRemoteService, defaultAuthBackendPath, normalizeAuthBackend, readAuthBackend, writeAuthBackend, } from './auth-backend.js';
-export const name = 'zcode-provider';
+export const name = '@local/zcode-provider';
 export const inject = ['llm'];
 const DEFAULT_CONFIG_PATH = defaultProviderConfigPath();
 const DEFAULT_APP_SERVER_PATHS = defaultAppServerPaths();

@@ -6,7 +6,7 @@
  */
 
 window.__ModuleLoader__.load({
-  id: 'zcode-provider',
+  id: '@local/zcode-provider',
   factory(require) {
     const React = require('react')
     const {
@@ -167,7 +167,7 @@ window.__ModuleLoader__.load({
     }
 
     const directDescriptor = (namespace, method, typeSymbol, cancellation = false) => ({
-      id: `zcode-provider#${namespace}/${method}`,
+      id: `@local/zcode-provider#${namespace}/${method}`,
       service: namespace,
       namespace,
       method,
@@ -186,10 +186,10 @@ window.__ModuleLoader__.load({
       result: { mode: 'src-json' },
     })
     const ENTITLEMENTS_REMOTE = {
-      package: 'zcode-provider',
+      package: '@local/zcode-provider',
       descriptors: [
-        directDescriptor('zcodeEntitlements', 'snapshot', 'zcode-provider#UsageSnapshotRequest', true),
-        directDescriptor('zcodeEntitlements', 'usage', 'zcode-provider#UsageSnapshotRequest', true),
+        directDescriptor('zcodeEntitlements', 'snapshot', '@local/zcode-provider#UsageSnapshotRequest', true),
+        directDescriptor('zcodeEntitlements', 'usage', '@local/zcode-provider#UsageSnapshotRequest', true),
       ],
     }
     // These are ordinary request/response RPC calls. `claim` long-polls in
@@ -197,31 +197,31 @@ window.__ModuleLoader__.load({
     // `release` returns a claim when this overlay disappears. Neither wire
     // carries any account credential.
     const CAPTCHA_REMOTE = {
-      package: 'zcode-provider',
+      package: '@local/zcode-provider',
       descriptors: [
         {
-          ...directDescriptor(CAPTCHA_REMOTE_NAMESPACE, 'claim', 'zcode-provider#CaptchaClaimRequest'),
+          ...directDescriptor(CAPTCHA_REMOTE_NAMESPACE, 'claim', '@local/zcode-provider#CaptchaClaimRequest'),
           // DSH propagates this signal to the Host when this Web UI connection
           // or component lifecycle ends, so an old long-poll cannot claim a
           // later challenge after a refresh.
           cancellation: { parameter: 'signal' },
         },
-        directDescriptor(CAPTCHA_REMOTE_NAMESPACE, 'complete', 'zcode-provider#CaptchaCompleteRequest'),
-        directDescriptor(CAPTCHA_REMOTE_NAMESPACE, 'release', 'zcode-provider#CaptchaReleaseRequest'),
+        directDescriptor(CAPTCHA_REMOTE_NAMESPACE, 'complete', '@local/zcode-provider#CaptchaCompleteRequest'),
+        directDescriptor(CAPTCHA_REMOTE_NAMESPACE, 'release', '@local/zcode-provider#CaptchaReleaseRequest'),
       ],
     }
     const PROMPT_REMOTE = {
-      package: 'zcode-provider',
+      package: '@local/zcode-provider',
       descriptors: [
         {
-          ...directDescriptor(PROMPT_REMOTE_NAMESPACE, 'snapshot', 'zcode-provider#PromptOverridesSnapshotRequest', true),
+          ...directDescriptor(PROMPT_REMOTE_NAMESPACE, 'snapshot', '@local/zcode-provider#PromptOverridesSnapshotRequest', true),
           parameters: [],
         },
-        directDescriptor(PROMPT_REMOTE_NAMESPACE, 'mutate', 'zcode-provider#PromptOverridesMutationRequest', true),
+        directDescriptor(PROMPT_REMOTE_NAMESPACE, 'mutate', '@local/zcode-provider#PromptOverridesMutationRequest', true),
       ],
     }
     const AUTH_BACKEND_REMOTE = {
-      package: 'zcode-provider',
+      package: '@local/zcode-provider',
       descriptors: [
         {
           ...directDescriptor(AUTH_BACKEND_REMOTE_NAMESPACE, 'snapshot', 'zcode-provider#AuthBackendSnapshotRequest', true),
@@ -231,7 +231,7 @@ window.__ModuleLoader__.load({
       ],
     }
     const REMOTES = {
-      package: 'zcode-provider',
+      package: '@local/zcode-provider',
       descriptors: [
         ...ENTITLEMENTS_REMOTE.descriptors,
         ...CAPTCHA_REMOTE.descriptors,
@@ -1523,7 +1523,7 @@ window.__ModuleLoader__.load({
           name: 'shell.overlay', id: 'zcode-captcha', order: 1000, locale: NS,
         }, CaptchaOverlay))
         ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
-          name: 'plugins.bundle.config', key: 'zcode-provider', locale: NS,
+          name: 'plugins.bundle.config', key: '@local/zcode-provider', locale: NS,
         }, SystemPromptEditor))
       },
     }

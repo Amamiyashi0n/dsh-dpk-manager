@@ -1,5 +1,5 @@
 # zcode-provider 自带的组合层:把插件插入当前 profile
 - insert:
-    - id: zcode-provider
-      name: 'zcode-provider'
+    - id: '@local/zcode-provider'
+      name: '@local/zcode-provider'
       config: {}

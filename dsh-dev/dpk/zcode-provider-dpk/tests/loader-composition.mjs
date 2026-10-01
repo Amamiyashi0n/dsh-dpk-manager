@@ -90,7 +90,7 @@ function pluginRows(extraConfigLines = [], deviceConfig = 'device-config-plans.j
     "  name: '@deepseek-ai/dsh-tools'",
     '  inject:',
     '    - systemPrompt',
-    '- id: zcode-provider',
+    "- id: '@local/zcode-provider'",
     `  name: ${pluginEntry}`,
     '  config:',
     `    providerConfigPath: ${join(fixtures, deviceConfig).replaceAll('\\', '/')}`,
@@ -139,7 +139,7 @@ try {
   check('导出:插件主体不提供 default 导出(否则 Loader 会丢弃命名导出)', !('default' in mod),
     Object.keys(mod).join(','))
   check('导出:提供 name / inject / apply / Config',
-    mod.name === 'zcode-provider' && Array.isArray(mod.inject) && typeof mod.apply === 'function' && mod.Config !== undefined,
+    mod.name === '@local/zcode-provider' && Array.isArray(mod.inject) && typeof mod.apply === 'function' && mod.Config !== undefined,
     JSON.stringify({ name: mod.name, inject: mod.inject, apply: typeof mod.apply, Config: mod.Config !== undefined }))
   check('导出:inject 声明为 [llm]', JSON.stringify(mod.inject) === JSON.stringify(['llm']), JSON.stringify(mod.inject))
 
@@ -155,7 +155,7 @@ try {
     [...entryFailures].map(([id, e]) => `${id}: ${String(e).slice(0, 80)}`).join(' | '))
 
   const entries = [...ctx.loader.entries()]
-  const flag = entries.find((e) => e.options.id === 'zcode-provider')
+  const flag = entries.find((e) => e.options.id === '@local/zcode-provider')
   check('组合:Loader 里有 zcode-provider 条目', flag !== undefined, entries.map((e) => e.options.id).join(','))
   check('组合:zcode-provider fiber 处于 ACTIVE', flag?.fiber?.state === 2, String(flag?.fiber?.state))
   check('组合:全部条目 fiber 均 ACTIVE', entries.every((e) => e.fiber?.state === 2),
@@ -187,14 +187,14 @@ try {
   const { ctx: brokenCtx, entryFailures: brokenFailures } = await boot([
     "- id: llm",
     "  name: '@deepseek-ai/dsh-llm'",
-    '- id: zcode-provider',
+    "- id: '@local/zcode-provider'",
     `  name: ${pluginEntry}`,
     '  config:',
     `    providerConfigPath: ${join(root, 'definitely-missing-config.json').replaceAll('\\', '/')}`,
   ])
-  const broken = [...brokenCtx.loader.entries()].find((e) => e.options.id === 'zcode-provider')
+  const broken = [...brokenCtx.loader.entries()].find((e) => e.options.id === '@local/zcode-provider')
   check('独立路径:设备配置缺失时 fiber 仍为 ACTIVE(2)', broken?.fiber?.state === 2, String(broken?.fiber?.state))
-  check('独立路径:设备配置缺失不产生启动失败', !brokenFailures.has('zcode-provider'),
+  check('独立路径:设备配置缺失不产生启动失败', !brokenFailures.has('@local/zcode-provider'),
     [...brokenFailures.keys()].join(','))
   check('独立路径:没有设备配置时不派生账号路由',
     !brokenCtx.llm.listProviders().map((p) => p.id).includes('builtin:bigmodel-coding-plan'))

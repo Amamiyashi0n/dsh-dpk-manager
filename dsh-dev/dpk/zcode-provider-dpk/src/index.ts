@@ -98,7 +98,7 @@ import {
   type AuthBackend,
 } from './auth-backend.js'
 
-export const name = 'zcode-provider'
+export const name = '@local/zcode-provider'
 export const inject = ['llm']
 
 const DEFAULT_CONFIG_PATH = defaultProviderConfigPath()

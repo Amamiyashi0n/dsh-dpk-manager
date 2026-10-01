@@ -123,15 +123,17 @@ $DSH_HOME/dpk/
 
 ## 已知边界（都是刻意的，写清楚比藏着好）
 
-1. **一个 DPK 只装一个包。** 套件请打成多个 DPK。多包归档（`packages/<name>`）留给 v2。
-2. **带本地 `link:` 依赖的包不能单独分发。** 归档只携带一个包，其 `dependencies` 里
+1. **本地分发的包必须带 `@local/` 作用域**（如 `@local/zcode-provider`、`@local/dsh-reverse-skill`）。
+   DPK 是本地分发格式，包名不得与 registry 上的公共名冲突；打包时缺作用域直接拒绝（`PACKAGE_LOCAL_SCOPE`）。
+2. **一个 DPK 只装一个包。** 套件请打成多个 DPK。多包归档（`packages/<name>`）留给 v2。
+3. **带本地 `link:` 依赖的包不能单独分发。** 归档只携带一个包，其 `dependencies` 里
    `link:../sibling` 这样的相对目标在目标机器上不存在。要分发这类包，二选一：
    把它做成自包含（把共享代码并进包内，参见 [examples/hello-bundle](examples/hello-bundle)），
    或者把被依赖的包也各自打成 DPK 并按顺序安装。
-3. **补丁文件只做结构校验**：DPK 不实现 YAML 解析器，只证明 `cordis.patch.yml` 看起来是顶层数组；
+4. **补丁文件只做结构校验**：DPK 不实现 YAML 解析器，只证明 `cordis.patch.yml` 看起来是顶层数组；
    完整语义由 DSH 在挂载时校验（`verify` 输出里标为 `note`）。
-4. **可执行位不承诺保留**：包内文件以 `0644` 写入 zip，Windows 源码树本来也没有 POSIX 权限。
-5. **Node ESM 模块缓存的既有约束**：安装/替换包后要让**新的 JS 代次**生效，仍需重启 harness——
+5. **可执行位不承诺保留**：包内文件以 `0644` 写入 zip，Windows 源码树本来也没有 POSIX 权限。
+6. **Node ESM 模块缓存的既有约束**：安装/替换包后要让**新的 JS 代次**生效，仍需重启 harness——
    这是 DSH 侧行为（见 harness 文档），DPK 不绕过。
 
 ## 目录
