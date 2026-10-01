@@ -286,6 +286,14 @@ test('never packs the package dist build-output directory', async () => {
   assert.ok(!facts.files.some(file => file.path.startsWith('dist/')))
 })
 
+test('refuses a package that carries a nested archive', async () => {
+  const root = await makePackage({ extraFiles: { 'carried-0.9.0.dpk': 'old archive bytes' } })
+  await assert.rejects(
+    validateDshPackage(root),
+    error => error.code === 'PACKAGE_NESTED_ARCHIVE',
+  )
+})
+
 test('the packed package subtree is exactly the source directory', async () => {
   const root = await makePackage({ extraFiles: { 'nested/deep/file.txt': 'deep\n' } })
   const packed = await packDirectory(root)

@@ -116,6 +116,17 @@ export async function collectPackageFiles(dir) {
       if (!entry.isFile()) {
         throw new PackageError(`unsupported file type: ${relative(root, absolute)}`, 'PACKAGE_FILE_TYPE')
       }
+      // An archive is never package content. A `.dpk` inside a package is the
+      // signature of build outputs accumulated in the source tree (the
+      // nested-archive incident: every rebuild swept the previous archives);
+      // refusing here makes that class of accident impossible to pack.
+      if (entry.name.toLowerCase().endsWith('.dpk')) {
+        throw new PackageError(
+          `a package never contains an archive: ${relative(root, absolute).split(sep).join('/')}`
+          + ' — move build outputs (dist/) out of the package or delete the nested archive',
+          'PACKAGE_NESTED_ARCHIVE',
+        )
+      }
       const info = await stat(absolute)
       files.push({
         path: relative(root, absolute).split(sep).join('/'),

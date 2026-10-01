@@ -153,6 +153,7 @@ DPK 的"严格"体现在这里：以下规则**逐条镜像 DSH 自己的读取�
 
 | 规则 | DSH 出处 |
 | --- | --- |
+| `package/` 内不得出现 `.dpk` 文件：归档不是内容；打包与校验一律拒绝（`PACKAGE_NESTED_ARCHIVE`），历史归档在导入时由 store 剥离 | DPK 规范自身约定（防嵌套归档事件） |
 | `name` 匹配 `^(?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*$` 且 ≤214 字符 | `install-spec.ts:31-32` |
 | `name` 缺少 `@local/` 作用域时**自动补全**（`PACKAGE_LOCAL_SCOPE` 提示写入 checkNotes）：DPK 是本地分发格式，所有 dpk 写出的层（归档清单、store 副本、账本）统一携带 `@local/`，本地包不得遮蔽 registry 上的公共名；源目录本身不被改动 | DPK 规范自身约定 |
 | `version` 为非空 semver | `dsh-package-manifest` 的 `DshPackageManifest.version` |

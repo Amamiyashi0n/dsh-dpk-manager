@@ -123,19 +123,21 @@ $DSH_HOME/dpk/
 
 ## 已知边界（都是刻意的，写清楚比藏着好）
 
-1. **本地分发的包自动归入 `@local/` 作用域**（如 `@local/zcode-provider`、`@local/dsh-reverse-skill`）。
+1. **归档永不嵌套**：包内出现任何 `.dpk` 文件都会被拒绝打包（`PACKAGE_NESTED_ARCHIVE`）——构建产物
+   必须放在 `dist/`（该目录永不入包）或包外。历史归档里的嵌套杂物在导入时被自动剥离，store 只落一个干净包。
+2. **本地分发的包自动归入 `@local/` 作用域**（如 `@local/zcode-provider`、`@local/dsh-reverse-skill`）。
    打包/安装遇到不带作用域的名字会**自动补上** `@local/`（归档清单、store 副本、patch 行名、账本一致生效；
    源目录本身不改）。loader 行 id 与模块自身的注册 id 不在自动改写之列——带 client 半区的包请让这些 id
    直接使用 scoped 名（`@local/zcode-provider` 是完整范例）。
-2. **一个 DPK 只装一个包。** 套件请打成多个 DPK。多包归档（`packages/<name>`）留给 v2。
-3. **带本地 `link:` 依赖的包不能单独分发。** 归档只携带一个包，其 `dependencies` 里
+3. **一个 DPK 只装一个包。** 套件请打成多个 DPK。多包归档（`packages/<name>`）留给 v2。
+4. **带本地 `link:` 依赖的包不能单独分发。** 归档只携带一个包，其 `dependencies` 里
    `link:../sibling` 这样的相对目标在目标机器上不存在。要分发这类包，二选一：
    把它做成自包含（把共享代码并进包内，参见 [examples/hello-bundle](examples/hello-bundle)），
    或者把被依赖的包也各自打成 DPK 并按顺序安装。
-4. **补丁文件只做结构校验**：DPK 不实现 YAML 解析器，只证明 `cordis.patch.yml` 看起来是顶层数组；
+5. **补丁文件只做结构校验**：DPK 不实现 YAML 解析器，只证明 `cordis.patch.yml` 看起来是顶层数组；
    完整语义由 DSH 在挂载时校验（`verify` 输出里标为 `note`）。
-5. **可执行位不承诺保留**：包内文件以 `0644` 写入 zip，Windows 源码树本来也没有 POSIX 权限。
-6. **Node ESM 模块缓存的既有约束**：安装/替换包后要让**新的 JS 代次**生效，仍需重启 harness——
+6. **可执行位不承诺保留**：包内文件以 `0644` 写入 zip，Windows 源码树本来也没有 POSIX 权限。
+7. **Node ESM 模块缓存的既有约束**：安装/替换包后要让**新的 JS 代次**生效，仍需重启 harness——
    这是 DSH 侧行为（见 harness 文档），DPK 不绕过。
 
 ## 目录
@@ -160,9 +162,8 @@ dpk/
   lib/profile-policy.mjs       profile 的 pnpm-workspace.yaml 冷却期豁免写入
   lib/actions.mjs              动作层：工具与面板共用
   schemas/dpk-1.schema.json    dpk.json 的 JSON Schema
-  examples/hello-bundle/       自包含示例包（零依赖）
-  examples/dpk-hello-1.0.0.dpk 示例产物
-  test/                        70 条测试（§12 一致性清单 + 动作层）
+  examples/hello-bundle/       自包含示例包（打包产物由 scripts/pack-all.mjs 生成到 dist/）
+  test/                        测试（一致性清单 + 动作层 + 兼容性）
 ```
 
 ## 测试
