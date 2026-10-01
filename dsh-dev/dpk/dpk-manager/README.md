@@ -123,8 +123,10 @@ $DSH_HOME/dpk/
 
 ## 已知边界（都是刻意的，写清楚比藏着好）
 
-1. **本地分发的包必须带 `@local/` 作用域**（如 `@local/zcode-provider`、`@local/dsh-reverse-skill`）。
-   DPK 是本地分发格式，包名不得与 registry 上的公共名冲突；打包时缺作用域直接拒绝（`PACKAGE_LOCAL_SCOPE`）。
+1. **本地分发的包自动归入 `@local/` 作用域**（如 `@local/zcode-provider`、`@local/dsh-reverse-skill`）。
+   打包/安装遇到不带作用域的名字会**自动补上** `@local/`（归档清单、store 副本、patch 行名、账本一致生效；
+   源目录本身不改）。loader 行 id 与模块自身的注册 id 不在自动改写之列——带 client 半区的包请让这些 id
+   直接使用 scoped 名（`@local/zcode-provider` 是完整范例）。
 2. **一个 DPK 只装一个包。** 套件请打成多个 DPK。多包归档（`packages/<name>`）留给 v2。
 3. **带本地 `link:` 依赖的包不能单独分发。** 归档只携带一个包，其 `dependencies` 里
    `link:../sibling` 这样的相对目标在目标机器上不存在。要分发这类包，二选一：

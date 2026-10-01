@@ -141,7 +141,19 @@ test('rejects a file path outside package/', () => {
 test('refuses a package name the registry would refuse', async () => {
   await assert.rejects(validateDshPackage(await makePackage({ manifest: { name: 'Bad Name' } })), error => error.code === 'PACKAGE_NAME')
   await assert.rejects(validateDshPackage(await makePackage({ manifest: { name: 'x'.repeat(215) } })), error => error.code === 'PACKAGE_NAME')
-  await assert.rejects(validateDshPackage(await makePackage({ manifest: { name: 'plain-unscooped' } })), error => error.code === 'PACKAGE_LOCAL_SCOPE')
+  {
+    const facts = await validateDshPackage(await makePackage({ manifest: { name: 'plain-unscooped' } }))
+    assert.equal(facts.name, '@local/plain-unscooped', 'an unscoped name is localized, not refused')
+    assert.ok(facts.checkNotes.some(note => note.includes('@local/plain-unscooped')), facts.checkNotes.join(','))
+  }
+  {
+    const facts = await validateDshPackage(await makePackage({ manifest: { name: '@other/scoped' } }))
+    assert.equal(facts.name, '@local/scoped', 'a foreign scope is re-scoped to @local')
+  }
+  {
+    const facts = await validateDshPackage(await makePackage({ manifest: { name: '@local/already' } }))
+    assert.equal(facts.name, '@local/already', 'a local name passes through')
+  }
 })
 
 test('refuses a missing or non-semver version', async () => {

@@ -18,8 +18,22 @@ export const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*
 /** The registry's name length ceiling (`install-spec.ts:32`). */
 export const PACKAGE_NAME_MAX_LENGTH = 214
 /** Locally distributed packages carry the local scope, so a `.dpk` never
- * shadows a name on the public registry. */
+ * shadows a name on the public registry. A name without it is not refused:
+ * {@link localizeName} adds the scope for every layer the format writes. */
 export const LOCAL_SCOPE = '@local/'
+
+/**
+ * Normalize a package name to the local scope: an unscoped or foreign-scoped
+ * name is re-scoped under `@local/` (an already local name passes through).
+ * @param name - the name as the source package declares it.
+ * @returns the name every dpk-written layer carries.
+ */
+export function localizeName(name) {
+  if (typeof name !== 'string' || name === '') return name
+  if (name.startsWith(LOCAL_SCOPE)) return name
+  const base = name.includes('/') ? name.slice(name.indexOf('/') + 1) : name
+  return LOCAL_SCOPE + base
+}
 /** Semver, permissive about prerelease/build but strict about the core. */
 export const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 /** Locale file language ids (`package-meta.ts:10`). */
@@ -237,18 +251,17 @@ export async function validateDshPackage(directory) {
   if (name.length > PACKAGE_NAME_MAX_LENGTH || !PACKAGE_NAME.test(name)) {
     throw new PackageError(`package.json: name is not one the registry accepts: ${name}`, 'PACKAGE_NAME')
   }
+  const checkNotes = []
+  let checkNote
   if (!name.startsWith(LOCAL_SCOPE)) {
-    throw new PackageError(
-      `package.json: a locally distributed package carries the ${LOCAL_SCOPE} scope: ${name}`,
-      'PACKAGE_LOCAL_SCOPE',
-    )
+    manifest.name = localizeName(name)
+    checkNote = `name     ${name} -> ${manifest.name} (the ${LOCAL_SCOPE} scope is added locally)`
   }
   const version = stringField(manifest, 'version')
   if (version === undefined) throw new PackageError('package.json: version is required', 'PACKAGE_VERSION')
   if (!SEMVER.test(version)) throw new PackageError(`package.json: version is not semver: ${version}`, 'PACKAGE_VERSION')
 
   const warnings = []
-  const checkNotes = []
   const roles = []
 
   const dsh = manifest.dsh
@@ -338,11 +351,12 @@ export async function validateDshPackage(directory) {
   }
 
   await checkLocales(root, warnings)
+  if (checkNote !== undefined) checkNotes.push(checkNote)
 
   const files = await hashFiles(await collectPackageFiles(root))
   return {
     root,
-    name,
+    name: manifest.name,
     version,
     description: typeof manifest.description === 'string' ? manifest.description : '',
     private: manifest.private === true,

@@ -240,3 +240,27 @@ test('installOverwriting reports a failing remove during the retry', async () =>
     error => error.message.includes('unload refused'),
   )
 })
+
+test('an unscoped source installs under the @local scope in store, ledger, and patch rows', async () => {
+  const home = await makeHome()
+  const dir = await makePackage({
+    manifest: { name: 'plain-tool' },
+    extraFiles: { 'cordis.patch.yml': "- insert:\n    - id: plain-tool\n      name: 'plain-tool'" },
+  })
+  const packed = await packDirectory(dir)
+  assert.equal(packed.manifest.name, '@local/plain-tool', 'the archive manifest carries the local scope')
+  const exec = recorder()
+  const result = await installArchive({
+    file: 'plain.dpk', buffer: packed.buffer, home, profile: 'test',
+    installer: exec.installer, log: () => {},
+  })
+
+  const stored = JSON.parse(await readFile(join(result.packageDir, 'package.json'), 'utf8'))
+  assert.equal(stored.name, '@local/plain-tool', 'the store copy is re-scoped')
+  const patch = await readFile(join(result.packageDir, 'cordis.patch.yml'), 'utf8')
+  assert.ok(patch.includes("name: '@local/plain-tool'"), `patch rows name the scoped package:\n${patch}`)
+  assert.ok(!/name:\s*'plain-tool'/.test(patch), 'no row keeps the unscoped name')
+
+  const index = await readIndex(dpkRoot(home))
+  assert.equal(index.entries[0].name, '@local/plain-tool', 'the ledger records the scoped name')
+})

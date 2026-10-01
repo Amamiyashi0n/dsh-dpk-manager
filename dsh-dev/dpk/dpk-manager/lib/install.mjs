@@ -16,6 +16,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { localizeName } from './dsh-package.mjs'
 import { verifyArchive, extractPackageTree } from './verify.mjs'
 import { retainArchive, recordInstall, storeDir, dpkRoot, defaultDshHome } from './store.mjs'
 import { archiveFileName } from './dpk-manifest.mjs'
@@ -76,6 +77,7 @@ export async function materialize(buffer, manifest, options) {
   await mkdir(join(staging, 'package'), { recursive: true })
   try {
     await extractPackageTree(buffer, manifest, join(staging, 'package'))
+    await localizeStoredPackage(join(staging, 'package'), manifest)
     await writeFile(join(staging, 'dpk.json'), `${JSON.stringify(manifest, undefined, 2)}\n`)
     if (existsSync(target)) await rm(target, { recursive: true, force: true })
     await rename(staging, target)
@@ -177,6 +179,40 @@ export async function installArchive(options) {
     ...verified, ...placed, profile, dryRun: false, via: 'service', command: null,
     created: placed.created,
   }
+}
+
+/**
+ * Re-scope the stored package copy: a source package whose name lacks the
+ * local scope is installed under `@local/…`, so the profile dependency, the
+ * ledger, and the panel all carry one name. The loader matches bundle rows by
+ * `name`, so the patch rows naming the package follow; row ids and the
+ * module's own registration id stay as built (the working
+ * `@local/dsh-reverse-skill` layout), which means a package with a client
+ * half must already ship scoped client ids (see `@local/zcode-provider`).
+ * @param packageDir - the freshly extracted store copy, rewritten in place.
+ * @param manifest - the verified dpk manifest whose `name` is already localized.
+ */
+async function localizeStoredPackage(packageDir, manifest) {
+  const manifestPath = join(packageDir, 'package.json')
+  const raw = JSON.parse(await readFile(manifestPath, 'utf8'))
+  const original = raw.name
+  const local = localizeName(original)
+  if (local === original) return
+  raw.name = local
+  await writeFile(manifestPath, `${JSON.stringify(raw, undefined, 2)}\n`)
+  const patchPath = join(packageDir, manifest.dsh?.bundle?.patch ?? 'cordis.patch.yml')
+  if (existsSync(patchPath)) {
+    // Loader rows match the package by `name`; retarget every row that names
+    // the package. Ids, configs, and other values are left untouched.
+    const pattern = new RegExp(`(name\\s*:\\s*['"]?)${escapeRegExp(original)}(['"]?\\s*)$`, 'gm')
+    const patch = await readFile(patchPath, 'utf8')
+    await writeFile(patchPath, patch.replace(pattern, `$1${local}$2`))
+  }
+}
+
+/** Escape a string for literal use inside a RegExp. */
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /** Read a file with a dpk-flavoured error. */
