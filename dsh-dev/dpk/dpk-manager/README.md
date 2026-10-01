@@ -7,6 +7,7 @@
 | 形态 | 入口 | 用法 |
 | --- | --- | --- |
 | 插件页面板 | `client.js` → 「本地 DPK」侧栏 | 导入 / 导出 / 卸载 `.dpk`，人点按钮即可 |
+| 官方插件页徽章 | `client.js` → `plugins.detail.badge` | 由本管理器装好的包，在官方插件页标题旁显示「该插件由 dpk 管理器安装和管理」 |
 | 会话内工具 | `index.js` → 注册 `dpk` 工具 | 装进 profile 后，agent 可直接 `dpk action=verify/install/…` |
 
 ```text

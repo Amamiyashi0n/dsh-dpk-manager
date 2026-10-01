@@ -1,9 +1,7 @@
 /**
- * Browser half of the assistant: a dedicated local DPK panel.
- *
- * The package manager is a fully local bundle. It owns one sidebar entry and
- * one main panel; it does not inject rows, badges, or sections into the shipped
- * official Plugins page.
+ * Browser half of the assistant: a dedicated local DPK panel, plus one badge
+ * on the official Plugins page — a bundle this manager installed carries the
+ * 「该插件由 dpk 管理器安装和管理」 tag beside its title.
  *
  * Everything the browser cannot do itself (unpack, install, re-pack, remove)
  * goes through the Host half's `ctx.remote.dpk` namespace. This module is plain
@@ -35,8 +33,8 @@ window.__ModuleLoader__.load({
       uninstall: '卸载',
       uninstalling: '卸载中…',
       confirmUninstall: '卸载该插件？这会把它从当前 profile 移除；没有其它 profile 引用时，本地仓库中的副本会一并删除。',
-      badge: '由 DPK 安装',
-      badgeTitle: '该插件由「DSH 安装包管理助手」以 .dpk 归档安装（内容寻址、可校验）。',
+      badge: '该插件由 dpk 管理器安装和管理',
+      badgeTitle: '该插件由「DSH 安装包管理助手」以 .dpk 归档安装（内容寻址、可校验），安装、升级与卸载都经本地 DPK 面板完成。',
       sectionTitle: 'DPK 安装信息',
       installedBy: '安装方式',
       installedByValue: 'DSH 安装包管理助手（dpk）',
@@ -64,8 +62,8 @@ window.__ModuleLoader__.load({
       uninstall: 'Uninstall',
       uninstalling: 'Uninstalling…',
       confirmUninstall: 'Uninstall this plugin? It is removed from this profile; with no other profile using it, the stored copy is deleted too.',
-      badge: 'Installed by DPK',
-      badgeTitle: 'This plugin was installed from a .dpk archive by the DSH package manager assistant (content-addressed and verifiable).',
+      badge: 'Installed and managed by the dpk manager',
+      badgeTitle: 'This plugin was installed from a .dpk archive by the DSH package manager assistant (content-addressed and verifiable); install, upgrade, and uninstall all go through the Local DPK panel.',
       sectionTitle: 'DPK installation',
       installedBy: 'Installed by',
       installedByValue: 'DSH package manager assistant (dpk)',
@@ -343,6 +341,28 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
           name: 'sidebar.panellist', id: 'dpk', order: 10, label: () => tr('panel'), locale: NS,
         }, DpkPanelIcon))
+
+        // --- official Plugins page: one tag on bundles this manager installed --
+        function DpkManagedBadge(props) {
+          useManaged()
+          const subject = props.subject
+          if (!subject || subject.kind !== 'bundle' || subject.pkg?.installed !== true) return null
+          if (entryFor(subject.pkg.name) === undefined) return null
+          return h('span', {
+            key: 'dpk-managed', title: tr('badgeTitle'),
+            style: {
+              display: 'inline-flex', alignItems: 'center',
+              padding: '1px 8px', margin: '0 4px', borderRadius: 999,
+              border: '1px solid color-mix(in srgb, currentColor 24%, transparent)',
+              font: 'inherit', fontSize: '0.82em', opacity: 0.85,
+              whiteSpace: 'nowrap', verticalAlign: 'middle',
+            },
+          }, tr('badge'))
+        }
+
+        ctx.slots.inject('plugins.detail.badge', () => ctx.slots.register({
+          name: 'plugins.detail.badge', id: 'dpk-managed', order: 50, label: () => tr('badge'), locale: NS,
+        }, DpkManagedBadge))
       },
     }
   },
