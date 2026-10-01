@@ -171,6 +171,15 @@ window.__ModuleLoader__.load({
           }
         }
 
+        // An install that overwrites (removeBundle + installBundle) emits its
+        // changed events mid-flight, so the refresh right after the call can
+        // still read the interim view. A short delayed refresh settles it.
+        let settleTimer
+        function refreshSettled(delay = 1600) {
+          clearTimeout(settleTimer)
+          settleTimer = setTimeout(() => { void refresh() }, delay)
+        }
+
         const entryFor = name => state.entries.find(entry => entry.name === name)
         const useManaged = () => {
           const [snapshot, setSnapshot] = React.useState(state.entries.length)
@@ -207,6 +216,7 @@ window.__ModuleLoader__.load({
               const result = await callDpk('importArchive', { fileName: file.name, base64: toBase64(bytes) })
               setStatus(`${tr('imported')} ${result.name}@${result.version}`)
               await refresh()
+              refreshSettled()
             } catch (error) {
               setStatus(`${tr('failed')}: ${String(error?.message ?? error)}`)
             } finally {
@@ -273,6 +283,7 @@ window.__ModuleLoader__.load({
               await callDpk('removeArchive', { name })
               setStatus(`${tr('uninstall')} ✓`)
               await refresh()
+              refreshSettled()
             } catch (error) {
               setStatus(`${tr('failed')}: ${String(error?.message ?? error)}`)
             } finally {

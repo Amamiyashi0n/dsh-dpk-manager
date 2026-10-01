@@ -179,3 +179,10 @@ test('the plugins-page badge tags only bundles this manager installed', async ()
   assert.equal(tagged.type, 'span')
   assert.match(tagged.props.title, /DSH/)
 })
+test('a completed import or uninstall schedules one delayed settling refresh', async () => {
+  // The overwrite install emits its changed events mid-flight; the refresh
+  // right after the call can still read the interim view, so the client
+  // schedules one delayed refresh to settle the cards.
+  assert.equal((source.match(/refreshSettled\(\)/g) || []).length, 2, 'import and uninstall both settle')
+  assert.match(source, /settleTimer = setTimeout\(\(\) => \{ void refresh\(\) \}, delay\)/)
+})
