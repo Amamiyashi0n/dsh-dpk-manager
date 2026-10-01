@@ -28,8 +28,9 @@ export const ICON_MEDIA_TYPES = new Map([
   ['.svg', 'image/svg+xml'], ['.png', 'image/png'], ['.jpg', 'image/jpeg'],
   ['.jpeg', 'image/jpeg'], ['.webp', 'image/webp'],
 ])
-/** Directories a package never carries as content. */
-export const NEVER_PACKED = new Set(['node_modules', '.git'])
+/** Directories a package never carries as content: dependency trees, VCS
+ * metadata, and the package's own build output. */
+export const NEVER_PACKED = new Set(['node_modules', '.git', 'dist'])
 
 /** A package that cannot be packed or installed. */
 export class PackageError extends Error {

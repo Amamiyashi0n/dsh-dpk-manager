@@ -265,6 +265,14 @@ test('never packs node_modules', async () => {
   assert.ok(!facts.files.some(file => file.path.startsWith('node_modules/')))
 })
 
+test('never packs the package dist build-output directory', async () => {
+  const root = await makePackage()
+  await mkdir(join(root, 'dist'), { recursive: true })
+  await writeFile(join(root, 'dist', 'pkg-1.0.0.dpk'), 'stale archive bytes')
+  const facts = await validateDshPackage(root)
+  assert.ok(!facts.files.some(file => file.path.startsWith('dist/')))
+})
+
 test('the packed package subtree is exactly the source directory', async () => {
   const root = await makePackage({ extraFiles: { 'nested/deep/file.txt': 'deep\n' } })
   const packed = await packDirectory(root)
