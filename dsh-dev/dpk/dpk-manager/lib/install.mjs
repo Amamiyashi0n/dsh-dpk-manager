@@ -19,6 +19,7 @@ import { join } from 'node:path'
 import { NEVER_PACKED, localizeName } from './dsh-package.mjs'
 import { verifyArchive, extractPackageTree } from './verify.mjs'
 import { retainArchive, recordInstall, storeDir, dpkRoot, defaultDshHome } from './store.mjs'
+import { materializeVolumes, parseDataDeclaration } from './data.mjs'
 import { archiveFileName } from './dpk-manifest.mjs'
 import { detectProfileName, disableReleaseAgeCooldown } from './profile-policy.mjs'
 
@@ -167,6 +168,25 @@ export async function installArchive(options) {
     digest: placed.digest,
   })
 
+  // Managed data volumes (SPEC §13): the declaration is re-read from the
+  // stored package.json (the manifest copy was validated at verify time), and
+  // the volumes materialise only after the official install succeeded — dpkg
+  // places conffiles after the package unpacks, never before.
+  const volumes = manifest.data?.volumes ?? parseDataDeclaration(
+    JSON.parse(await readFile(join(placed.packageDir, 'package.json'), 'utf8')).dsh?.data,
+    `${manifest.name}: package.json`,
+  )
+  let volumeOutcomes = []
+  if (volumes.length > 0) {
+    const packageName = localizeName(manifest.name)
+    volumeOutcomes = await materializeVolumes(home, packageName, volumes, placed.packageDir, { log })
+    for (const outcome of volumeOutcomes) {
+      if (outcome.action === 'kept-local') {
+        log(`data     ${outcome.path}: kept the local copy; the new seed is staged at ${outcome.staged}`)
+      }
+    }
+  }
+
   await recordInstall(root, {
     // The store copy was localized, so the ledger carries the same name the
     // profile dependency does — a legacy unscoped archive lands as @local/….
@@ -181,6 +201,7 @@ export async function installArchive(options) {
   return {
     ...verified, ...placed, profile, dryRun: false, via: 'service', command: null,
     created: placed.created,
+    volumes: volumeOutcomes,
   }
 }
 

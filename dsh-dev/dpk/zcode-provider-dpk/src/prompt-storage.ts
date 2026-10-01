@@ -12,7 +12,7 @@ import {
 } from './official-prompt.js'
 
 export function defaultPromptOverridesPath(storageRoot?: string): string {
-  return join(storageRoot?.trim() || defaultStorageRoot(), 'prompt-overrides.json')
+  return join(storageRoot?.trim() || defaultStorageRoot(), 'config', 'prompt-overrides.json')
 }
 
 function normalize(value: unknown): PromptOverrides {

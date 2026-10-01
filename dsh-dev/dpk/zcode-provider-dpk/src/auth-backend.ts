@@ -19,7 +19,7 @@ export interface AuthBackendMutationRequest {
 }
 
 export function defaultAuthBackendPath(storageRoot?: string): string {
-  return join(storageRoot?.trim() || defaultStorageRoot(), 'auth-backend.json')
+  return join(storageRoot?.trim() || defaultStorageRoot(), 'state', 'auth-backend.json')
 }
 
 export function normalizeAuthBackend(value: unknown): AuthBackend {

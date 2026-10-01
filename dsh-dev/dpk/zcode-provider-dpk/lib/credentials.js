@@ -96,18 +96,26 @@ function defaultUser() {
  * @returns 明文值;缺失或解密失败返回空串。
  */
 export function readCredentialValue(credentialsPath, name, options = {}) {
-    const store = readCredentialStore(credentialsPath);
-    const raw = store[name];
-    if (raw === undefined)
+    const key = deriveCredentialKey(options.home ?? defaultHome(), options.user ?? defaultUser());
+    const readOne = (path) => {
+        const raw = readCredentialStore(path)[name];
+        if (raw === undefined)
+            return '';
+        try {
+            return decryptStoreValue(raw, key).trim();
+        }
+        catch (error) {
+            options.log?.(`zcode-provider: 凭据 ${name} 解密失败(${String(error)}),按缺失处理`);
+            return '';
+        }
+    };
+    const primary = readOne(credentialsPath);
+    if (primary !== '')
+        return primary;
+    const fallback = options.fallbackPath?.trim() ?? '';
+    if (fallback === '' || fallback === credentialsPath)
         return '';
-    try {
-        const key = deriveCredentialKey(options.home ?? defaultHome(), options.user ?? defaultUser());
-        return decryptStoreValue(raw, key).trim();
-    }
-    catch (error) {
-        options.log?.(`zcode-provider: 凭据 ${name} 解密失败(${String(error)}),按缺失处理`);
-        return '';
-    }
+    return readOne(fallback);
 }
 /**
  * 按官方规则解析某个套餐 provider 的模型凭证。
@@ -117,6 +125,14 @@ export function readCredentialValue(credentialsPath, name, options = {}) {
 export function resolvePlanCredential(input) {
     const fallback = (input.fallbackApiKey ?? '').trim();
     const store = readCredentialStore(input.credentialsPath);
+    const fallbackStorePath = input.fallbackCredentialsPath?.trim() ?? '';
+    if (fallbackStorePath !== '' && fallbackStorePath !== input.credentialsPath) {
+        // 插件凭证库缺键时用官方本机库补齐(键名空间与解密规则同源);主库已有的键优先
+        for (const [name, value] of Object.entries(readCredentialStore(fallbackStorePath))) {
+            if (store[name] === undefined)
+                store[name] = value;
+        }
+    }
     const key = deriveCredentialKey(input.home ?? defaultHome(), input.user ?? defaultUser());
     const read = (name) => {
         const raw = store[name];

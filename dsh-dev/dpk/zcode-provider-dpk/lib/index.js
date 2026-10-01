@@ -1,10 +1,10 @@
 /* zcode-provider bundled entry: inlines vendored dsh-llm and schemastery for zero-peer-resolution import; boundary discipline lives in src and unbundled modules */
 
 // lib/index.unbundled.js
-import { existsSync as existsSync5, readFileSync as readFileSync6 } from "node:fs";
+import { existsSync as existsSync5, readFileSync as readFileSync7 } from "node:fs";
 import { randomUUID as randomUUID4 } from "node:crypto";
 import { arch as nodeArch, platform as nodePlatform, release as nodeRelease } from "node:os";
-import { join as join6 } from "node:path";
+import { join as join7 } from "node:path";
 
 // ../../deepseek-harness/packages/llm/llm/lib/index.js
 import { createRequire } from "node:module";
@@ -5266,16 +5266,16 @@ import { homedir as homedir2, userInfo } from "node:os";
 import { homedir } from "node:os";
 import { join } from "node:path";
 function defaultStorageRoot(home = homedir()) {
-  return join(home, ".dsh", "zcode-provider");
+  return join(home, ".dsh", "data", "@local", "zcode-provider");
 }
 function defaultProviderConfigPath(storageRoot) {
-  return join(storageRoot?.trim() || defaultStorageRoot(), "providers.json");
+  return join(storageRoot?.trim() || defaultStorageRoot(), "config", "providers.json");
 }
 function defaultCredentialsPath(storageRoot) {
-  return join(storageRoot?.trim() || defaultStorageRoot(), "credentials.json");
+  return join(storageRoot?.trim() || defaultStorageRoot(), "state", "credentials.json");
 }
 function defaultTelemetryStatePath(storageRoot) {
-  return join(storageRoot?.trim() || defaultStorageRoot(), "telemetry-state.json");
+  return join(storageRoot?.trim() || defaultStorageRoot(), "state", "telemetry-state.json");
 }
 
 // lib/credentials.js
@@ -5331,21 +5331,36 @@ function defaultUser() {
   })();
 }
 function readCredentialValue(credentialsPath, name2, options = {}) {
-  const store = readCredentialStore(credentialsPath);
-  const raw = store[name2];
-  if (raw === void 0)
+  const key = deriveCredentialKey(options.home ?? defaultHome(), options.user ?? defaultUser());
+  const readOne = (path) => {
+    const raw = readCredentialStore(path)[name2];
+    if (raw === void 0)
+      return "";
+    try {
+      return decryptStoreValue(raw, key).trim();
+    } catch (error) {
+      options.log?.(`zcode-provider: \u51ED\u636E ${name2} \u89E3\u5BC6\u5931\u8D25(${String(error)}),\u6309\u7F3A\u5931\u5904\u7406`);
+      return "";
+    }
+  };
+  const primary = readOne(credentialsPath);
+  if (primary !== "")
+    return primary;
+  const fallback = options.fallbackPath?.trim() ?? "";
+  if (fallback === "" || fallback === credentialsPath)
     return "";
-  try {
-    const key = deriveCredentialKey(options.home ?? defaultHome(), options.user ?? defaultUser());
-    return decryptStoreValue(raw, key).trim();
-  } catch (error) {
-    options.log?.(`zcode-provider: \u51ED\u636E ${name2} \u89E3\u5BC6\u5931\u8D25(${String(error)}),\u6309\u7F3A\u5931\u5904\u7406`);
-    return "";
-  }
+  return readOne(fallback);
 }
 function resolvePlanCredential(input) {
   const fallback = (input.fallbackApiKey ?? "").trim();
   const store = readCredentialStore(input.credentialsPath);
+  const fallbackStorePath = input.fallbackCredentialsPath?.trim() ?? "";
+  if (fallbackStorePath !== "" && fallbackStorePath !== input.credentialsPath) {
+    for (const [name2, value] of Object.entries(readCredentialStore(fallbackStorePath))) {
+      if (store[name2] === void 0)
+        store[name2] = value;
+    }
+  }
   const key = deriveCredentialKey(input.home ?? defaultHome(), input.user ?? defaultUser());
   const read = (name2) => {
     const raw = store[name2];
@@ -5377,6 +5392,216 @@ function resolvePlanCredential(input) {
   if (fallback)
     return { apiKey: fallback, source: "config" };
   return { apiKey: "", source: "none" };
+}
+
+// lib/native-account.js
+import { readFileSync as readFileSync3 } from "node:fs";
+import { homedir as homedir4 } from "node:os";
+import { join as join3 } from "node:path";
+
+// lib/app-server-discovery.js
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, join as join2 } from "node:path";
+import { homedir as homedir3 } from "node:os";
+var CLI_RELATIVE = join2("resources", "glm", "zcode.cjs");
+var BUILTIN_RELATIVE = join2("resources", "config", "provider", "zcode-builtin.json");
+function zcodeInstallFromRoot(root) {
+  const trimmed = root.trim();
+  if (trimmed === "")
+    return void 0;
+  const cliPath = join2(trimmed, CLI_RELATIVE);
+  if (!existsSync(cliPath))
+    return void 0;
+  const builtinProviderConfigPath = join2(trimmed, BUILTIN_RELATIVE);
+  return {
+    installRoot: trimmed,
+    cliPath,
+    builtinProviderConfigPath: existsSync(builtinProviderConfigPath) ? builtinProviderConfigPath : void 0
+  };
+}
+function regValue(output, name2) {
+  const lines = output.split(/\r?\n/u);
+  const wanted = name2 === "(default)" ? void 0 : name2;
+  for (const line of lines) {
+    const match = /^\s*(.+?)\s+REG_(?:SZ|EXPAND_SZ)\s+(.+?)\s*$/u.exec(line);
+    if (match === null)
+      continue;
+    if (wanted === void 0 || match[1] === wanted || match[1].startsWith("(")) {
+      return match[2];
+    }
+  }
+  return void 0;
+}
+function regQuery(args) {
+  const run = spawnSync("reg", [...args], { encoding: "utf8", windowsHide: true, timeout: 4e3 });
+  return run.status === 0 && run.stdout.length > 0 ? run.stdout : void 0;
+}
+function windowsRegistryRoots() {
+  const roots = [];
+  const appPaths = [
+    ["HKCU", "SOFTWARE", "Microsoft", "Windows", "CurrentVersion", "App Paths", "zcode.exe"],
+    ["HKLM", "SOFTWARE", "Microsoft", "Windows", "CurrentVersion", "App Paths", "zcode.exe"]
+  ];
+  for (const [hive, ...path] of appPaths) {
+    const output = regQuery([hive, "query", path.join("\\")]);
+    if (output === void 0)
+      continue;
+    const exe = regValue(output, "(default)");
+    const dir = regValue(output, "Path");
+    for (const candidate of exe !== void 0 ? [dirname(exe)] : [])
+      roots.push(candidate);
+    if (dir !== void 0)
+      roots.push(dir.replace(/[\\/]+$/u, ""));
+  }
+  for (const hive of ["HKCU", "HKLM"]) {
+    for (const view of ["SOFTWARE", "SOFTWARE\\WOW6432Node"]) {
+      const key = `${hive}\\${view}\\Microsoft\\Windows\\CurrentVersion\\Uninstall`;
+      const listing = regQuery([hive, "query", key]);
+      if (listing === void 0)
+        continue;
+      for (const sub of listing.split(/\r?\n/u)) {
+        const keyMatch = /^HKEY_\w+\\(.+)$/u.exec(sub.trim());
+        if (keyMatch === null)
+          continue;
+        const output = regQuery([hive, "query", keyMatch[1]]);
+        if (output === void 0)
+          continue;
+        const display = regValue(output, "DisplayName");
+        if (display === void 0 || !/^zcode(\s|$)/iu.test(display))
+          continue;
+        const location = regValue(output, "InstallLocation");
+        if (location !== void 0 && location !== "")
+          roots.push(location.replace(/[\\/]+$/u, ""));
+      }
+    }
+  }
+  return roots;
+}
+function filesystemRoots() {
+  const roots = [];
+  const lookup = process.platform === "win32" ? spawnSync("where", ["zcode"], { encoding: "utf8", windowsHide: true, timeout: 4e3 }) : spawnSync("which", ["zcode"], { encoding: "utf8", timeout: 4e3 });
+  if (lookup.status === 0) {
+    for (const hit of lookup.stdout.split(/\r?\n/u)) {
+      const exe = hit.trim();
+      if (exe !== "")
+        roots.push(exe.endsWith(".exe") || exe.includes("/") || exe.includes("\\") ? dirname(exe) : exe);
+    }
+  }
+  if (process.platform === "win32") {
+    const local = process.env.LOCALAPPDATA;
+    if (local !== void 0)
+      roots.push(join2(local, "Programs", "zcode"));
+    for (const program of [process.env["ProgramFiles"], process.env["ProgramFiles(x86)"]]) {
+      if (program !== void 0)
+        roots.push(join2(program, "ZCode"));
+    }
+  } else if (process.platform === "darwin") {
+    roots.push("/Applications/ZCode.app/Contents/Resources");
+  } else {
+    roots.push("/opt/zcode", "/opt/ZCode", "/usr/lib/zcode");
+  }
+  roots.push(join2(homedir3(), ".local", "share", "zcode"));
+  return roots;
+}
+var cached;
+var hasCached = false;
+function discoverZcodeInstall(roots) {
+  if (roots === void 0 && hasCached)
+    return cached;
+  const candidates = roots ?? [...windowsRegistryRoots(), ...filesystemRoots()];
+  let found;
+  const seen = /* @__PURE__ */ new Set();
+  for (const root of candidates) {
+    const key = root.toLowerCase().replaceAll("/", "\\");
+    if (seen.has(key))
+      continue;
+    seen.add(key);
+    const install = zcodeInstallFromRoot(root);
+    if (install !== void 0) {
+      found = install;
+      break;
+    }
+  }
+  if (roots === void 0) {
+    cached = found;
+    hasCached = true;
+  }
+  return found;
+}
+
+// lib/native-account.js
+var ACCOUNT_RULE = /^account:(bigmodel|zai)-(individual-coding-plan|team-coding-plan|start-plan)$/;
+function nativeStorageDir() {
+  return process.env.ZCODE_STORAGE_DIR?.trim() || join3(homedir4(), ".zcode", "v2");
+}
+function nativeCredentialPath() {
+  return join3(nativeStorageDir(), "credentials.json");
+}
+function discoveredBuiltinCatalogPath() {
+  return discoverZcodeInstall()?.builtinProviderConfigPath;
+}
+function accountEndpointsFromCatalog(catalog) {
+  const rules = catalog?.config?.providerConfigRules?.providerRules;
+  if (!Array.isArray(rules))
+    return [];
+  const endpoints = /* @__PURE__ */ new Map();
+  for (const rule of rules) {
+    const providerId = rule?.providerId;
+    if (typeof providerId !== "string")
+      continue;
+    const matched = ACCOUNT_RULE.exec(providerId);
+    if (matched === null)
+      continue;
+    const config = rule?.config;
+    if (config?.access?.type !== "zhipu-account")
+      continue;
+    const rawBase = config?.api?.baseUrl;
+    if (typeof rawBase !== "string")
+      continue;
+    const baseURL = rawBase.trim().replace(/\/+$/, "");
+    if (baseURL === "")
+      continue;
+    const family = matched[1];
+    const mode = matched[2];
+    const key = mode === "start-plan" ? `builtin:${family}-start-plan` : `builtin:${family}-coding-plan`;
+    const existing = endpoints.get(key);
+    if (existing === void 0) {
+      endpoints.set(key, { key, family, modes: [mode], baseURL });
+    } else if (!existing.modes.includes(mode)) {
+      existing.modes.push(mode);
+    }
+  }
+  return [...endpoints.values()];
+}
+function nativeAccountProviders(options = {}) {
+  const builtinPath = options.builtinPath?.trim() || discoveredBuiltinCatalogPath();
+  if (builtinPath === void 0 || builtinPath === "")
+    return {};
+  let catalog;
+  try {
+    catalog = JSON.parse(readFileSync3(builtinPath, "utf8"));
+  } catch (_missingOrInvalid) {
+    options.log?.(`zcode-provider: \u5185\u7F6E\u76EE\u5F55\u4E0D\u53EF\u8BFB(${builtinPath}),\u8DF3\u8FC7\u672C\u673A\u8D26\u53F7\u8DEF\u7531\u63A8\u5BFC`);
+    return {};
+  }
+  const credentialsPath = options.credentialsPath?.trim() || nativeCredentialPath();
+  const entries = {};
+  for (const endpoint of accountEndpointsFromCatalog(catalog)) {
+    const resolved = endpoint.modes.map((mode) => resolvePlanCredential({
+      credentialsPath,
+      providerId: `account:${endpoint.family}-${mode}`,
+      family: endpoint.family,
+      planKind: mode,
+      log: (message) => {
+        options.log?.(message);
+      }
+    })).find((credential) => credential.apiKey !== "");
+    if (resolved === void 0)
+      continue;
+    entries[endpoint.key] = { kind: "anthropic", options: { baseURL: endpoint.baseURL, apiKey: resolved.apiKey } };
+  }
+  return entries;
 }
 
 // lib/captcha.js
@@ -6830,10 +7055,10 @@ function createUsageRemoteService(ctx, collectEntitlements, collectSupplement, c
 }
 
 // lib/prompt-storage.js
-import { existsSync, mkdirSync, readFileSync as readFileSync3, writeFileSync } from "node:fs";
-import { dirname, join as join2 } from "node:path";
+import { existsSync as existsSync2, mkdirSync, readFileSync as readFileSync4, writeFileSync } from "node:fs";
+import { dirname as dirname2, join as join4 } from "node:path";
 function defaultPromptOverridesPath(storageRoot) {
-  return join2(storageRoot?.trim() || defaultStorageRoot(), "prompt-overrides.json");
+  return join4(storageRoot?.trim() || defaultStorageRoot(), "config", "prompt-overrides.json");
 }
 function normalize(value) {
   if (value === null || typeof value !== "object")
@@ -6871,16 +7096,16 @@ function normalize(value) {
   return result;
 }
 function readPromptOverrides(path) {
-  if (!existsSync(path))
+  if (!existsSync2(path))
     return {};
   try {
-    return normalize(JSON.parse(readFileSync3(path, "utf8")));
+    return normalize(JSON.parse(readFileSync4(path, "utf8")));
   } catch (_error) {
     return {};
   }
 }
 function writePromptOverrides(path, value) {
-  mkdirSync(dirname(path), { recursive: true });
+  mkdirSync(dirname2(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(normalize(value), null, 2)}
 `, { encoding: "utf8", mode: 384 });
 }
@@ -6946,142 +7171,9 @@ function createPromptRemoteService(ctx, store) {
 // lib/openzcode-app-server.js
 import { spawn } from "node:child_process";
 import { createHash as createHash4, randomUUID as randomUUID3 } from "node:crypto";
-import { existsSync as existsSync3, mkdtempSync, readFileSync as readFileSync4, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
-import { homedir as homedir4, tmpdir } from "node:os";
-import { dirname as dirname3, join as join4, resolve as resolve3 } from "node:path";
-
-// lib/app-server-discovery.js
-import { spawnSync } from "node:child_process";
-import { existsSync as existsSync2 } from "node:fs";
-import { dirname as dirname2, join as join3 } from "node:path";
-import { homedir as homedir3 } from "node:os";
-var CLI_RELATIVE = join3("resources", "glm", "zcode.cjs");
-var BUILTIN_RELATIVE = join3("resources", "config", "provider", "zcode-builtin.json");
-function zcodeInstallFromRoot(root) {
-  const trimmed = root.trim();
-  if (trimmed === "")
-    return void 0;
-  const cliPath = join3(trimmed, CLI_RELATIVE);
-  if (!existsSync2(cliPath))
-    return void 0;
-  const builtinProviderConfigPath = join3(trimmed, BUILTIN_RELATIVE);
-  return {
-    installRoot: trimmed,
-    cliPath,
-    builtinProviderConfigPath: existsSync2(builtinProviderConfigPath) ? builtinProviderConfigPath : void 0
-  };
-}
-function regValue(output, name2) {
-  const lines = output.split(/\r?\n/u);
-  const wanted = name2 === "(default)" ? void 0 : name2;
-  for (const line of lines) {
-    const match = /^\s*(.+?)\s+REG_(?:SZ|EXPAND_SZ)\s+(.+?)\s*$/u.exec(line);
-    if (match === null)
-      continue;
-    if (wanted === void 0 || match[1] === wanted || match[1].startsWith("(")) {
-      return match[2];
-    }
-  }
-  return void 0;
-}
-function regQuery(args) {
-  const run = spawnSync("reg", [...args], { encoding: "utf8", windowsHide: true, timeout: 4e3 });
-  return run.status === 0 && run.stdout.length > 0 ? run.stdout : void 0;
-}
-function windowsRegistryRoots() {
-  const roots = [];
-  const appPaths = [
-    ["HKCU", "SOFTWARE", "Microsoft", "Windows", "CurrentVersion", "App Paths", "zcode.exe"],
-    ["HKLM", "SOFTWARE", "Microsoft", "Windows", "CurrentVersion", "App Paths", "zcode.exe"]
-  ];
-  for (const [hive, ...path] of appPaths) {
-    const output = regQuery([hive, "query", path.join("\\")]);
-    if (output === void 0)
-      continue;
-    const exe = regValue(output, "(default)");
-    const dir = regValue(output, "Path");
-    for (const candidate of exe !== void 0 ? [dirname2(exe)] : [])
-      roots.push(candidate);
-    if (dir !== void 0)
-      roots.push(dir.replace(/[\\/]+$/u, ""));
-  }
-  for (const hive of ["HKCU", "HKLM"]) {
-    for (const view of ["SOFTWARE", "SOFTWARE\\WOW6432Node"]) {
-      const key = `${hive}\\${view}\\Microsoft\\Windows\\CurrentVersion\\Uninstall`;
-      const listing = regQuery([hive, "query", key]);
-      if (listing === void 0)
-        continue;
-      for (const sub of listing.split(/\r?\n/u)) {
-        const keyMatch = /^HKEY_\w+\\(.+)$/u.exec(sub.trim());
-        if (keyMatch === null)
-          continue;
-        const output = regQuery([hive, "query", keyMatch[1]]);
-        if (output === void 0)
-          continue;
-        const display = regValue(output, "DisplayName");
-        if (display === void 0 || !/^zcode(\s|$)/iu.test(display))
-          continue;
-        const location = regValue(output, "InstallLocation");
-        if (location !== void 0 && location !== "")
-          roots.push(location.replace(/[\\/]+$/u, ""));
-      }
-    }
-  }
-  return roots;
-}
-function filesystemRoots() {
-  const roots = [];
-  const lookup = process.platform === "win32" ? spawnSync("where", ["zcode"], { encoding: "utf8", windowsHide: true, timeout: 4e3 }) : spawnSync("which", ["zcode"], { encoding: "utf8", timeout: 4e3 });
-  if (lookup.status === 0) {
-    for (const hit of lookup.stdout.split(/\r?\n/u)) {
-      const exe = hit.trim();
-      if (exe !== "")
-        roots.push(exe.endsWith(".exe") || exe.includes("/") || exe.includes("\\") ? dirname2(exe) : exe);
-    }
-  }
-  if (process.platform === "win32") {
-    const local = process.env.LOCALAPPDATA;
-    if (local !== void 0)
-      roots.push(join3(local, "Programs", "zcode"));
-    for (const program of [process.env["ProgramFiles"], process.env["ProgramFiles(x86)"]]) {
-      if (program !== void 0)
-        roots.push(join3(program, "ZCode"));
-    }
-  } else if (process.platform === "darwin") {
-    roots.push("/Applications/ZCode.app/Contents/Resources");
-  } else {
-    roots.push("/opt/zcode", "/opt/ZCode", "/usr/lib/zcode");
-  }
-  roots.push(join3(homedir3(), ".local", "share", "zcode"));
-  return roots;
-}
-var cached;
-var hasCached = false;
-function discoverZcodeInstall(roots) {
-  if (roots === void 0 && hasCached)
-    return cached;
-  const candidates = roots ?? [...windowsRegistryRoots(), ...filesystemRoots()];
-  let found;
-  const seen = /* @__PURE__ */ new Set();
-  for (const root of candidates) {
-    const key = root.toLowerCase().replaceAll("/", "\\");
-    if (seen.has(key))
-      continue;
-    seen.add(key);
-    const install = zcodeInstallFromRoot(root);
-    if (install !== void 0) {
-      found = install;
-      break;
-    }
-  }
-  if (roots === void 0) {
-    cached = found;
-    hasCached = true;
-  }
-  return found;
-}
-
-// lib/openzcode-app-server.js
+import { existsSync as existsSync3, mkdtempSync, readFileSync as readFileSync5, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { homedir as homedir5, tmpdir } from "node:os";
+import { dirname as dirname3, join as join5, resolve as resolve3 } from "node:path";
 var DEFAULT_NODE_PATH = process.env.DSH_NODE_PATH?.trim() || "node";
 var DISCOVERED_INSTALL = discoverZcodeInstall();
 var DEFAULT_CLI_PATH = process.env.DSH_ZCODE_CLI_PATH?.trim() || DISCOVERED_INSTALL?.cliPath || "";
@@ -7107,7 +7199,7 @@ function builtinRevision(path) {
   if (!path)
     return "openzcode-builtin-unknown";
   try {
-    const parsed = JSON.parse(readFileSync4(path, "utf8"));
+    const parsed = JSON.parse(readFileSync5(path, "utf8"));
     const revision = parsed.revision;
     if (typeof revision !== "string" && typeof revision !== "number") {
       return "openzcode-builtin-unknown";
@@ -7167,8 +7259,8 @@ function materializePersonalProviderConfig(route, providerId) {
       }
     }
   };
-  const directory = mkdtempSync(join4(tmpdir(), "openzcode-app-server-"));
-  const file = join4(directory, "provider_config.json");
+  const directory = mkdtempSync(join5(tmpdir(), "openzcode-app-server-"));
+  const file = join5(directory, "provider_config.json");
   writeFileSync2(file, JSON.stringify(catalog), "utf8");
   return file;
 }
@@ -7619,7 +7711,7 @@ var OpenZCodeAppServerTransport = class {
         } : {},
         ...this.config.builtinProviderConfigPath?.trim() ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: this.config.builtinProviderConfigPath.trim() } : {}
       };
-      const personalProviderConfigPath = this.config.personalProviderConfigPath?.trim() || this.generatedProviderConfigPath || (this.config.storageDir?.trim() ? join4(this.config.storageDir.trim(), "provider_config.json") : "");
+      const personalProviderConfigPath = this.config.personalProviderConfigPath?.trim() || this.generatedProviderConfigPath || (this.config.storageDir?.trim() ? join5(this.config.storageDir.trim(), "provider_config.json") : "");
       if (personalProviderConfigPath) {
         env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE = personalProviderConfigPath;
       }
@@ -7627,8 +7719,8 @@ var OpenZCodeAppServerTransport = class {
       const toolchainRoot = toolchainBin.replace(/[\\/]\w+64[\\/]bin$/i, "");
       const pathParts = [
         toolchainBin,
-        join4(toolchainRoot, "mingw64", "bin"),
-        join4(toolchainRoot, "usr", "bin"),
+        join5(toolchainRoot, "mingw64", "bin"),
+        join5(toolchainRoot, "usr", "bin"),
         env.PATH
       ].filter((value) => typeof value === "string" && value.length > 0);
       env.PATH = pathParts.join(process.platform === "win32" ? ";" : ":");
@@ -7866,23 +7958,23 @@ var OpenZCodeAppServerTransport = class {
 function defaultAppServerPaths() {
   const discovered = discoverZcodeInstall();
   const repo = process.env.DSH_ZCODE_REPO?.trim() || "";
-  const zcodeRoot = repo ? join4(repo, "re-zcode", "zcode-unpacked", "resources") : "";
-  const storageDir = process.env.ZCODE_STORAGE_DIR?.trim() || join4(homedir4(), ".zcode", "v2");
+  const zcodeRoot = repo ? join5(repo, "re-zcode", "zcode-unpacked", "resources") : "";
+  const storageDir = process.env.ZCODE_STORAGE_DIR?.trim() || join5(homedir5(), ".zcode", "v2");
   return {
     nodePath: process.env.DSH_NODE_PATH?.trim() || "node",
-    cliPath: process.env.DSH_ZCODE_CLI_PATH?.trim() || discovered?.cliPath || (zcodeRoot ? join4(zcodeRoot, "glm", "zcode.cjs") : ""),
+    cliPath: process.env.DSH_ZCODE_CLI_PATH?.trim() || discovered?.cliPath || (zcodeRoot ? join5(zcodeRoot, "glm", "zcode.cjs") : ""),
     storageDir,
-    builtinProviderConfigPath: process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE?.trim() || discovered?.builtinProviderConfigPath || (zcodeRoot ? join4(zcodeRoot, "config", "provider", "zcode-builtin.json") : ""),
-    personalProviderConfigPath: process.env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE?.trim() || join4(storageDir, "provider_config.json")
+    builtinProviderConfigPath: process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE?.trim() || discovered?.builtinProviderConfigPath || (zcodeRoot ? join5(zcodeRoot, "config", "provider", "zcode-builtin.json") : ""),
+    personalProviderConfigPath: process.env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE?.trim() || join5(storageDir, "provider_config.json")
   };
 }
 
 // lib/auth-backend.js
-import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "node:fs";
-import { dirname as dirname4, join as join5 } from "node:path";
+import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync6, writeFileSync as writeFileSync3 } from "node:fs";
+import { dirname as dirname4, join as join6 } from "node:path";
 var AUTH_BACKEND_REMOTE_NAMESPACE = "zcodeAuthBackend";
 function defaultAuthBackendPath(storageRoot) {
-  return join5(storageRoot?.trim() || defaultStorageRoot(), "auth-backend.json");
+  return join6(storageRoot?.trim() || defaultStorageRoot(), "state", "auth-backend.json");
 }
 function normalizeAuthBackend(value) {
   return value === "closezcode-app-server" ? "closezcode-app-server" : "openzcode-app-server";
@@ -7891,7 +7983,7 @@ function readAuthBackend(path) {
   if (!existsSync4(path))
     return "openzcode-app-server";
   try {
-    const parsed = JSON.parse(readFileSync5(path, "utf8"));
+    const parsed = JSON.parse(readFileSync6(path, "utf8"));
     return normalizeAuthBackend(parsed?.backend);
   } catch {
     return "openzcode-app-server";
@@ -8015,25 +8107,41 @@ function inputModalitiesOf(input, fallback = ["text"]) {
     modalities.push("image");
   return modalities.length > 0 ? modalities : fallback;
 }
-function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, log) {
-  let raw;
+function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, native, log) {
+  let providerEntries;
+  let raw = "";
   try {
-    raw = readFileSync6(providerConfigPath, "utf8");
+    raw = readFileSync7(providerConfigPath, "utf8");
   } catch (error) {
     if (error.code === "ENOENT") {
-      log?.(`zcode-provider: \u672A\u53D1\u73B0\u53EF\u9009 provider \u914D\u7F6E ${providerConfigPath};\u4EC5\u4F7F\u7528\u63D2\u4EF6\u81EA\u8EAB routes`);
-      return [];
+      const derived = nativeAccountProviders({
+        ...native.builtinPath === void 0 ? {} : { builtinPath: native.builtinPath },
+        credentialsPath: native.credentialsPath,
+        log: (message) => {
+          log?.(message);
+        }
+      });
+      providerEntries = Object.entries(derived);
+      if (providerEntries.length === 0) {
+        log?.(`zcode-provider: \u672A\u53D1\u73B0\u53EF\u9009 provider \u914D\u7F6E ${providerConfigPath},\u672C\u673A\u4EA6\u65E0\u5DF2\u767B\u5F55\u7684\u5B98\u65B9 ZCode \u8D26\u53F7;\u4EC5\u4F7F\u7528\u63D2\u4EF6\u81EA\u8EAB routes`);
+        return [];
+      }
+      log?.(`zcode-provider: \u672A\u53D1\u73B0\u63D2\u4EF6 provider \u914D\u7F6E ${providerConfigPath};\u5DF2\u4ECE\u5B98\u65B9 ZCode \u672C\u673A\u767B\u5F55\u6001\u63A8\u5BFC\u8D26\u53F7\u8DEF\u7531(${providerEntries.map(([pid]) => pid).join(", ")})`);
+    } else {
+      throw new Error(`zcode-provider: \u8BFB\u4E0D\u5230\u63D2\u4EF6 provider \u914D\u7F6E(${providerConfigPath})\u2014\u2014${String(error)}\u3002\u8BF7\u4FEE\u590D \`providerConfigPath\`,\u6216\u76F4\u63A5\u901A\u8FC7\u672C\u63D2\u4EF6\u7684 \`routes\` \u914D\u7F6E\u6A21\u578B\u7AEF\u70B9\u3002`);
     }
-    throw new Error(`zcode-provider: \u8BFB\u4E0D\u5230\u63D2\u4EF6 provider \u914D\u7F6E(${providerConfigPath})\u2014\u2014${String(error)}\u3002\u8BF7\u4FEE\u590D \`providerConfigPath\`,\u6216\u76F4\u63A5\u901A\u8FC7\u672C\u63D2\u4EF6\u7684 \`routes\` \u914D\u7F6E\u6A21\u578B\u7AEF\u70B9\u3002`);
   }
-  let zc;
-  try {
-    zc = JSON.parse(raw);
-  } catch (error) {
-    throw new Error(`zcode-provider: \u63D2\u4EF6 provider \u914D\u7F6E\u4E0D\u662F\u5408\u6CD5 JSON(${providerConfigPath})\u2014\u2014${String(error)}\u3002`);
+  if (providerEntries === void 0) {
+    let zc;
+    try {
+      zc = JSON.parse(raw);
+    } catch (error) {
+      throw new Error(`zcode-provider: \u63D2\u4EF6 provider \u914D\u7F6E\u4E0D\u662F\u5408\u6CD5 JSON(${providerConfigPath})\u2014\u2014${String(error)}\u3002`);
+    }
+    providerEntries = Object.entries(zc.provider ?? {});
   }
   const routes = [];
-  for (const [pid, pc] of Object.entries(zc.provider ?? {})) {
+  for (const [pid, pc] of providerEntries) {
     if (pc.enabled === false && !includeDisabled)
       continue;
     const o = pc.options ?? {};
@@ -8089,6 +8197,7 @@ function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, log
         ...planRuntime.family === void 0 ? {} : { family: planRuntime.family },
         planKind: planRuntime.planKind,
         fallbackApiKey: o.apiKey,
+        fallbackCredentialsPath: native.credentialsPath,
         log: (message) => log?.(message)
       });
       if (resolved.apiKey) {
@@ -8795,13 +8904,18 @@ async function* translateZcodeEvents(events) {
   throw new LlmError("zcode stream ended before message_stop", "STREAM_CLOSED");
 }
 function readActiveProvider(config) {
-  const value = readCredentialValue(config.credentialsPath ?? defaultCredentialsPath(), ACTIVE_PROVIDER_KEY, { log: (message) => {
-    void message;
-  } });
+  const value = readCredentialValue(config.credentialsPath ?? defaultCredentialsPath(), ACTIVE_PROVIDER_KEY, {
+    fallbackPath: config.nativeCredentialsPath ?? nativeCredentialPath(),
+    log: (message) => {
+      void message;
+    }
+  });
   return value === "" ? void 0 : value;
 }
 var Config = Schema2.object({
   providerConfigPath: Schema2.string().default(DEFAULT_CONFIG_PATH),
+  nativeBuiltinCatalogPath: Schema2.string(),
+  nativeCredentialsPath: Schema2.string(),
   includeDisabled: Schema2.boolean().default(true).volatile(),
   routes: Schema2.dict(Schema2.object({
     id: Schema2.string(),
@@ -8911,12 +9025,10 @@ function apply(ctx, config = {}) {
   const telemetryStatePath = config.telemetryStatePath ?? defaultTelemetryStatePath();
   const credentialsPath = config.credentialsPath ?? defaultCredentialsPath();
   const promptOverridesPath = config.promptOverridesPath ?? defaultPromptOverridesPath();
-  const authBackendPath = defaultAuthBackendPath();
+  const authBackendPath = config.authBackendPath ?? defaultAuthBackendPath();
   let authBackend = normalizeAuthBackend(config.authBackend ?? readAuthBackend(authBackendPath));
-  writeAuthBackend(authBackendPath, authBackend);
   const legacyPromptOverrides = readField(config.promptOverrides, {});
   let promptOverrides = readPromptOverrides(promptOverridesPath);
-  writePromptOverrides(promptOverridesPath, promptOverrides);
   if (!hasPromptOverrides(promptOverrides) && hasPromptOverrides(legacyPromptOverrides)) {
     promptOverrides = { ...legacyPromptOverrides };
     writePromptOverrides(promptOverridesPath, promptOverrides);
@@ -8936,7 +9048,10 @@ function apply(ctx, config = {}) {
     delete routes[key];
     removedOpenAiRoutes.push(key);
   }
-  const derived = extractRoutes(config.providerConfigPath ?? DEFAULT_CONFIG_PATH, readField(config.includeDisabled, true), credentialsPath, log).filter((route) => route.kind !== "openai" && route.kind !== "openai-compatible");
+  const derived = extractRoutes(config.providerConfigPath ?? DEFAULT_CONFIG_PATH, readField(config.includeDisabled, true), credentialsPath, {
+    ...config.nativeBuiltinCatalogPath !== void 0 || discoveredBuiltinCatalogPath() !== void 0 ? { builtinPath: config.nativeBuiltinCatalogPath ?? discoveredBuiltinCatalogPath() } : {},
+    credentialsPath: config.nativeCredentialsPath ?? nativeCredentialPath()
+  }, log).filter((route) => route.kind !== "openai" && route.kind !== "openai-compatible");
   const changed = [];
   for (const r of derived) {
     const stored = routes[r.route];
@@ -8997,9 +9112,12 @@ function apply(ctx, config = {}) {
     const activeProvider = readActiveProvider(config);
     const planKind = planRoute?.access?.mode ?? startRoute?.access?.mode;
     const accountFamily = (planRoute?.family ?? startRoute?.family) === "zai" ? "zai" : "bigmodel";
-    const oauthAccessToken = readCredentialValue(credentialsPath, `oauth:${accountFamily}:access_token`, { log: (message) => {
-      void message;
-    } });
+    const oauthAccessToken = readCredentialValue(credentialsPath, `oauth:${accountFamily}:access_token`, {
+      fallbackPath: config.nativeCredentialsPath ?? nativeCredentialPath(),
+      log: (message) => {
+        void message;
+      }
+    });
     return {
       ...planRoute === void 0 ? {} : { bigmodelOrigin: bigmodelOriginFrom(planRoute.baseURL) },
       ...planRoute === void 0 ? {} : { planApiKey: planRoute.apiKey },
@@ -9173,7 +9291,7 @@ function apply(ctx, config = {}) {
   const runtimePromptContext = (sessionId) => {
     const agents = ctx.get("agents");
     const cwd = sessionId === void 0 ? process.cwd() : agents?.get(sessionId)?.session?.header?.cwd ?? process.cwd();
-    return { cwd, isGitRepository: existsSync5(join6(cwd, ".git")) };
+    return { cwd, isGitRepository: existsSync5(join7(cwd, ".git")) };
   };
   const regs = [];
   for (const key of Object.keys(routes)) {
@@ -9225,6 +9343,7 @@ export {
   Config,
   OFF_PEAK_ENABLED_DEFAULT,
   apply,
+  extractRoutes,
   hasPromptPrefixGate,
   inject,
   isOffPeakRequest,

@@ -322,3 +322,64 @@ $DSH_HOME/dpk/
 7. 角色判定：bundle / client / plain 三种包的 `roles` 正确。
 8. 安装：`--dry-run` 不写盘；真实安装后 `store/<digest>/package` 存在、`index.json` 记录正确、官方安装器收到的是绝对路径。
 9. 幂等：同一 DPK 装两次不产生第二个 store 目录。
+
+---
+
+## 13. 受管数据卷（dpkg 语义）
+
+一个包的**持久文件**通过 `package.json` 的 `dsh.data.volumes` 声明一次，dpk 据此（且仅据此）物化、升级与清除它们——安装全程不执行包内任何代码，插件在 dpk 给出的路径上读写自己的文件。
+
+### 13.1 声明
+
+```json
+"dsh": {
+  "data": {
+    "volumes": [
+      { "id": "providers",        "class": "config", "path": "providers.json", "seed": "seeds/providers.json" },
+      { "id": "credentials",      "class": "state",  "path": "credentials.json" },
+      { "id": "captcha-profile",  "class": "cache",  "path": "captcha-profile/cookies" }
+    ]
+  }
+}
+```
+
+| 字段 | 约束 |
+| --- | --- |
+| `id` | `^[a-z][a-z0-9-]*$`，包内唯一 |
+| `class` | `config` / `state` / `cache` 三选一 |
+| `path` | 卷内相对路径（可嵌套）；拒绝绝对路径、盘符、`..`、反斜杠；包内唯一 |
+| `seed` | 可选；包内文件路径，安装期作为卷的初始内容物化 |
+
+类语义（镜像 config/state/cache 的经典三分）：
+
+| class | 含义 | 迁移 | 生命周期 |
+| --- | --- | --- | --- |
+| `config` | 用户手写的配置（dpkg 的 conffile） | ✅ `dpk` 导出/导入携带 | remove 保留，purge 删除 |
+| `state` | 机器绑定的事实与凭证 | ❌ 永不迁移（换机重新登录/生成） | remove 保留，purge 删除 |
+| `cache` | 可再生的派生数据 | ❌ | 随时可删 |
+
+### 13.2 布局与所有权
+
+```
+<home>/data/<scope>/<name>/<class>/<path>     # 卷内容(插件读写)
+<home>/data/<scope>/<name>/.dpk/<id>.seed.json  # dpk 私有:该卷来自哪个种子代
+```
+
+目录名由包名派生（带 scope 目录，`@local/pkg` → `data/@local/pkg`），包不写死路径。`.dpk/` 是管理器私有区，插件不得读写。
+
+### 13.3 生命周期（逐条对齐 dpkg）
+
+| 事件 | 行为 |
+| --- | --- |
+| 首次安装 | 带 `seed` 的卷把种子内容物化到卷路径并记录种子摘要；无 `seed` 的卷**什么都不写**——目录由插件首次写入时诞生 |
+| 升级安装 | 卷已存在且与记录的种子摘要一致（或等于新种子）→ 原地刷新为新种子；与种子不一致（用户改过）→ **保留本地文件**，新种子写到旁边 `<name>.dpk-new`（dpkg 的 conffile 规则）；没有种子标记的既有文件 → 视为用户数据收编（`adopted`），绝不覆盖 |
+| 重复安装同版本 | 同"升级"；用户改动永远存活 |
+| remove（卸载包） | 卷全部保留 |
+| purge（`dpk purge`） | 删除整个 `data/<scope>/<name>`（config、state、cache、标记一起） |
+| 导出/导入 | 只携带 `config` 卷；导入落地为**用户数据**（不留种子标记，后续升级按"用户改过"对待，永不静默覆盖）；携带未声明为 config 的文件 → 拒绝 |
+
+### 13.4 校验
+
+- 声明在 `pack` 时严格校验（id/class/path 文法、唯一性、seed 存在且在包内、seed ≤ 1 MiB、卷数 ≤ 64），并复制进 `dpk.json` 的 `data` 字段；
+- `verify` 对 `data` 副本再跑同一套校验，且与 `package/` 内声明交叉比对，不一致即拒绝；
+- `install` 在**官方安装器成功之后**物化卷（dpkg 也是先解包再放 conffile），失败即中止且不留半装状态。

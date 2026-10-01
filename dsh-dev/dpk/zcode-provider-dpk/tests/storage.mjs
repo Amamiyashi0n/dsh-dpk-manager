@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 const storage = await import(pathToFileURL(join(process.cwd(), 'lib', 'storage.js')).href)
@@ -23,13 +23,19 @@ const paths = {
   prompts: promptStorage.defaultPromptOverridesPath(root),
 }
 
-check('storage root belongs to DSH', root === join(home, '.dsh', 'zcode-provider'), root)
-check('all persistent files stay under the plugin-owned root',
-  Object.values(paths).every((path) => dirname(path) === root), JSON.stringify(paths))
-check('provider catalog has a plugin-owned name', paths.providers === join(root, 'providers.json'))
-check('credentials have a plugin-owned path', paths.credentials === join(root, 'credentials.json'))
-check('device identity has a plugin-owned path', paths.telemetry === join(root, 'telemetry-state.json'))
-check('prompt overrides have a plugin-owned path', paths.prompts === join(root, 'prompt-overrides.json'))
+check('storage root is the dpk-managed data root', root === join(home, '.dsh', 'data', '@local', 'zcode-provider'), root)
+check('volumes sort into their class directories',
+  paths.providers === join(root, 'config', 'providers.json')
+  && paths.prompts === join(root, 'config', 'prompt-overrides.json')
+  && paths.credentials === join(root, 'state', 'credentials.json')
+  && paths.telemetry === join(root, 'state', 'telemetry-state.json'),
+  JSON.stringify(paths))
+check('the legacy ~/.dsh/zcode-provider root is not consulted',
+  !Object.values(paths).some((path) => path.includes(join(home, '.dsh', 'zcode-provider'))))
+check('provider catalog has a plugin-owned name', paths.providers === join(root, 'config', 'providers.json'))
+check('credentials have a plugin-owned path', paths.credentials === join(root, 'state', 'credentials.json'))
+check('device identity has a plugin-owned path', paths.telemetry === join(root, 'state', 'telemetry-state.json'))
+check('prompt overrides have a plugin-owned path', paths.prompts === join(root, 'config', 'prompt-overrides.json'))
 check('prompt overrides normalize empty fields away', JSON.stringify(promptStorage.readPromptOverrides(join(root, 'missing.json'))) === '{}')
 check('official defaults are not duplicated in prompt overrides',
   promptStorage.hasPromptOverrides({ before: { identity: 'You are ZCode, an interactive coding agent' } }) === false)

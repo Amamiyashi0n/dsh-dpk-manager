@@ -14,6 +14,7 @@ import z from '@deepseek-ai/schemastery';
 import { AI_SDK_USER_AGENT_SUFFIX, ANTHROPIC_BETA_MID_CONVERSATION_SYSTEM, ClientRequestSigner, ZCODE_CLIENT_VERSION, ZCODE_ENDPOINT_ORIGIN, buildSourceHeaders, readDeviceMid, refreshableSignatureRejection, requiresClientSigning, } from './official-wire.js';
 import { OFFICIAL_SYSTEM_AGENT_PROMPT, OFFICIAL_SYSTEM_IDENTITY, OFFICIAL_SYSTEM_RUNTIME_PROMPT, officialRuntimePrompt, renderRuntimePrompt, } from './official-prompt.js';
 import { ACTIVE_PROVIDER_KEY, defaultCredentialsPath, readCredentialValue, resolvePlanCredential, } from './credentials.js';
+import { discoveredBuiltinCatalogPath, nativeAccountProviders, nativeCredentialPath, } from './native-account.js';
 import { captchaRequestHeaders, describeCaptchaFailure, shouldRetryWithCaptcha, solveCaptcha, } from './captcha.js';
 import { WebCaptchaBroker, createCaptchaRemoteService } from './captcha-remote.js';
 import { bigmodelOriginFrom, fetchEntitlementReport, fetchUsageSupplement, mergeUsageReport, renderUsageReport, } from './usage.js';
@@ -112,35 +113,52 @@ function inputModalitiesOf(input, fallback = ['text']) {
 /**
  * 从 zcode 配置提取可用模型路由(enabled + 有密钥 + 有模型目录)。
  * 套餐类条目的凭证按官方规则从 `credentials.json` 解析(凭证库优先,配置层回落)。
+ * 插件配置文件缺失时,回退到官方 ZCode 本机登录态推导账号路由。
  */
-function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, log) {
+export function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, native, log) {
     // The device config is the plugin's primary input, so a missing or malformed
     // file fails the entry fiber instead of silently registering zero routes
     // (DSH convention: misconfiguration fails loud; only enhancement inputs such
     // as the optional built-in catalog degrade quietly). The message names the
     // config key and the fix, because the raw ENOENT from readFileSync is reported
     // by app-boot as a bare warning line with a stack, not as an instruction.
-    let raw;
+    let providerEntries;
+    // 回退推导时不会走到 JSON 解析分支;初始化仅为满足明确赋值分析
+    let raw = '';
     try {
         raw = readFileSync(providerConfigPath, 'utf8');
     }
     catch (error) {
         if (error.code === 'ENOENT') {
-            log?.(`zcode-provider: 未发现可选 provider 配置 ${providerConfigPath};仅使用插件自身 routes`);
-            return [];
+            const derived = nativeAccountProviders({
+                ...(native.builtinPath === undefined ? {} : { builtinPath: native.builtinPath }),
+                credentialsPath: native.credentialsPath,
+                log: (message) => { log?.(message); },
+            });
+            providerEntries = Object.entries(derived);
+            if (providerEntries.length === 0) {
+                log?.(`zcode-provider: 未发现可选 provider 配置 ${providerConfigPath},本机亦无已登录的官方 ZCode 账号;仅使用插件自身 routes`);
+                return [];
+            }
+            log?.(`zcode-provider: 未发现插件 provider 配置 ${providerConfigPath};已从官方 ZCode 本机登录态推导账号路由(${providerEntries.map(([pid]) => pid).join(', ')})`);
         }
-        throw new Error(`zcode-provider: 读不到插件 provider 配置(${providerConfigPath})——${String(error)}。`
-            + '请修复 `providerConfigPath`,或直接通过本插件的 `routes` 配置模型端点。');
+        else {
+            throw new Error(`zcode-provider: 读不到插件 provider 配置(${providerConfigPath})——${String(error)}。`
+                + '请修复 `providerConfigPath`,或直接通过本插件的 `routes` 配置模型端点。');
+        }
     }
-    let zc;
-    try {
-        zc = JSON.parse(raw);
-    }
-    catch (error) {
-        throw new Error(`zcode-provider: 插件 provider 配置不是合法 JSON(${providerConfigPath})——${String(error)}。`);
+    if (providerEntries === undefined) {
+        let zc;
+        try {
+            zc = JSON.parse(raw);
+        }
+        catch (error) {
+            throw new Error(`zcode-provider: 插件 provider 配置不是合法 JSON(${providerConfigPath})——${String(error)}。`);
+        }
+        providerEntries = Object.entries(zc.provider ?? {});
     }
     const routes = [];
-    for (const [pid, pc] of Object.entries(zc.provider ?? {})) {
+    for (const [pid, pc] of providerEntries) {
         if (pc.enabled === false && !includeDisabled)
             continue;
         const o = pc.options ?? {};
@@ -206,6 +224,7 @@ function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, log
                 ...(planRuntime.family === undefined ? {} : { family: planRuntime.family }),
                 planKind: planRuntime.planKind,
                 fallbackApiKey: o.apiKey,
+                fallbackCredentialsPath: native.credentialsPath,
                 log: (message) => log?.(message),
             });
             if (resolved.apiKey) {
@@ -1026,12 +1045,17 @@ async function* translateZcodeEvents(events) {
  * @returns 明文值;读不到时 `undefined`。
  */
 function readActiveProvider(config) {
-    const value = readCredentialValue(config.credentialsPath ?? defaultCredentialsPath(), ACTIVE_PROVIDER_KEY, { log: (message) => { /* 解密失败已按缺失处理,不额外刷日志 */ void message; } });
+    const value = readCredentialValue(config.credentialsPath ?? defaultCredentialsPath(), ACTIVE_PROVIDER_KEY, {
+        fallbackPath: config.nativeCredentialsPath ?? nativeCredentialPath(),
+        log: (message) => { /* 解密失败已按缺失处理,不额外刷日志 */ void message; },
+    });
     return value === '' ? undefined : value;
 }
 /** 校验并默认插件配置;`.volatile()` 的字段由设置层按引用读取。 */
 export const Config = z.object({
     providerConfigPath: z.string().default(DEFAULT_CONFIG_PATH),
+    nativeBuiltinCatalogPath: z.string(),
+    nativeCredentialsPath: z.string(),
     includeDisabled: z.boolean().default(true).volatile(),
     routes: z.dict(z.object({
         id: z.string(),
@@ -1164,12 +1188,13 @@ export function apply(ctx, config = {}) {
     const credentialsPath = config.credentialsPath ?? defaultCredentialsPath();
     // 可注入路径:测试用它隔离机器上的真实覆写状态
     const promptOverridesPath = config.promptOverridesPath ?? defaultPromptOverridesPath();
-    const authBackendPath = defaultAuthBackendPath();
+    const authBackendPath = config.authBackendPath ?? defaultAuthBackendPath();
     let authBackend = normalizeAuthBackend(config.authBackend ?? readAuthBackend(authBackendPath));
-    writeAuthBackend(authBackendPath, authBackend);
+    // 激活不写盘:数据卷由 dpk 安装期物化(SPEC §13),运行期只由用户动作
+    // (Remote 写入/设置迁移)落盘。全新安装因此是"零写激活",数据面状态
+    // 由 dpk data 报告,而不是靠这里悄悄生成文件。
     const legacyPromptOverrides = readField(config.promptOverrides, {});
     let promptOverrides = readPromptOverrides(promptOverridesPath);
-    writePromptOverrides(promptOverridesPath, promptOverrides);
     if (!hasPromptOverrides(promptOverrides) && hasPromptOverrides(legacyPromptOverrides)) {
         promptOverrides = { ...legacyPromptOverrides };
         writePromptOverrides(promptOverridesPath, promptOverrides);
@@ -1190,7 +1215,12 @@ export function apply(ctx, config = {}) {
         delete routes[key];
         removedOpenAiRoutes.push(key);
     }
-    const derived = extractRoutes(config.providerConfigPath ?? DEFAULT_CONFIG_PATH, readField(config.includeDisabled, true), credentialsPath, log).filter((route) => route.kind !== 'openai' && route.kind !== 'openai-compatible');
+    const derived = extractRoutes(config.providerConfigPath ?? DEFAULT_CONFIG_PATH, readField(config.includeDisabled, true), credentialsPath, {
+        ...(config.nativeBuiltinCatalogPath !== undefined || discoveredBuiltinCatalogPath() !== undefined
+            ? { builtinPath: config.nativeBuiltinCatalogPath ?? discoveredBuiltinCatalogPath() }
+            : {}),
+        credentialsPath: config.nativeCredentialsPath ?? nativeCredentialPath(),
+    }, log).filter((route) => route.kind !== 'openai' && route.kind !== 'openai-compatible');
     // 文件路由为准(含 family/access/credential 标记):新增或字段演进都回写设置层
     const changed = [];
     for (const r of derived) {
@@ -1265,7 +1295,10 @@ export function apply(ctx, config = {}) {
         const activeProvider = readActiveProvider(config);
         const planKind = planRoute?.access?.mode ?? startRoute?.access?.mode;
         const accountFamily = (planRoute?.family ?? startRoute?.family) === 'zai' ? 'zai' : 'bigmodel';
-        const oauthAccessToken = readCredentialValue(credentialsPath, `oauth:${accountFamily}:access_token`, { log: (message) => { void message; } });
+        const oauthAccessToken = readCredentialValue(credentialsPath, `oauth:${accountFamily}:access_token`, {
+            fallbackPath: config.nativeCredentialsPath ?? nativeCredentialPath(),
+            log: (message) => { void message; },
+        });
         return {
             ...(planRoute === undefined ? {} : { bigmodelOrigin: bigmodelOriginFrom(planRoute.baseURL) }),
             ...(planRoute === undefined ? {} : { planApiKey: planRoute.apiKey }),

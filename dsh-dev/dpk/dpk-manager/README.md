@@ -56,13 +56,31 @@ profile  dpk-demo (installed by the plugin manager service)
 
 ## 会话内工具 `dpk`
 
-六个动作：`inspect`（只读清单）、`verify`（结构+完整性+DSH 合规）、`pack`（打进 `.dpk`）、
-`install`（装进当前 profile）、`list`、`which`。
+八个动作：`inspect`（只读清单）、`verify`（结构+完整性+DSH 合规）、`pack`（打进 `.dpk`）、
+`install`（装进当前 profile）、`list`、`which`、`data`（查看一个包的受管数据卷状态）、
+`purge`（删除一个包的全部受管数据卷）。
 
-- 只有 `install` 会改 profile。它**先过沙箱提权判定**（`danger-full-access`，与官方
-  `plugin_manager` 完全相同的请求与理由文本），再调用**同一个** `pluginManager` 服务；
-  判定器或服务不可用时**一律拒绝安装**，并给出等价的
+- `install` 与 `purge` 是仅有的两个破坏性动作，都**先过沙箱提权判定**（`danger-full-access`，
+  与官方 `plugin_manager` 完全相同的请求与理由文本）；`install` 再调用**同一个** `pluginManager`
+  服务。判定器或服务不可用时**一律拒绝执行**，并给出等价的
   `plugin_manager action=install_bundle target=<store 路径>` 调用。
+
+## 受管数据卷（dpkg 语义，SPEC §13）
+
+包可以用 `package.json` 的 `dsh.data.volumes` 声明自己的持久文件，dpk 负责它们的整个生命周期
+（声明校验、首装种子、conffile 式升级、remove 保留 / purge 清除、config 导出导入）。布局：
+
+```
+<home>/data/<scope>/<name>/{config,state,cache}/…   卷内容(插件读写)
+<home>/data/<scope>/<name>/.dpk/*.seed.json          dpk 私有种子标记
+```
+
+- **升级规则**：用户没改过的种子卷原地刷新；改过的新种子落到旁边 `.dpk-new`，本地文件永不
+  被静默覆盖；无种子标记的既有文件按用户数据收编。实测：重装同一 DPK，改过的
+  `providers=kept-local`、没改的 `prompt-overrides=refreshed`。
+- **state 永不迁移**：凭证等机器绑定文件声明为 `state`，导出/导入只携带 `config`——换机
+  重新登录，而不是把解不开的密文搬过去。
+- 安装期不执行包内任何代码（与 verify 同一红线）；卷物化发生在官方安装器成功之后。
 - 本插件**不 import 任何 Harness 包**：`tools`、`sandboxPolicy`、`approval`、`pluginManager`
   全部经 `ctx` 服务拿；工具定义按 Harness 自己的参数 schema 形式手写，提权判定按
   `@deepseek-ai/dsh-sandbox#approveEscalation` 的规则与措辞镜像实现。这样一个 profile bundle

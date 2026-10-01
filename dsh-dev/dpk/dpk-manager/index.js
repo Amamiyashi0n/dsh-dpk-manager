@@ -34,10 +34,12 @@ const TOOL = 'dpk'
 /** The model-facing description; it names the gate and the ordering the model must follow. */
 const DESCRIPTION = [
   'Manage DSH plugin packages: inspect or verify a .dpk archive, pack a package directory into a .dpk,',
-  'install a verified archive into the current profile, or list what dpk installed locally.',
+  'install a verified archive into the current profile, list what dpk installed locally (with managed data state),',
+  'inspect a package\'s managed data volumes (data), or purge them (purge).',
   'A .dpk is a validated zip carrying one standard DSH package; verify before installing.',
   'install changes this profile for every session and requires danger-full-access permission or approval for this call;',
   'it runs through the same plugin manager service as plugin_manager, so approval does not change the session permission mode.',
+  'purge deletes a package\'s managed data volumes (config/state/cache) for good and requires the same approval.',
   'dryRun reports the deterministic store path and the exact hand-off without writing anything.',
 ].join(' ')
 
@@ -49,7 +51,7 @@ const PARAMETERS = {
     file: { type: 'string', description: 'Archive path for inspect, verify, and install.' },
     directory: { type: 'string', description: 'Package directory for pack.' },
     output: { type: 'string', description: 'For pack: the .dpk path to write; defaults to <name>-<version>.dpk in the working directory.' },
-    name: { type: 'string', description: 'For which: a package name, optionally name@version.' },
+    name: { type: 'string', description: 'For which/data/purge: a package name, optionally name@version.' },
     profile: { type: 'string', description: 'For install: target profile; defaults to this session profile.' },
     dryRun: { type: 'boolean', description: 'For install: verify and unpack nothing; report the store path and the exact hand-off only.' },
     force: { type: 'boolean', description: 'For install: re-extract even when the digest is already stored.' },
@@ -57,6 +59,7 @@ const PARAMETERS = {
   },
   required: ['action'],
 }
+
 
 /**
  * Register the tool.
@@ -82,6 +85,15 @@ export function apply(ctx, config = {}) {
     },
     async execute(args, exec) {
       const home = config.home ?? process.env.DSH_HOME ?? undefined
+      // purge deletes the package's managed data outside the profile; it earns
+      // the same gate as an install (destructive, profile-adjacent, irreversible).
+      if (args.action === 'purge') {
+        await judgeEscalation(ctx, exec, {
+          requestedMode: 'danger-full-access',
+          subject: 'data purge',
+          justification: `dpk purge ${args.name ?? ''}. Purging deletes every managed data volume (config, state, cache) of the package for good.`,
+        })
+      }
       const installer = args.action === 'install' && args.dryRun !== true
         ? createInstaller(ctx, exec, args)
         : undefined
@@ -96,7 +108,7 @@ export function apply(ctx, config = {}) {
     presentCall: args => ({
       card: 'generic',
       title: `DPK ${String(args?.action ?? '')}`.trim(),
-      kind: args?.action === 'install' && args?.dryRun !== true ? 'other' : 'read',
+      kind: (args?.action === 'install' && args?.dryRun !== true) || args?.action === 'purge' ? 'other' : 'read',
       rawInput: args?.file ?? args?.directory ?? args?.name ?? String(args?.action ?? ''),
     }),
   })

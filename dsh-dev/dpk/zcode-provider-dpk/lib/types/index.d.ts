@@ -69,6 +69,18 @@ export declare const OFF_PEAK_ENABLED_DEFAULT = false;
 export declare function runtimeProviders(pid: string, offPeakEnabled?: boolean): RuntimeProvider[];
 /** 官方运行时提示词使用识别端点 id,而不是 DSH 设置卡上的持久化 id。 */
 export declare function officialProviderId(route: Pick<ZcodeRoute, 'route' | 'family' | 'access'>): string;
+/** 从 zcode 配置提取可用模型路由(enabled + 有密钥 + 有模型目录)。 */
+/**
+ * 从 zcode 配置提取可用模型路由(enabled + 有密钥 + 有模型目录)。
+ * 套餐类条目的凭证按官方规则从 `credentials.json` 解析(凭证库优先,配置层回落)。
+ * 插件配置文件缺失时,回退到官方 ZCode 本机登录态推导账号路由。
+ */
+export declare function extractRoutes(providerConfigPath: string, includeDisabled: boolean, credentialsPath: string, native: {
+    builtinPath?: string;
+    credentialsPath: string;
+}, log?: Log): ZcodeRoute[];
+/** 日志出口:插件把诊断交给 ctx.logger,而不是直接写 stderr。 */
+type Log = (message: string) => void;
 /**
  * ZCode 3.14.3 的完整官方系统提示词三块(见 `official-prompt.ts` 的实测记录)。
  *
@@ -146,8 +158,14 @@ export interface Config {
     credentialsPath?: string;
     /** 插件设备标识文件(`~/.dsh/zcode-provider/telemetry-state.json`)。 */
     telemetryStatePath?: string;
-    /** 提示词覆盖文件(`~/.dsh/zcode-provider/prompt-overrides.json`);测试注入以隔离机器状态。 */
+    /** 提示词覆盖文件(`…/config/prompt-overrides.json`);测试注入以隔离机器状态。 */
     promptOverridesPath?: string;
+    /** 鉴权链路持久化路径(`…/state/auth-backend.json`);测试注入以隔离机器状态。 */
+    authBackendPath?: string;
+    /** 官方内置目录路径覆写(本机账号回退推导用);测试注入以隔离机器状态。 */
+    nativeBuiltinCatalogPath?: string;
+    /** 官方本机凭证库路径覆写;测试注入以隔离机器状态。 */
+    nativeCredentialsPath?: string;
     /** 是否在 start-plan/off-peak 路由收到 3007 时自动解验证码。 */
     captchaEnabled?: boolean;
     /** 客户端版本:`X-ZCode-App-Version` / `User-Agent` / `X-Client-Version`。 */ appVersion?: string;

@@ -91,7 +91,7 @@ try {
   const emptyStore = readCredentialStore(join(dir, 'nope.json'))
   check('凭证库不可读:返回空表', Object.keys(emptyStore).length === 0)
 
-  check('默认凭证路径位于插件自有根目录', defaultCredentialsPath('X:\\root') === join('X:\\root', 'credentials.json'))
+  check('默认凭证路径位于受管 state 卷', defaultCredentialsPath('X:\\root') === join('X:\\root', 'state', 'credentials.json'))
 } finally {
   rmSync(dir, { recursive: true, force: true })
 }

@@ -43,6 +43,8 @@ export interface ResolvePlanCredentialInput {
     planKind?: 'individual-coding-plan' | 'team-coding-plan' | 'start-plan' | 'off-peak';
     /** 配置层 `options.apiKey`,作为最后回落。 */
     fallbackApiKey?: string;
+    /** 官方本机凭证库(如 `~/.zcode/v2/credentials.json`):插件凭证库缺键时从这里补。 */
+    fallbackCredentialsPath?: string;
     /** 派生密钥用的主目录(默认当前用户主目录;凭证换机后拷来才会不同)。 */
     home?: string;
     /** 派生密钥用的用户名。 */
@@ -75,6 +77,7 @@ export declare function readCredentialValue(credentialsPath: string, name: strin
     home?: string;
     user?: string;
     log?: (message: string) => void;
+    fallbackPath?: string;
 }): string;
 /**
  * 按官方规则解析某个套餐 provider 的模型凭证。

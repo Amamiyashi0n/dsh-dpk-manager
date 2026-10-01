@@ -10,14 +10,15 @@
 
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { archiveFileName, packDirectory } from './pack.mjs'
 import { describeManifest, verifyArchive } from './verify.mjs'
 import { installArchive } from './install.mjs'
 import { dpkRoot, matchEntries, readIndex, storeDir, defaultDshHome} from './store.mjs'
+import { dataRoot, describeVolumes, exportConfigVolumes, importConfigVolumes, parseDataDeclaration, purgeVolumes } from './data.mjs'
 
 /** Actions the in-session tool exposes. */
-export const DPK_ACTIONS = ['inspect', 'verify', 'pack', 'install', 'list', 'which']
+export const DPK_ACTIONS = ['inspect', 'verify', 'pack', 'install', 'list', 'which', 'data', 'purge']
 
 /** A caller mistake: reported as text, never as a stack trace. */
 export class DpkActionError extends Error {
@@ -139,6 +140,12 @@ export async function runDpkAction(action, args = {}, context = {}) {
       } else {
         lines.push(`profile  ${result.profile} (installed by the plugin manager service)`)
         if (!result.created) lines.push('reuse    this digest was already in the store')
+        for (const volume of result.volumes ?? []) {
+          if (volume.action === 'seeded') lines.push(`data     ${volume.class}/${volume.path.split(sep).pop()} seeded`)
+          if (volume.action === 'refreshed') lines.push(`data     ${volume.class}/${volume.path.split(sep).pop()} refreshed`)
+          if (volume.action === 'kept-local') lines.push(`data     ${volume.path}: kept the local copy; new seed staged as .dpk-new`)
+          if (volume.action === 'adopted') lines.push(`data     ${volume.path}: adopted a pre-existing file`)
+        }
       }
       return {
         action,
@@ -151,7 +158,46 @@ export async function runDpkAction(action, args = {}, context = {}) {
           profile: result.profile,
           dryRun: result.dryRun === true,
           created: result.created,
+          volumes: result.volumes ?? [],
         },
+      }
+    }
+    case 'data': {
+      if (typeof args.name !== 'string' || args.name === '') throw new DpkActionError('data needs `name`: the package whose volumes to inspect')
+      const root = dpkRoot(home)
+      const entry = matchEntries((await readIndex(root)).entries, args.name)[0]
+      if (entry === undefined) throw new DpkActionError(`no stored package matches ${args.name}`)
+      const packageDir = join(storeDir(root, entry.digest), 'package')
+      const declaration = parseDataDeclaration(
+        JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8')).dsh?.data,
+        `${entry.name}: package.json`,
+      )
+      const volumes = await describeVolumes(home, entry.name, declaration, packageDir)
+      const lines = [`data     ${dataRoot(home, entry.name)}`]
+      if (volumes.length === 0) lines.push('         this package declares no data volumes')
+      for (const volume of volumes) {
+        const state = !volume.exists ? 'missing'
+          : volume.pendingSeed !== undefined ? 'pending-seed'
+          : volume.seeded === false ? 'user-owned'
+          : 'seeded'
+        lines.push(`${volume.id}  ${volume.class}  ${state}  ${volume.path}`)
+      }
+      const missing = volumes.filter(volume => !volume.exists).length
+      if (missing > 0) lines.push(`note     ${missing} declared volume(s) not on disk yet; the package initializes them on first activation or import`)
+      return { action, text: lines.join('\n'), data: { root: dataRoot(home, entry.name), volumes } }
+    }
+    case 'purge': {
+      if (typeof args.name !== 'string' || args.name === '') throw new DpkActionError('purge needs `name`: the package whose data volumes to delete')
+      const root = dpkRoot(home)
+      const matches = matchEntries((await readIndex(root)).entries, args.name)
+      if (matches.length === 0) throw new DpkActionError(`no stored package matches ${args.name}`)
+      const result = await purgeVolumes(home, matches[0].name)
+      return {
+        action,
+        text: result.purged
+          ? `purged   ${result.root} (config, state, and cache volumes deleted)`
+          : `purge    ${result.root} did not exist; nothing to delete`,
+        data: result,
       }
     }
     case 'list': {

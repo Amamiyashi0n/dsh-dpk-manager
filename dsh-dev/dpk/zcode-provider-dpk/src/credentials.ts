@@ -56,6 +56,8 @@ export interface ResolvePlanCredentialInput {
   planKind?: 'individual-coding-plan' | 'team-coding-plan' | 'start-plan' | 'off-peak'
   /** 配置层 `options.apiKey`,作为最后回落。 */
   fallbackApiKey?: string
+  /** 官方本机凭证库(如 `~/.zcode/v2/credentials.json`):插件凭证库缺键时从这里补。 */
+  fallbackCredentialsPath?: string
   /** 派生密钥用的主目录(默认当前用户主目录;凭证换机后拷来才会不同)。 */
   home?: string
   /** 派生密钥用的用户名。 */
@@ -126,18 +128,24 @@ function defaultUser(): string {
 export function readCredentialValue(
   credentialsPath: string,
   name: string,
-  options: { home?: string; user?: string; log?: (message: string) => void } = {},
+  options: { home?: string; user?: string; log?: (message: string) => void; fallbackPath?: string } = {},
 ): string {
-  const store = readCredentialStore(credentialsPath)
-  const raw = store[name]
-  if (raw === undefined) return ''
-  try {
-    const key = deriveCredentialKey(options.home ?? defaultHome(), options.user ?? defaultUser())
-    return decryptStoreValue(raw, key).trim()
-  } catch (error) {
-    options.log?.(`zcode-provider: 凭据 ${name} 解密失败(${String(error)}),按缺失处理`)
-    return ''
+  const key = deriveCredentialKey(options.home ?? defaultHome(), options.user ?? defaultUser())
+  const readOne = (path: string): string => {
+    const raw = readCredentialStore(path)[name]
+    if (raw === undefined) return ''
+    try {
+      return decryptStoreValue(raw, key).trim()
+    } catch (error) {
+      options.log?.(`zcode-provider: 凭据 ${name} 解密失败(${String(error)}),按缺失处理`)
+      return ''
+    }
   }
+  const primary = readOne(credentialsPath)
+  if (primary !== '') return primary
+  const fallback = options.fallbackPath?.trim() ?? ''
+  if (fallback === '' || fallback === credentialsPath) return ''
+  return readOne(fallback)
 }
 
 /**
@@ -148,6 +156,13 @@ export function readCredentialValue(
 export function resolvePlanCredential(input: ResolvePlanCredentialInput): ResolvedCredential {
   const fallback = (input.fallbackApiKey ?? '').trim()
   const store = readCredentialStore(input.credentialsPath)
+  const fallbackStorePath = input.fallbackCredentialsPath?.trim() ?? ''
+  if (fallbackStorePath !== '' && fallbackStorePath !== input.credentialsPath) {
+    // 插件凭证库缺键时用官方本机库补齐(键名空间与解密规则同源);主库已有的键优先
+    for (const [name, value] of Object.entries(readCredentialStore(fallbackStorePath))) {
+      if (store[name] === undefined) store[name] = value
+    }
+  }
   const key = deriveCredentialKey(input.home ?? defaultHome(), input.user ?? defaultUser())
   const read = (name: string): string => {
     const raw = store[name]

@@ -28,7 +28,14 @@ DSH 负责：
 - 账号权益 last-known-good 状态机；短暂网络异常不会撤下已确认的模型或权益
 - 套餐路由按插件配置同步发布；权益网络请求只更新账号事实，不阻塞或重排模型 Registry
 
-provider 配置、凭证和设备标识全部属于插件，并默认存放在 `~/.dsh/zcode-provider`。这些文件缺失时插件仍会正常激活，并可完全通过自身 `routes` 配置运行。
+provider 配置、凭证和设备标识全部属于插件，存放在 dpk 受管数据卷 `~/.dsh/data/@local/zcode-provider`（见 dpk-manager SPEC §13）。这些文件缺失时插件仍会正常激活，并可完全通过自身 `routes` 配置运行。
+
+**2.6.0 破坏式数据迁移**：旧根 `~/.dsh/zcode-provider` **不再被读取**。安装 2.6.0 后：
+
+- `config/providers.json`、`config/prompt-overrides.json` 由 dpk 安装期从包内种子物化；
+- `state/credentials.json` 等凭证**不迁移**（加密密钥绑定用户与主目录，拷过去也解不开）——在新机器上重新登录官方 ZCode，或用 dpk 的 config 导出/导入搬运 `providers.json`；
+- 需要保留旧 `providers.json` 的，手动复制到 `~/.dsh/data/@local/zcode-provider/config/providers.json` 即可（它会按"用户改过"收编，后续升级永不覆盖）；
+- 旧目录确认无残留价值后可整目录删除。
 
 DPK 的 `cordis.patch.yml` 会自行注册插件。profile 只需要把 `zcode-provider` DPK 列入 bundles，不需要再复制路由、提示词或协议配置；账号数据也不会写入 DPK。
 
@@ -44,7 +51,7 @@ DPK 的 `cordis.patch.yml` 会自行注册插件。profile 只需要把 `zcode-p
 
 ### 本地读写边界
 
-- 读取：`~/.dsh/zcode-provider/providers.json`、`credentials.json`、`telemetry-state.json`、`prompt-overrides.json`。
+- 读取：`~/.dsh/data/@local/zcode-provider/config/providers.json`、`credentials.json`、`telemetry-state.json`、`prompt-overrides.json`。
 - 直接写入：提示词编辑器通过插件 Remote 直接写入 `prompt-overrides.json`；不会把提示词内容写入 Web profile 的 `cordis.patch.yml`。
 - 间接写入：`settings.mutate()` 只用于派生路由（包括 `apiKey` 字段）以及清理旧版 profile 中的 `promptOverrides`。
 - 内存状态：权益缓存和 last-known-good 状态默认只在当前进程保存。
@@ -73,9 +80,9 @@ DPK 同时包含：
 
 | 字段 | 默认值 | 用途 |
 | --- | --- | --- |
-| providerConfigPath | ~/.dsh/zcode-provider/providers.json | 插件自有 provider 配置 |
-| credentialsPath | ~/.dsh/zcode-provider/credentials.json | 插件自有账号凭证 |
-| telemetryStatePath | ~/.dsh/zcode-provider/telemetry-state.json | 插件自有 deviceMid |
+| providerConfigPath | ~/.dsh/data/@local/zcode-provider/config/providers.json | 插件自有 provider 配置 |
+| credentialsPath | ~/.dsh/data/@local/zcode-provider/state/credentials.json | 插件自有账号凭证 |
+| telemetryStatePath | ~/.dsh/data/@local/zcode-provider/state/telemetry-state.json | 插件自有 deviceMid |
 | routes | 空 | 插件自身持久化路由；可不依赖任何外部配置手工提供 |
 | includeDisabled | true | 是否导入设备配置中的禁用 provider |
 | signingEnabled | true | 启用客户端签名协议 |
@@ -83,9 +90,9 @@ DPK 同时包含：
 | appVersion | 源码内协议版本 | 请求归因版本 |
 | sourceTitle | electron | X-Title 来源标识 |
 | endpointOrigin | https://zcode.z.ai | 配置、签名和权益端点来源 |
-| authBackend | openzcode-app-server | 鉴权后端；可在插件详情页选择白盒 app-server 或原版直连，持久化到 `~/.dsh/zcode-provider/auth-backend.json` |
-| promptOverrides | 空（保持官方三段） | 三层提示词二态编辑：**前置＝附加注入**（自定义块插在官方 agent 块与运行时块之间，官方三块完整保留）；**后置＝覆写**（逐块替换官方对应块，清空即从请求移除该块＝0 字节注入，三层全清时 coding-plan 直连请求省略 system 字段）。持久化到 `~/.dsh/zcode-provider/prompt-overrides.json`，官方默认值不重复保存，保存即时热生效（无需重启）。有覆写时引擎委托自动旁路为直连 wire |
-| promptOverridesPath | ~/.dsh/zcode-provider/prompt-overrides.json | 覆写文件路径；测试注入以隔离机器真实状态 |
+| authBackend | openzcode-app-server | 鉴权后端；可在插件详情页选择白盒 app-server 或原版直连，持久化到 `~/.dsh/data/@local/zcode-provider/state/auth-backend.json` |
+| promptOverrides | 空（保持官方三段） | 三层提示词二态编辑：**前置＝附加注入**（自定义块插在官方 agent 块与运行时块之间，官方三块完整保留）；**后置＝覆写**（逐块替换官方对应块，清空即从请求移除该块＝0 字节注入，三层全清时 coding-plan 直连请求省略 system 字段）。持久化到 `~/.dsh/data/@local/zcode-provider/config/prompt-overrides.json`，官方默认值不重复保存，保存即时热生效（无需重启）。有覆写时引擎委托自动旁路为直连 wire |
+| promptOverridesPath | ~/.dsh/data/@local/zcode-provider/config/prompt-overrides.json | 覆写文件路径；测试注入以隔离机器真实状态 |
 
 ## 提示词覆写与前缀门（2.5.32–2.5.37 实测）
 

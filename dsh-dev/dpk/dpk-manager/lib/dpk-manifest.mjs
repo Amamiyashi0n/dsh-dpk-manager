@@ -12,6 +12,7 @@
 import { createHash } from 'node:crypto'
 import { validateArchivePath } from './zip.mjs'
 import { SEMVER, PACKAGE_NAME, PACKAGE_NAME_MAX_LENGTH, NEVER_PACKED, localizeName } from './dsh-package.mjs'
+import { parseDataDeclaration } from './data.mjs'
 
 /** The format version this implementation writes and understands. */
 export const DPK_FORMAT_VERSION = 1
@@ -29,7 +30,7 @@ export const ROLES = new Set(['bundle', 'client', 'plain'])
 const SHA256_HEX = /^[0-9a-f]{64}$/
 const MANIFEST_KEYS = new Set([
   'dpk', 'name', 'version', 'createdAt', 'generator', 'entry', 'roles',
-  'dsh', 'engines', 'peerDependencies', 'files', 'integrity',
+  'dsh', 'engines', 'peerDependencies', 'files', 'integrity', 'data',
 ])
 const FILE_KEYS = new Set(['path', 'size', 'sha256'])
 
@@ -104,6 +105,7 @@ export function buildManifest(input) {
     entry: DPK_ENTRY,
     roles: [...input.roles],
     ...input.dsh === undefined ? {} : { dsh: input.dsh },
+    ...input.data === undefined || input.data.length === 0 ? {} : { data: { volumes: input.data } },
     ...input.engines === undefined ? {} : { engines: input.engines },
     ...input.peerDependencies === undefined ? {} : { peerDependencies: input.peerDependencies },
     files,
@@ -170,6 +172,15 @@ export function validateManifest(value) {
     if (!isPlainObject(field)) throw new DpkManifestError(`dpk.json: ${key} must be an object`, 'DPK_MANIFEST_FIELD')
   }
 
+  // Managed data volumes (SPEC §13): the declaration rides along as a copy of
+  // the package's own `dsh.data`, revalidated on read so an untrusted archive
+  // can never inject a volume the packer would have refused.
+  let dataVolumes
+  if (value.data !== undefined) {
+    if (!isPlainObject(value.data)) throw new DpkManifestError('dpk.json: data must be an object', 'DPK_MANIFEST_FIELD')
+    dataVolumes = parseDataDeclaration(value.data, 'dpk.json: data')
+  }
+
   const files = value.files
   if (!Array.isArray(files) || files.length === 0) {
     throw new DpkManifestError('dpk.json: files must be a non-empty array', 'DPK_MANIFEST_FIELD')
@@ -234,6 +245,7 @@ export function validateManifest(value) {
     entry,
     roles: [...roles],
     ...value.dsh === undefined ? {} : { dsh: value.dsh },
+    ...value.data === undefined ? {} : { data: { volumes: dataVolumes.map(volume => ({ ...volume })) } },
     ...value.engines === undefined ? {} : { engines: { ...value.engines } },
     ...value.peerDependencies === undefined ? {} : { peerDependencies: { ...value.peerDependencies } },
     files: normalizedFiles,
@@ -264,6 +276,11 @@ export function compareManifestToPackage(manifest, source) {
   const expected = JSON.stringify(source.dsh ?? null)
   const claimed = JSON.stringify(manifest.dsh ?? null)
   if (expected !== claimed) problems.push('dsh: dpk.json copy differs from package.json')
+  const expectedVolumes = source.dataVolumes ?? []
+  const claimedVolumes = manifest.data?.volumes ?? []
+  if (JSON.stringify(expectedVolumes) !== JSON.stringify(claimedVolumes)) {
+    problems.push('data: dpk.json volume declaration differs from package.json')
+  }
   for (const [key, actual] of [['engines', source.engines], ['peerDependencies', source.peerDependencies]]) {
     const declared = manifest[key]
     if (declared === undefined && actual === undefined) continue

@@ -1,7 +1,7 @@
 {
   "name": "@local/zcode-provider",
   "description": "Standalone white-box ZCode-compatible provider for DeepSeek Harness",
-  "version": "2.5.43",
+  "version": "2.6.0",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -79,11 +79,14 @@
     "lib/openzcode-app-server.js",
     "lib/auth-backend.js",
     "lib/storage.js",
+    "lib/native-account.js",
+    "lib/app-server-discovery.js",
     "lib/types/**/*.d.ts",
     "client.js",
     "locale",
     "icon.svg",
     "cordis.patch.yml",
+    "seeds",
     "README.md",
     "src",
     "tests",
@@ -95,7 +98,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/sync-client-prompts.mjs && node scripts/bundle-entry.mjs",
-    "test": "node tests/equivalence.mjs && node tests/storage.mjs && node tests/prompt-remote.mjs && node tests/auth-backend.mjs && node tests/credentials.mjs && node tests/route-resolution.mjs && node tests/entitlements.mjs && node tests/usage.mjs && node tests/usage-remote.mjs && node tests/client.mjs && node tests/offpeak.mjs && node tests/official-prompt.mjs && node tests/captcha.mjs && node tests/captcha-remote.mjs && node tests/image-wire.mjs && node tests/official-wire.mjs && node tests/app-server.mjs && node tests/loader-composition.mjs && node tests/app-server-discovery.mjs && node tests/standalone-package.mjs"
+    "test": "node tests/equivalence.mjs && node tests/storage.mjs && node tests/prompt-remote.mjs && node tests/auth-backend.mjs && node tests/credentials.mjs && node tests/route-resolution.mjs && node tests/entitlements.mjs && node tests/usage.mjs && node tests/usage-remote.mjs && node tests/client.mjs && node tests/offpeak.mjs && node tests/official-prompt.mjs && node tests/captcha.mjs && node tests/captcha-remote.mjs && node tests/image-wire.mjs && node tests/official-wire.mjs && node tests/app-server.mjs && node tests/loader-composition.mjs && node tests/app-server-discovery.mjs && node tests/native-account.mjs && node tests/standalone-package.mjs"
   },
   "license": "MIT",
   "dsh": {
@@ -106,6 +109,15 @@
     "client": {
       "platform": "web",
       "immediately": true
+    },
+    "data": {
+      "volumes": [
+        { "id": "providers", "class": "config", "path": "providers.json", "seed": "seeds/providers.json" },
+        { "id": "prompt-overrides", "class": "config", "path": "prompt-overrides.json", "seed": "seeds/prompt-overrides.json" },
+        { "id": "credentials", "class": "state", "path": "credentials.json" },
+        { "id": "telemetry-state", "class": "state", "path": "telemetry-state.json" },
+        { "id": "auth-backend", "class": "state", "path": "auth-backend.json" }
+      ]
     }
   },
   "peerDependencies": {

@@ -29,6 +29,7 @@ export async function packDirectory(directory, options = {}) {
     version: source.version,
     roles: source.roles,
     dsh: source.dsh,
+    data: source.dataVolumes,
     engines: source.engines,
     peerDependencies: source.peerDependencies,
     files: source.files,

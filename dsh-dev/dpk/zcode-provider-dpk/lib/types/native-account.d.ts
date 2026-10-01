@@ -1,0 +1,44 @@
+/**
+ * 官方 ZCode 本机登录态 → 插件账号路由(插件自身 provider 配置缺失时的回退源)。
+ *
+ * 以系统里的真实数据为基准,不要求运维预置 `providers.json`:
+ * - 端点来自已发现安装自带的内置目录(`zcode-builtin.json`,与官方客户端同源);
+ * - 套餐凭证来自官方凭证库(`~/.zcode/v2/credentials.json`,
+ *   与插件凭证同键名空间、同 `enc:v1` 解密规则)。
+ *
+ * 只产出本机确实登录了的套餐(凭证解析不到即不注册),因此不会出现死路由。
+ *
+ * @module zcode-provider/native-account
+ */
+/** 官方存储目录(与 app-server 传输默认一致:环境覆写 > `~/.zcode/v2`)。 */
+export declare function nativeStorageDir(): string;
+/** 官方凭证库路径。 */
+export declare function nativeCredentialPath(): string;
+/** 已发现安装自带的内置目录路径;本机无安装时为 undefined。 */
+export declare function discoveredBuiltinCatalogPath(): string | undefined;
+/** 目录中一条账号端点:插件条目键 + 官方 provider 族 + 可解析的套餐模式。 */
+export interface NativeAccountEndpoint {
+    key: string;
+    family: string;
+    modes: Array<'individual-coding-plan' | 'team-coding-plan' | 'start-plan'>;
+    baseURL: string;
+}
+/** 从内置目录 JSON 提取账号端点;individual/team 合并为同一条 coding-plan 路由。 */
+export declare function accountEndpointsFromCatalog(catalog: unknown): NativeAccountEndpoint[];
+/** `providers.json` 形状的账号条目(供 extractRoutes 复用同一条处理循环)。 */
+export interface NativeProviderEntry {
+    kind: 'anthropic';
+    options: {
+        baseURL: string;
+        apiKey: string;
+    };
+}
+/**
+ * 从本机官方 ZCode 登录态推导账号条目;目录缺失/损坏或套餐未登录时不产出该条。
+ * @param options - 路径注入(测试隔离用)与日志出口。
+ */
+export declare function nativeAccountProviders(options?: {
+    builtinPath?: string;
+    credentialsPath?: string;
+    log?: (message: string) => void;
+}): Record<string, NativeProviderEntry>;

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { defaultStorageRoot } from './storage.js';
 import { OFFICIAL_SYSTEM_AGENT_PROMPT, OFFICIAL_SYSTEM_IDENTITY, OFFICIAL_SYSTEM_RUNTIME_PROMPT, } from './official-prompt.js';
 export function defaultPromptOverridesPath(storageRoot) {
-    return join(storageRoot?.trim() || defaultStorageRoot(), 'prompt-overrides.json');
+    return join(storageRoot?.trim() || defaultStorageRoot(), 'config', 'prompt-overrides.json');
 }
 function normalize(value) {
     if (value === null || typeof value !== 'object')

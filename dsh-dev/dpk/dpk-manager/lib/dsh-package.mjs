@@ -12,6 +12,7 @@
 import { createHash } from 'node:crypto'
 import { readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { extname, isAbsolute, join, relative, resolve, sep, win32 } from 'node:path'
+import { parseDataDeclaration } from './data.mjs'
 
 /** npm package-name grammar, copied from the Harness install-spec reader. */
 export const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/
@@ -274,6 +275,7 @@ export async function validateDshPackage(directory) {
 
   const warnings = []
   const roles = []
+  let dataVolumes = []
 
   const dsh = manifest.dsh
   if (dsh !== undefined && !isPlainObject(dsh)) throw new PackageError('package.json: dsh must be an object', 'PACKAGE_DSH')
@@ -321,6 +323,28 @@ export async function validateDshPackage(directory) {
       assertStringArray(client.inject, 'package.json: dsh.client.inject')
       assertStringArray(client.external, 'package.json: dsh.client.external')
       roles.push('client')
+    }
+    // Managed data volumes (SPEC §13): validated here so an invalid
+    // declaration fails at pack time, and carried into dpk.json so the
+    // installer can materialise without executing anything.
+    dataVolumes = parseDataDeclaration(dsh.data, 'package.json')
+    for (const volume of dataVolumes) {
+      if (volume.seed === undefined) continue
+      if (isAbsolute(volume.seed) || win32.isAbsolute(volume.seed)) {
+        throw new PackageError(`dsh.data volume ${volume.id}: seed must be relative to the package: ${volume.seed}`, 'PACKAGE_DATA')
+      }
+      const seedAbsolute = resolve(root, volume.seed)
+      const inside = relative(root, seedAbsolute)
+      if (inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
+        throw new PackageError(`dsh.data volume ${volume.id}: seed escapes the package: ${volume.seed}`, 'PACKAGE_DATA')
+      }
+      let seedInfo
+      try {
+        seedInfo = await stat(seedAbsolute)
+      } catch {
+        throw new PackageError(`dsh.data volume ${volume.id}: seed file does not exist: ${volume.seed}`, 'PACKAGE_DATA')
+      }
+      if (!seedInfo.isFile()) throw new PackageError(`dsh.data volume ${volume.id}: seed is not a file: ${volume.seed}`, 'PACKAGE_DATA')
     }
   }
   if (roles.length === 0) roles.push('plain')
@@ -373,6 +397,7 @@ export async function validateDshPackage(directory) {
     private: manifest.private === true,
     roles,
     dsh: dsh === undefined ? undefined : dsh,
+    dataVolumes,
     engines: engines === undefined ? undefined : { ...engines },
     peerDependencies: peerDependencies === undefined ? undefined : { ...peerDependencies },
     icon,

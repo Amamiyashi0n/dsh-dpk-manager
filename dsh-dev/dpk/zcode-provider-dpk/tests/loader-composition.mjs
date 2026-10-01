@@ -184,6 +184,9 @@ try {
   check('释放:其余条目仍在(只有 zcode-provider 被摘)', ctx.loader.entries().some((e) => e.options.id === 'llm'))
 
   // ---- 6. 独立插件路径:设备配置缺失时仍激活,仅不派生外部路由 ----
+  // nativeBuiltinCatalogPath/nativeCredentialsPath 注入不存在的路径,把
+  // "本机官方登录态回退推导"与真实机器隔离开:这段验证的是纯插件配置
+  // 路径的行为,在任何机器上结果都必须一致。
   const { ctx: brokenCtx, entryFailures: brokenFailures } = await boot([
     "- id: llm",
     "  name: '@deepseek-ai/dsh-llm'",
@@ -191,6 +194,8 @@ try {
     `  name: ${pluginEntry}`,
     '  config:',
     `    providerConfigPath: ${join(root, 'definitely-missing-config.json').replaceAll('\\', '/')}`,
+    `    nativeBuiltinCatalogPath: ${join(root, 'definitely-missing-builtin.json').replaceAll('\\', '/')}`,
+    `    nativeCredentialsPath: ${join(root, 'definitely-missing-native-credentials.json').replaceAll('\\', '/')}`,
   ])
   const broken = [...brokenCtx.loader.entries()].find((e) => e.options.id === '@local/zcode-provider')
   check('独立路径:设备配置缺失时 fiber 仍为 ACTIVE(2)', broken?.fiber?.state === 2, String(broken?.fiber?.state))

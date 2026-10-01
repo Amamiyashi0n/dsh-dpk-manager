@@ -5,7 +5,7 @@ import { defaultStorageRoot } from './storage.js';
 export const AUTH_BACKEND_REMOTE_NAMESPACE = 'zcodeAuthBackend';
 export const AUTH_BACKENDS = ['openzcode-app-server', 'closezcode-app-server'];
 export function defaultAuthBackendPath(storageRoot) {
-    return join(storageRoot?.trim() || defaultStorageRoot(), 'auth-backend.json');
+    return join(storageRoot?.trim() || defaultStorageRoot(), 'state', 'auth-backend.json');
 }
 export function normalizeAuthBackend(value) {
     return value === 'closezcode-app-server' ? 'closezcode-app-server' : 'openzcode-app-server';

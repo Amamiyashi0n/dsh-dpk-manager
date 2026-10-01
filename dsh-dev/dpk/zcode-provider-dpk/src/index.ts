@@ -51,6 +51,11 @@ import {
   type CredentialSource,
 } from './credentials.js'
 import {
+  discoveredBuiltinCatalogPath,
+  nativeAccountProviders,
+  nativeCredentialPath,
+} from './native-account.js'
+import {
   captchaRequestHeaders,
   describeCaptchaFailure,
   shouldRetryWithCaptcha,
@@ -241,11 +246,13 @@ function inputModalitiesOf(
 /**
  * 从 zcode 配置提取可用模型路由(enabled + 有密钥 + 有模型目录)。
  * 套餐类条目的凭证按官方规则从 `credentials.json` 解析(凭证库优先,配置层回落)。
+ * 插件配置文件缺失时,回退到官方 ZCode 本机登录态推导账号路由。
  */
-function extractRoutes(
+export function extractRoutes(
   providerConfigPath: string,
   includeDisabled: boolean,
   credentialsPath: string,
+  native: { builtinPath?: string; credentialsPath: string },
   log?: Log,
 ): ZcodeRoute[] {
   // The device config is the plugin's primary input, so a missing or malformed
@@ -254,29 +261,44 @@ function extractRoutes(
   // as the optional built-in catalog degrade quietly). The message names the
   // config key and the fix, because the raw ENOENT from readFileSync is reported
   // by app-boot as a bare warning line with a stack, not as an instruction.
-  let raw: string
+  let providerEntries: Array<[string, ZcodeProviderEntry]> | undefined
+  // 回退推导时不会走到 JSON 解析分支;初始化仅为满足明确赋值分析
+  let raw = ''
   try {
     raw = readFileSync(providerConfigPath, 'utf8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      log?.(`zcode-provider: 未发现可选 provider 配置 ${providerConfigPath};仅使用插件自身 routes`)
-      return []
+      const derived = nativeAccountProviders({
+        ...(native.builtinPath === undefined ? {} : { builtinPath: native.builtinPath }),
+        credentialsPath: native.credentialsPath,
+        log: (message) => { log?.(message) },
+      })
+      providerEntries = Object.entries(derived)
+      if (providerEntries.length === 0) {
+        log?.(`zcode-provider: 未发现可选 provider 配置 ${providerConfigPath},本机亦无已登录的官方 ZCode 账号;仅使用插件自身 routes`)
+        return []
+      }
+      log?.(`zcode-provider: 未发现插件 provider 配置 ${providerConfigPath};已从官方 ZCode 本机登录态推导账号路由(${providerEntries.map(([pid]) => pid).join(', ')})`)
+    } else {
+      throw new Error(
+        `zcode-provider: 读不到插件 provider 配置(${providerConfigPath})——${String(error)}。`
+        + '请修复 `providerConfigPath`,或直接通过本插件的 `routes` 配置模型端点。',
+      )
     }
-    throw new Error(
-      `zcode-provider: 读不到插件 provider 配置(${providerConfigPath})——${String(error)}。`
-      + '请修复 `providerConfigPath`,或直接通过本插件的 `routes` 配置模型端点。',
-    )
   }
-  let zc: { provider?: Record<string, ZcodeProviderEntry> }
-  try {
-    zc = JSON.parse(raw) as { provider?: Record<string, ZcodeProviderEntry> }
-  } catch (error) {
-    throw new Error(
-      `zcode-provider: 插件 provider 配置不是合法 JSON(${providerConfigPath})——${String(error)}。`,
-    )
+  if (providerEntries === undefined) {
+    let zc: { provider?: Record<string, ZcodeProviderEntry> }
+    try {
+      zc = JSON.parse(raw) as { provider?: Record<string, ZcodeProviderEntry> }
+    } catch (error) {
+      throw new Error(
+        `zcode-provider: 插件 provider 配置不是合法 JSON(${providerConfigPath})——${String(error)}。`,
+      )
+    }
+    providerEntries = Object.entries(zc.provider ?? {})
   }
   const routes: ZcodeRoute[] = []
-  for (const [pid, pc] of Object.entries(zc.provider ?? {})) {
+  for (const [pid, pc] of providerEntries) {
     if (pc.enabled === false && !includeDisabled) continue
     const o = pc.options ?? {}
     if (!o.baseURL || !o.apiKey) continue
@@ -339,6 +361,7 @@ function extractRoutes(
         ...(planRuntime.family === undefined ? {} : { family: planRuntime.family }),
         planKind: planRuntime.planKind,
         fallbackApiKey: o.apiKey,
+        fallbackCredentialsPath: native.credentialsPath,
         log: (message) => log?.(message),
       })
       if (resolved.apiKey) {
@@ -1206,8 +1229,14 @@ export interface Config {
   credentialsPath?: string
   /** 插件设备标识文件(`~/.dsh/zcode-provider/telemetry-state.json`)。 */
   telemetryStatePath?: string
-  /** 提示词覆盖文件(`~/.dsh/zcode-provider/prompt-overrides.json`);测试注入以隔离机器状态。 */
+  /** 提示词覆盖文件(`…/config/prompt-overrides.json`);测试注入以隔离机器状态。 */
   promptOverridesPath?: string
+  /** 鉴权链路持久化路径(`…/state/auth-backend.json`);测试注入以隔离机器状态。 */
+  authBackendPath?: string
+  /** 官方内置目录路径覆写(本机账号回退推导用);测试注入以隔离机器状态。 */
+  nativeBuiltinCatalogPath?: string
+  /** 官方本机凭证库路径覆写;测试注入以隔离机器状态。 */
+  nativeCredentialsPath?: string
   /** 是否在 start-plan/off-peak 路由收到 3007 时自动解验证码。 */
   captchaEnabled?: boolean
   /** 客户端版本:`X-ZCode-App-Version` / `User-Agent` / `X-Client-Version`。 */  appVersion?: string
@@ -1254,7 +1283,10 @@ function readActiveProvider(config: Config): string | undefined {
   const value = readCredentialValue(
     config.credentialsPath ?? defaultCredentialsPath(),
     ACTIVE_PROVIDER_KEY,
-    { log: (message) => { /* 解密失败已按缺失处理,不额外刷日志 */ void message } },
+    {
+      fallbackPath: config.nativeCredentialsPath ?? nativeCredentialPath(),
+      log: (message) => { /* 解密失败已按缺失处理,不额外刷日志 */ void message },
+    },
   )
   return value === '' ? undefined : value
 }
@@ -1262,6 +1294,8 @@ function readActiveProvider(config: Config): string | undefined {
 /** 校验并默认插件配置;`.volatile()` 的字段由设置层按引用读取。 */
 export const Config: any = z.object({
   providerConfigPath: z.string().default(DEFAULT_CONFIG_PATH),
+  nativeBuiltinCatalogPath: z.string(),
+  nativeCredentialsPath: z.string(),
   includeDisabled: z.boolean().default(true).volatile(),
   routes: z.dict(z.object({
     id: z.string(),
@@ -1417,12 +1451,13 @@ export function apply(ctx: Context, config: Config = {}): void {
   const credentialsPath = config.credentialsPath ?? defaultCredentialsPath()
   // 可注入路径:测试用它隔离机器上的真实覆写状态
   const promptOverridesPath = config.promptOverridesPath ?? defaultPromptOverridesPath()
-  const authBackendPath = defaultAuthBackendPath()
+  const authBackendPath = config.authBackendPath ?? defaultAuthBackendPath()
   let authBackend: AuthBackend = normalizeAuthBackend(config.authBackend ?? readAuthBackend(authBackendPath))
-  writeAuthBackend(authBackendPath, authBackend)
+  // 激活不写盘:数据卷由 dpk 安装期物化(SPEC §13),运行期只由用户动作
+  // (Remote 写入/设置迁移)落盘。全新安装因此是"零写激活",数据面状态
+  // 由 dpk data 报告,而不是靠这里悄悄生成文件。
   const legacyPromptOverrides = readField(config.promptOverrides, {})
   let promptOverrides = readPromptOverrides(promptOverridesPath)
-  writePromptOverrides(promptOverridesPath, promptOverrides)
   if (!hasPromptOverrides(promptOverrides) && hasPromptOverrides(legacyPromptOverrides)) {
     promptOverrides = { ...legacyPromptOverrides }
     writePromptOverrides(promptOverridesPath, promptOverrides)
@@ -1446,6 +1481,12 @@ export function apply(ctx: Context, config: Config = {}): void {
     config.providerConfigPath ?? DEFAULT_CONFIG_PATH,
     readField(config.includeDisabled, true),
     credentialsPath,
+    {
+      ...(config.nativeBuiltinCatalogPath !== undefined || discoveredBuiltinCatalogPath() !== undefined
+        ? { builtinPath: config.nativeBuiltinCatalogPath ?? discoveredBuiltinCatalogPath() }
+        : {}),
+      credentialsPath: config.nativeCredentialsPath ?? nativeCredentialPath(),
+    },
     log,
   ).filter((route) => route.kind !== 'openai' && route.kind !== 'openai-compatible')
   // 文件路由为准(含 family/access/credential 标记):新增或字段演进都回写设置层
@@ -1531,7 +1572,10 @@ export function apply(ctx: Context, config: Config = {}): void {
     const oauthAccessToken = readCredentialValue(
       credentialsPath,
       `oauth:${accountFamily}:access_token`,
-      { log: (message) => { void message } },
+      {
+        fallbackPath: config.nativeCredentialsPath ?? nativeCredentialPath(),
+        log: (message) => { void message },
+      },
     )
     return {
       ...(planRoute === undefined ? {} : { bigmodelOrigin: bigmodelOriginFrom(planRoute.baseURL) }),
