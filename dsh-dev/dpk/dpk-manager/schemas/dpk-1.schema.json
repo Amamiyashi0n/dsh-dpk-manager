@@ -48,6 +48,29 @@
       "type": "object",
       "description": "Verbatim copy of package.json dsh, so a reader can tell what the package is without opening it."
     },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["volumes"],
+      "properties": {
+        "volumes": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "class", "path"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+              "class": { "enum": ["config", "state", "cache"] },
+              "path": { "type": "string", "minLength": 1 },
+              "seed": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      },
+      "description": "DPK manager metadata copied from package.json dsh.data; config, state, and cache volume declarations."
+    },
     "engines": {
       "type": "object",
       "additionalProperties": { "type": "string" },

@@ -17,7 +17,7 @@
  * @module dpk/host-service
  */
 
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, open, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { runDpkAction } from './lib/actions.mjs'
 import { installOverwriting } from './lib/install.mjs'
@@ -34,6 +34,28 @@ const REMOTE_METHOD_DESCRIPTOR = '@deepseek-ai/dsh-typert-protocol/remote-method
 
 /** Decoded upload ceiling; the DPK format itself caps content far below this. */
 const MAX_UPLOAD_BYTES = 128 * 1024 * 1024
+const FIRST_RUN_NOTICE_FILE = '.first-run-restart-notice'
+
+/** Claim the one-time post-install restart reminder for this DSH home. */
+async function claimFirstRunRestartNotice(home) {
+  const root = dpkRoot(home)
+  const path = join(root, FIRST_RUN_NOTICE_FILE)
+  try {
+    await mkdir(root, { recursive: true })
+    const handle = await open(path, 'wx')
+    try {
+      await handle.writeFile(`${JSON.stringify({ shownAt: new Date().toISOString() })}\n`)
+    } finally {
+      await handle.close()
+    }
+    return true
+  } catch (error) {
+    if (error?.code === 'EEXIST') return undefined
+    // A reminder must never make the package panel unusable if the DSH home is
+    // temporarily read-only or shared with another process.
+    return undefined
+  }
+}
 
 /**
  * Add one direct Remote marker in the protocol's versioned structural format.
@@ -77,8 +99,10 @@ export function createDpkRemoteService(ctx, config = {}) {
       }
       const byName = new Map(bundles.map(bundle => [bundle.name, bundle]))
       const index = await readIndex(dpkRoot(home))
+      const restartRequired = await claimFirstRunRestartNotice(home)
       return {
         store: dpkRoot(home),
+        ...(restartRequired === true ? { restartRequired: true } : {}),
         entries: latestByName(index.entries).map(entry => {
           // The card shows the version that actually runs: the profile's own
           // (possibly npm-updated) install wins over the ledger's record of

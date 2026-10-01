@@ -72,8 +72,16 @@ test('validates the declaration strictly', () => {
   ]))
   assert.throws(() => VOLUMES([
     { id: 'a', class: 'config', path: 'x' },
-    { id: 'b', class: 'state', path: 'x' }, // duplicate path
+    { id: 'b', class: 'config', path: 'x' }, // duplicate path
   ]))
+  assert.throws(() => VOLUMES([
+    { id: 'a', class: 'config', path: 'settings' },
+    { id: 'b', class: 'config', path: 'settings/extra.json' }, // file/dir collision
+  ]))
+  assert.equal(VOLUMES([
+    { id: 'a', class: 'config', path: 'settings' },
+    { id: 'b', class: 'state', path: 'settings/extra.json' },
+  ]).length, 2, 'different volume classes have separate roots')
 })
 
 test('seeds config volumes on first install and leaves unseeded ones absent', async () => {
@@ -204,6 +212,16 @@ test('config export/import round-trips only config volumes, and imports never to
   await importConfigVolumes(other, '@local/dpk-fixture', volumes, exported)
   assert.equal(await readFile(volumePath(other, '@local/dpk-fixture', volumes[0]), 'utf8'), '{"cfg":1}\n')
   assert.ok(!existsSync(volumePath(other, '@local/dpk-fixture', volumes[1])), 'state was not migrated')
+
+  const seeded = VOLUMES([{ id: 'cfg', class: 'config', path: 'cfg.json', seed: 'seeds/cfg.json' }])
+  const seedPackage = await mkdtemp(join(tmpdir(), 'dpk-seed-package-'))
+  await mkdir(join(seedPackage, 'seeds'), { recursive: true })
+  await writeFile(join(seedPackage, 'seeds', 'cfg.json'), '{"seed":1}\n')
+  await materializeVolumes(other, '@local/dpk-fixture', seeded, seedPackage)
+  await importConfigVolumes(other, '@local/dpk-fixture', seeded, [{ path: 'config/cfg.json', bytes: Buffer.from('{"imported":true}\n') }])
+  await writeFile(join(seedPackage, 'seeds', 'cfg.json'), '{"seed":2}\n')
+  const adopted = await materializeVolumes(other, '@local/dpk-fixture', seeded, seedPackage)
+  assert.equal(adopted[0].action, 'adopted', 'import clears the seed marker and protects imported data')
 
   await assert.rejects(
     () => importConfigVolumes(other, '@local/dpk-fixture', volumes, [{ path: 'state/secret.json', bytes: Buffer.from('x') }]),

@@ -100,6 +100,16 @@ test('managed reports the installed version over the ledger record when they dif
   assert.equal(listed.entries[0].installed, true)
 })
 
+test('managed returns the restart reminder only on the first call for a DSH home', async () => {
+  const home = await makeHome()
+  const service = createDpkRemoteService(makeCtx({ pluginManager: { listBundles: async () => [] } }), { home })
+  const first = await service.managed()
+  const second = await service.managed()
+  assert.equal(first.restartRequired, true)
+  assert.equal(second.restartRequired, undefined)
+  assert.equal(existsSync(join(dpkRoot(home), '.first-run-restart-notice')), true)
+})
+
 /** A minimal host context: services come back from `get`, `provide` records nothing. */
 function makeCtx(services) {
   return { provide() {}, get: name => services[name] }

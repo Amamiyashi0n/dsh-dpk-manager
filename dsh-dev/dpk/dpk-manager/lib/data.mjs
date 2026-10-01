@@ -73,7 +73,7 @@ export function parseDataDeclaration(value, subject = 'package.json') {
     throw new DpkDataError(`${subject}: dsh.data.volumes declares more than ${MAX_VOLUMES} volumes`, 'DPK_DATA_INVALID')
   }
   const seenIds = new Set()
-  const seenPaths = new Set()
+  const seenPaths = new Map()
   return volumes.map((volume, index) => {
     const where = `${subject}: dsh.data.volumes[${index}]`
     if (!isPlainObject(volume)) throw new DpkDataError(`${where} must be an object`, 'DPK_DATA_INVALID')
@@ -98,8 +98,16 @@ export function parseDataDeclaration(value, subject = 'package.json') {
       throw new DpkDataError(`${where}.path must be a clean relative path: ${path}`, 'DPK_DATA_INVALID')
     }
     const normalizedPath = path.replace(/\/+$/, '') || path
-    if (seenPaths.has(normalizedPath)) throw new DpkDataError(`${where}.path duplicates ${path}`, 'DPK_DATA_INVALID')
-    seenPaths.add(normalizedPath)
+    const classPaths = seenPaths.get(klass) ?? []
+    const conflict = classPaths.find(previousPath =>
+      normalizedPath === previousPath
+      || normalizedPath.startsWith(`${previousPath}/`)
+      || previousPath.startsWith(`${normalizedPath}/`))
+    if (conflict !== undefined) {
+      throw new DpkDataError(`${where}.path conflicts with ${klass}/${conflict}`, 'DPK_DATA_PATH_CONFLICT')
+    }
+    classPaths.push(normalizedPath)
+    seenPaths.set(klass, classPaths)
     const seed = volume.seed
     if (seed !== undefined && (typeof seed !== 'string' || seed === '')) {
       throw new DpkDataError(`${where}.seed must be a package-relative path or absent`, 'DPK_DATA_INVALID')
@@ -319,8 +327,9 @@ export async function importConfigVolumes(home, packageName, volumes, files, opt
     const target = volumePath(home, packageName, volume)
     await mkdir(dirname(target), { recursive: true })
     await writeFile(target, file.bytes)
-    // Imported files are user data, not seed output: leave no seed marker, so
+    // Imported files are user data, not seed output: remove any old marker so
     // a later upgrade treats them as modified and never overwrites silently.
+    await rm(markerPath(home, packageName, volume), { force: true })
     applied.push(target)
     log(`data     ${file.path} imported`)
   }

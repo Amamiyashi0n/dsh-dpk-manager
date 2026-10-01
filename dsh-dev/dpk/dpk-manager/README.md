@@ -56,14 +56,17 @@ profile  dpk-demo (installed by the plugin manager service)
 
 ## 会话内工具 `dpk`
 
-八个动作：`inspect`（只读清单）、`verify`（结构+完整性+DSH 合规）、`pack`（打进 `.dpk`）、
+十个动作：`inspect`（只读清单）、`verify`（结构+完整性+DSH 合规）、`pack`（打进 `.dpk`）、
 `install`（装进当前 profile）、`list`、`which`、`data`（查看一个包的受管数据卷状态）、
-`purge`（删除一个包的全部受管数据卷）。
+`export` / `import`（只携带 config 卷）、`purge`（删除一个包的全部受管数据卷）。
 
-- `install` 与 `purge` 是仅有的两个破坏性动作，都**先过沙箱提权判定**（`danger-full-access`，
+- `install`、`import` 与 `purge` 是会改写 profile 或持久数据的动作，都**先过沙箱提权判定**（`danger-full-access`，
   与官方 `plugin_manager` 完全相同的请求与理由文本）；`install` 再调用**同一个** `pluginManager`
   服务。判定器或服务不可用时**一律拒绝执行**，并给出等价的
   `plugin_manager action=install_bundle target=<store 路径>` 调用。
+
+首次安装或更新 `dsh-dpk-manager` 后，Host/工具代码要等 Harness 重启才会进入新的模块代次。
+管理器首次加载时会在本地 DPK 目录显示一次重启提示，并写入一次性标记；之后不会重复提示。
 
 ## 受管数据卷（dpkg 语义，SPEC §13）
 

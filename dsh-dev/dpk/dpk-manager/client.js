@@ -44,6 +44,7 @@ window.__ModuleLoader__.load({
       storePath: '本地仓库路径',
       profileState: '当前状态',
       store: '本地 DPK 仓库',
+      restartNotice: '首次安装提示：请重启 DSH，使安装包管理助手的 Host/工具代码完全生效。此提示只显示一次。',
     }
     const en = {
       importTitle: 'Import a DPK package',
@@ -73,6 +74,7 @@ window.__ModuleLoader__.load({
       storePath: 'Local store path',
       profileState: 'State',
       store: 'Local DPK store',
+      restartNotice: 'First-install notice: restart DSH once so the package manager assistant\'s Host/tool code is fully active. This notice appears only once.',
     }
 
     const requestCodec = method => ({
@@ -155,7 +157,7 @@ window.__ModuleLoader__.load({
         const tr = ctx.locale ? ctx.locale.bind(NS) : key => (zh[key] ?? en[key] ?? key)
 
         // --- shared managed-package state -------------------------------------
-        const state = { entries: [], store: '', error: undefined, listeners: new Set() }
+        const state = { entries: [], store: '', error: undefined, notice: undefined, listeners: new Set() }
         const notify = () => { for (const listener of state.listeners) listener() }
 
         async function refresh() {
@@ -163,6 +165,7 @@ window.__ModuleLoader__.load({
             const answer = await callDpk('managed')
             state.entries = answer.entries ?? []
             state.store = answer.store ?? ''
+            if (answer.restartRequired === true) state.notice = tr('restartNotice')
             state.error = undefined
           } catch (error) {
             state.error = String(error?.message ?? error)
@@ -184,7 +187,7 @@ window.__ModuleLoader__.load({
         const useManaged = () => {
           const [snapshot, setSnapshot] = React.useState(state.entries.length)
           React.useEffect(() => {
-            const listener = () => setSnapshot(state.entries.length + state.entries.map(entry => entry.digest).join('').length)
+            const listener = () => setSnapshot(state.entries.length + state.entries.map(entry => entry.digest).join('').length + (state.notice?.length ?? 0))
             state.listeners.add(listener)
             if (state.entries.length === 0) void refresh()
             return () => { state.listeners.delete(listener) }
@@ -329,6 +332,9 @@ window.__ModuleLoader__.load({
           return h('main', { style: { height: '100%', overflow: 'auto' } },
             h('div', { style: { width: 'min(920px, 100%)', margin: '0 auto', padding: '24px' } }, [
               h('h2', { key: 'title', style: { margin: '0 0 20px', fontSize: 22 } }, tr('pageTitle')),
+              state.notice === undefined
+                ? null
+                : h('div', { key: 'notice', role: 'status', style: { marginBottom: 16, padding: 12, border: '1px solid color-mix(in srgb, currentColor 24%, transparent)', borderRadius: 6 } }, state.notice),
               h(DpkImportSection, { key: 'import' }),
               state.error === undefined
                 ? null
