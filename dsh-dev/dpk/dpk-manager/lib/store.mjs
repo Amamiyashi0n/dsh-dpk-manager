@@ -69,13 +69,34 @@ export async function readIndex(root) {
   return { version: parsed.version ?? INDEX_VERSION, entries: parsed.entries }
 }
 
-/** Write the ledger atomically. */
+/**
+ * Write the ledger atomically: a crash mid-write can never leave a half-written
+ * `index.json`, because the content lands in a sibling temp file that only a
+ * successful rename promotes.
+ *
+ * On Windows the rename can still lose a transient race — a concurrent reader
+ * in another DSH instance (the ledger is shared by every profile's manager)
+ * or a real-time scanner holding the fresh temp file — and surfaces as EPERM.
+ * The old ledger stays intact when that happens, so retrying shortly is both
+ * safe and sufficient; only a persistent loss cleans up the temp and throws.
+ */
 export async function writeIndex(root, index) {
   await mkdir(root, { recursive: true })
   const path = indexFile(root)
   const temporary = `${path}.tmp-${process.pid}`
   await writeFile(temporary, `${JSON.stringify({ version: INDEX_VERSION, entries: index.entries }, undefined, 2)}\n`)
-  await rename(temporary, path)
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(temporary, path)
+      return
+    } catch (error) {
+      if (attempt >= 4 || !['EPERM', 'EACCES', 'EBUSY'].includes(error?.code ?? '')) {
+        await rm(temporary, { force: true }).catch(() => {})
+        throw error
+      }
+      await new Promise(resolve => setTimeout(resolve, 60 * 2 ** attempt))
+    }
+  }
 }
 
 /**

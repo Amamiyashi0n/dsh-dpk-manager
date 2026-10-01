@@ -263,3 +263,15 @@ test('an unscoped source installs under the @local scope in store, ledger, and p
   const index = await readIndex(dpkRoot(home))
   assert.equal(index.entries[0].name, '@local/plain-tool', 'the ledger records the scoped name')
 })
+
+test('writeIndex leaves no temp file behind and reads back identically', async () => {
+  const { writeIndex, readIndex, dpkRoot } = await import('../lib/store.mjs')
+  const { readdir } = await import('node:fs/promises')
+  const home = await makeHome()
+  const root = dpkRoot(home)
+  const index = { entries: [{ name: '@local/x', version: '1.0.0', digest: 'a'.repeat(64), installedAt: '', source: '', profiles: ['test'], path: '' }] }
+  await writeIndex(root, index)
+  const files = (await readdir(root)).filter(name => name.includes('.tmp-'))
+  assert.deepEqual(files, [], 'no temp file survives a successful write')
+  assert.deepEqual((await readIndex(root)).entries, index.entries)
+})
