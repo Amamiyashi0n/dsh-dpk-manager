@@ -16,7 +16,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { localizeName } from './dsh-package.mjs'
+import { NEVER_PACKED, localizeName } from './dsh-package.mjs'
 import { verifyArchive, extractPackageTree } from './verify.mjs'
 import { retainArchive, recordInstall, storeDir, dpkRoot, defaultDshHome } from './store.mjs'
 import { archiveFileName } from './dpk-manifest.mjs'
@@ -77,6 +77,7 @@ export async function materialize(buffer, manifest, options) {
   await mkdir(join(staging, 'package'), { recursive: true })
   try {
     await extractPackageTree(buffer, manifest, join(staging, 'package'))
+    await stripNeverPacked(join(staging, 'package'))
     await localizeStoredPackage(join(staging, 'package'), manifest)
     await writeFile(join(staging, 'dpk.json'), `${JSON.stringify(manifest, undefined, 2)}\n`)
     if (existsSync(target)) await rm(target, { recursive: true, force: true })
@@ -180,6 +181,20 @@ export async function installArchive(options) {
   return {
     ...verified, ...placed, profile, dryRun: false, via: 'service', command: null,
     created: placed.created,
+  }
+}
+
+/**
+ * Keep the stored package to the package alone. Older archives still carry
+ * directories the packer has since stopped writing — a `dist/` of nested
+ * archives, a checked-in `node_modules` — and importing one must not stack
+ * that cargo into the store. Verification saw the full tree in its own
+ * staging area; only the stored copy is trimmed.
+ * @param packageDir - the freshly extracted store copy, trimmed in place.
+ */
+async function stripNeverPacked(packageDir) {
+  for (const name of NEVER_PACKED) {
+    await rm(join(packageDir, name), { recursive: true, force: true })
   }
 }
 
