@@ -9,7 +9,7 @@
  */
 
 import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { archiveFileName, packDirectory } from './pack.mjs'
 import { describeManifest, verifyArchive } from './verify.mjs'
@@ -18,7 +18,10 @@ import { dpkRoot, matchEntries, readIndex, storeDir, defaultDshHome} from './sto
 import { dataRoot, describeVolumes, exportConfigVolumes, importConfigVolumes, parseDataDeclaration, purgeVolumes } from './data.mjs'
 
 /** Actions the in-session tool exposes. */
-export const DPK_ACTIONS = ['inspect', 'verify', 'pack', 'install', 'list', 'which', 'data', 'purge']
+export const DPK_ACTIONS = ['inspect', 'verify', 'pack', 'install', 'list', 'which', 'data', 'export', 'import', 'purge']
+
+/** The data-file format `export` writes and `import` reads. */
+export const DATA_EXPORT_FORMAT = 'dpk-config-data/1'
 
 /** A caller mistake: reported as text, never as a stack trace. */
 export class DpkActionError extends Error {
@@ -176,15 +179,84 @@ export async function runDpkAction(action, args = {}, context = {}) {
       const lines = [`data     ${dataRoot(home, entry.name)}`]
       if (volumes.length === 0) lines.push('         this package declares no data volumes')
       for (const volume of volumes) {
+        // 无种子的卷不参与种子代际管理:存在即 present,不误标 seeded
         const state = !volume.exists ? 'missing'
+          : !('seeded' in volume) ? 'present'
           : volume.pendingSeed !== undefined ? 'pending-seed'
-          : volume.seeded === false ? 'user-owned'
-          : 'seeded'
+          : volume.seeded ? 'seeded' : 'user-owned'
         lines.push(`${volume.id}  ${volume.class}  ${state}  ${volume.path}`)
       }
       const missing = volumes.filter(volume => !volume.exists).length
       if (missing > 0) lines.push(`note     ${missing} declared volume(s) not on disk yet; the package initializes them on first activation or import`)
       return { action, text: lines.join('\n'), data: { root: dataRoot(home, entry.name), volumes } }
+    }
+    case 'export': {
+      // Config volumes only, by design: state (credentials) is host-bound and
+      // cache is regenerable, so neither belongs in a file that travels.
+      if (typeof args.name !== 'string' || args.name === '') throw new DpkActionError('export needs `name`: the package whose config volumes to export')
+      const root = dpkRoot(home)
+      const entry = matchEntries((await readIndex(root)).entries, args.name)[0]
+      if (entry === undefined) throw new DpkActionError(`no stored package matches ${args.name}`)
+      const packageDir = join(storeDir(root, entry.digest), 'package')
+      const declaration = parseDataDeclaration(
+        JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8')).dsh?.data,
+        `${entry.name}: package.json`,
+      )
+      const files = await exportConfigVolumes(home, entry.name, declaration)
+      const output = typeof args.output === 'string' && args.output !== ''
+        ? resolve(args.output)
+        : join(process.cwd(), `${entry.name.replace(/^@[^/]+\//, '')}-data.json`)
+      const payload = {
+        format: DATA_EXPORT_FORMAT,
+        package: entry.name,
+        files: files.map((file) => ({ path: file.path, bytes: file.bytes.toString('base64') })),
+      }
+      await writeFile(output, `${JSON.stringify(payload, undefined, 2)}\n`, 'utf8')
+      const lines = [`exported ${files.length} config volume(s) → ${output}`]
+      if (files.length === 0) lines.push('note     no config volume exists on disk yet; the file carries an empty list')
+      for (const file of files) lines.push(`data     ${file.path}`)
+      return { action, text: lines.join('\n'), data: { output, files: files.map((file) => file.path) } }
+    }
+    case 'import': {
+      // Overwrites config volumes in place (user data, destructive), so the
+      // tool gates it exactly like install/purge; the gate itself lives in
+      // index.js next to the others.
+      if (typeof args.name !== 'string' || args.name === '') throw new DpkActionError('import needs `name`: the package whose config volumes to import into')
+      const { path: dataPath, buffer } = await readArchive({ file: args.file })
+      const root = dpkRoot(home)
+      const entry = matchEntries((await readIndex(root)).entries, args.name)[0]
+      if (entry === undefined) throw new DpkActionError(`no stored package matches ${args.name}`)
+      let payload
+      try {
+        payload = JSON.parse(buffer.toString('utf8'))
+      } catch (error) {
+        throw new DpkActionError(`the data file is not valid JSON(${dataPath}): ${String(error)}`)
+      }
+      if (payload?.format !== DATA_EXPORT_FORMAT) {
+        throw new DpkActionError(`the data file is not a ${DATA_EXPORT_FORMAT} export: ${dataPath}`)
+      }
+      if (payload.package !== entry.name) {
+        throw new DpkActionError(`the data file was exported for ${payload.package}, not ${entry.name}`)
+      }
+      if (!Array.isArray(payload.files)) throw new DpkActionError('the data file has no files array')
+      const packageDir = join(storeDir(root, entry.digest), 'package')
+      const declaration = parseDataDeclaration(
+        JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8')).dsh?.data,
+        `${entry.name}: package.json`,
+      )
+      const files = payload.files.map((file) => {
+        if (typeof file?.path !== 'string' || typeof file?.bytes !== 'string') {
+          throw new DpkActionError('the data file carries a malformed entry')
+        }
+        if (!/^[A-Za-z0-9+/]*={0,2}$/.test(file.bytes)) throw new DpkActionError(`the data file entry ${file.path} is not base64`)
+        return { path: file.path, bytes: Buffer.from(file.bytes, 'base64') }
+      })
+      const applied = await importConfigVolumes(home, entry.name, declaration, files, {
+        log: (message) => { context.log?.(message) },
+      })
+      const lines = [`imported ${applied.length} config volume(s) from ${dataPath}`]
+      for (const path of applied) lines.push(`data     ${path}`)
+      return { action, text: lines.join('\n'), data: { applied } }
     }
     case 'purge': {
       if (typeof args.name !== 'string' || args.name === '') throw new DpkActionError('purge needs `name`: the package whose data volumes to delete')

@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { packDirectory } from '../lib/pack.mjs'
 import { installArchive } from '../lib/install.mjs'
@@ -237,4 +238,66 @@ test('the manifest carries the declaration and verify still passes', async () =>
       { id: 'captcha', class: 'cache', path: 'captcha-profile/cookies' },
     ],
   )
+})
+
+test('the declaration refuses unclean seed paths', () => {
+  for (const bad of [
+    { id: 'a', class: 'config', path: 'a.json', seed: '../escape.json' },
+    { id: 'a', class: 'config', path: 'a.json', seed: 'seeds/../../escape.json' },
+    { id: 'a', class: 'config', path: 'a.json', seed: 'C:\escape.json' },
+    { id: 'a', class: 'config', path: 'a.json', seed: '/absolute/seed.json' },
+    { id: 'a', class: 'config', path: 'a.json', seed: './seed.json' },
+  ]) {
+    assert.throws(() => VOLUMES([bad]), /seed/, `seed ${bad.seed} must be refused`)
+  }
+  assert.equal(VOLUMES([{ id: 'a', class: 'config', path: 'a.json', seed: 'seeds/a.json' }]).length, 1)
+})
+
+test('materializeVolumes refuses a seed that escapes the package, even unvalidated', async () => {
+  const home = await makeHome()
+  const pkg = await makePackage({ extraFiles: { 'outside.txt': 'secret\n' } })
+  // A declaration that skipped parseDataDeclaration (defense in depth): the
+  // seed resolves outside packageDir and must be refused at materialise time.
+  const escaping = [{ id: 'evil', class: 'config', path: 'evil.json', seed: '../outside.txt' }]
+  await assert.rejects(
+    () => materializeVolumes(home, '@local/x', escaping, pkg, {}),
+    /stay inside the package/,
+  )
+})
+
+test('export/import actions round-trip config volumes through the tool layer', async () => {
+  const home = await makeHome()
+  const packed = await packDirectory(await makeManagedPackage())
+  await installArchive({
+    file: 'x.dpk', buffer: packed.buffer, home, profile: 'test',
+    installer: async () => {}, log: () => {},
+  })
+  const root = dataRoot(home, '@local/dpk-fixture')
+  await writeFile(join(root, 'config', 'providers.json'), '{"provider":{"edited":true}}\n', 'utf8')
+  const { runDpkAction } = await import('../lib/actions.mjs')
+  const outDir = await mkdtemp(join(tmpdir(), 'dpk-export-'))
+  try {
+    const exported = await runDpkAction('export', { name: '@local/dpk-fixture', output: join(outDir, 'data.json') }, { home, log: () => {} })
+    assert.match(exported.text, /2 config volume/, 'both config volumes exported')
+    const carried = JSON.parse(await readFile(join(outDir, 'data.json'), 'utf8'))
+    assert.equal(carried.format, 'dpk-config-data/1')
+    assert.equal(carried.package, '@local/dpk-fixture')
+    assert.equal(carried.files.length, 2)
+    assert.equal(carried.files[0].path, 'config/providers.json')
+    // reset the volume, then import the carried copy back
+    await writeFile(join(root, 'config', 'providers.json'), '{}\n', 'utf8')
+    const imported = await runDpkAction('import', { name: '@local/dpk-fixture', file: join(outDir, 'data.json') }, { home, log: () => {} })
+    assert.match(imported.text, /2 config volume/, 'both config volumes imported')
+    assert.equal(
+      await readFile(join(root, 'config', 'providers.json'), 'utf8'),
+      '{"provider":{"edited":true}}\n',
+      'the carried config content lands verbatim',
+    )
+    await assert.rejects(
+      () => runDpkAction('import', { name: '@local/dpk-fixture', file: join(outDir, 'missing.json') }, { home }),
+      /no such file/,
+    )
+  } finally {
+    await rm(outDir, { recursive: true, force: true })
+  }
 })

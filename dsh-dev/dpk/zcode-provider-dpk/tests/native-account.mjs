@@ -119,6 +119,19 @@ try {
     { builtinPath, credentialsPath: join(dir, 'nope.json') })
   check('回退:本机无登录态时无路由(不注册死路由)', emptyRoutes.length === 0)
 
+  // dpk 首装把 providers.json 种成 `{}`:空配置必须同样触发本机回退,
+  // 否则全新机器(zcode 已登录、未预置运维配置)永远没有账号路由。
+  const seededEmptyPath = join(dir, 'seeded-empty-providers.json')
+  writeFileSync(seededEmptyPath, '{}', 'utf8')
+  const routesFromEmpty = extractRoutes(seededEmptyPath, true, pluginCredPath, native)
+  const emptyCoding = routesFromEmpty.find((r) => r.route === 'builtin:bigmodel-coding-plan')
+  check('回退:dpk 种出的空 providers.json 同样推导账号路由', emptyCoding !== undefined
+    && emptyCoding?.apiKey === PLAN_KEY,
+    routesFromEmpty.map((r) => r.route).join(','))
+  const emptyNoLogin = extractRoutes(seededEmptyPath, true, pluginCredPath,
+    { builtinPath, credentialsPath: join(dir, 'nope.json') })
+  check('回退:空配置且本机未登录时保持无路由', emptyNoLogin.length === 0)
+
   const providersPath = join(dir, 'providers.json')
   writeFileSync(providersPath, JSON.stringify({ provider: {
     'custom-one': { kind: 'anthropic', options: { baseURL: 'https://example.invalid/v1', apiKey: 'k' }, models: { 'm1': {} } },

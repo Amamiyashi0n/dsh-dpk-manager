@@ -25,7 +25,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, relative, resolve, sep, win32 } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 /** Volume classes and their root directory under <home>/data/<package>/. */
 export const VOLUME_CLASSES = new Set(['config', 'state', 'cache'])
@@ -104,6 +104,12 @@ export function parseDataDeclaration(value, subject = 'package.json') {
     if (seed !== undefined && (typeof seed !== 'string' || seed === '')) {
       throw new DpkDataError(`${where}.seed must be a package-relative path or absent`, 'DPK_DATA_INVALID')
     }
+    if (seed !== undefined && (
+      seed.includes('\\') || /^[a-z]:/i.test(seed) || seed.startsWith('/')
+      || seed.split('/').includes('..') || seed.split('/').includes('.')
+    )) {
+      throw new DpkDataError(`${where}.seed must be a clean package-relative path: ${seed}`, 'DPK_DATA_INVALID')
+    }
     return { id, class: klass, path: normalizedPath, ...(seed === undefined ? {} : { seed }) }
   })
 }
@@ -180,8 +186,9 @@ export async function materializeVolumes(home, packageName, volumes, packageDir,
       continue
     }
     const seedPath = join(packageDir, volume.seed)
-    if (win32.isAbsolute(volume.seed) || resolve(volume.seed).startsWith('..')) {
-      throw new DpkDataError(`volume ${volume.id}: seed must be package-relative: ${volume.seed}`, 'DPK_DATA_INVALID')
+    const insidePackage = relative(resolve(packageDir), resolve(packageDir, volume.seed))
+    if (insidePackage.startsWith(`..${sep}`) || insidePackage === '..' || isAbsolute(insidePackage)) {
+      throw new DpkDataError(`volume ${volume.id}: seed must stay inside the package: ${volume.seed}`, 'DPK_DATA_ESCAPE')
     }
     if (!existsSync(seedPath)) {
       throw new DpkDataError(`volume ${volume.id}: seed file missing from the package: ${volume.seed}`, 'DPK_DATA_SEED_MISSING')

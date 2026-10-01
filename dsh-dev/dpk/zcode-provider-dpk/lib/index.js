@@ -8108,30 +8108,18 @@ function inputModalitiesOf(input, fallback = ["text"]) {
   return modalities.length > 0 ? modalities : fallback;
 }
 function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, native, log) {
-  let providerEntries;
+  let providerEntries = [];
   let raw = "";
+  let configAbsent = false;
   try {
     raw = readFileSync7(providerConfigPath, "utf8");
   } catch (error) {
-    if (error.code === "ENOENT") {
-      const derived = nativeAccountProviders({
-        ...native.builtinPath === void 0 ? {} : { builtinPath: native.builtinPath },
-        credentialsPath: native.credentialsPath,
-        log: (message) => {
-          log?.(message);
-        }
-      });
-      providerEntries = Object.entries(derived);
-      if (providerEntries.length === 0) {
-        log?.(`zcode-provider: \u672A\u53D1\u73B0\u53EF\u9009 provider \u914D\u7F6E ${providerConfigPath},\u672C\u673A\u4EA6\u65E0\u5DF2\u767B\u5F55\u7684\u5B98\u65B9 ZCode \u8D26\u53F7;\u4EC5\u4F7F\u7528\u63D2\u4EF6\u81EA\u8EAB routes`);
-        return [];
-      }
-      log?.(`zcode-provider: \u672A\u53D1\u73B0\u63D2\u4EF6 provider \u914D\u7F6E ${providerConfigPath};\u5DF2\u4ECE\u5B98\u65B9 ZCode \u672C\u673A\u767B\u5F55\u6001\u63A8\u5BFC\u8D26\u53F7\u8DEF\u7531(${providerEntries.map(([pid]) => pid).join(", ")})`);
-    } else {
+    if (error.code !== "ENOENT") {
       throw new Error(`zcode-provider: \u8BFB\u4E0D\u5230\u63D2\u4EF6 provider \u914D\u7F6E(${providerConfigPath})\u2014\u2014${String(error)}\u3002\u8BF7\u4FEE\u590D \`providerConfigPath\`,\u6216\u76F4\u63A5\u901A\u8FC7\u672C\u63D2\u4EF6\u7684 \`routes\` \u914D\u7F6E\u6A21\u578B\u7AEF\u70B9\u3002`);
     }
+    configAbsent = true;
   }
-  if (providerEntries === void 0) {
+  if (!configAbsent) {
     let zc;
     try {
       zc = JSON.parse(raw);
@@ -8139,6 +8127,23 @@ function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, nat
       throw new Error(`zcode-provider: \u63D2\u4EF6 provider \u914D\u7F6E\u4E0D\u662F\u5408\u6CD5 JSON(${providerConfigPath})\u2014\u2014${String(error)}\u3002`);
     }
     providerEntries = Object.entries(zc.provider ?? {});
+  }
+  if (configAbsent || providerEntries.length === 0) {
+    const derived = nativeAccountProviders({
+      ...native.builtinPath === void 0 ? {} : { builtinPath: native.builtinPath },
+      credentialsPath: native.credentialsPath,
+      log: (message) => {
+        log?.(message);
+      }
+    });
+    const derivedEntries = Object.entries(derived);
+    if (derivedEntries.length > 0) {
+      providerEntries = derivedEntries;
+      log?.(`zcode-provider: \u63D2\u4EF6 provider \u914D\u7F6E${configAbsent ? "\u672A\u53D1\u73B0" : "\u4E3A\u7A7A"}(${providerConfigPath});\u5DF2\u4ECE\u5B98\u65B9 ZCode \u672C\u673A\u767B\u5F55\u6001\u63A8\u5BFC\u8D26\u53F7\u8DEF\u7531(${derivedEntries.map(([pid]) => pid).join(", ")})`);
+    } else if (configAbsent) {
+      log?.(`zcode-provider: \u672A\u53D1\u73B0\u53EF\u9009 provider \u914D\u7F6E ${providerConfigPath},\u672C\u673A\u4EA6\u65E0\u5DF2\u767B\u5F55\u7684\u5B98\u65B9 ZCode \u8D26\u53F7;\u4EC5\u4F7F\u7528\u63D2\u4EF6\u81EA\u8EAB routes`);
+      return [];
+    }
   }
   const routes = [];
   for (const [pid, pc] of providerEntries) {

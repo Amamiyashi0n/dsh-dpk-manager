@@ -261,32 +261,23 @@ export function extractRoutes(
   // as the optional built-in catalog degrade quietly). The message names the
   // config key and the fix, because the raw ENOENT from readFileSync is reported
   // by app-boot as a bare warning line with a stack, not as an instruction.
-  let providerEntries: Array<[string, ZcodeProviderEntry]> | undefined
-  // 回退推导时不会走到 JSON 解析分支;初始化仅为满足明确赋值分析
+  let providerEntries: Array<[string, ZcodeProviderEntry]> = []
   let raw = ''
+  // dpk 首装会把 providers.json 种成 `{}`:空配置等同"未配置",同样回退到
+  // 官方 ZCode 本机登录态,否则全新机器永远推导不出账号路由。
+  let configAbsent = false
   try {
     raw = readFileSync(providerConfigPath, 'utf8')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      const derived = nativeAccountProviders({
-        ...(native.builtinPath === undefined ? {} : { builtinPath: native.builtinPath }),
-        credentialsPath: native.credentialsPath,
-        log: (message) => { log?.(message) },
-      })
-      providerEntries = Object.entries(derived)
-      if (providerEntries.length === 0) {
-        log?.(`zcode-provider: 未发现可选 provider 配置 ${providerConfigPath},本机亦无已登录的官方 ZCode 账号;仅使用插件自身 routes`)
-        return []
-      }
-      log?.(`zcode-provider: 未发现插件 provider 配置 ${providerConfigPath};已从官方 ZCode 本机登录态推导账号路由(${providerEntries.map(([pid]) => pid).join(', ')})`)
-    } else {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       throw new Error(
         `zcode-provider: 读不到插件 provider 配置(${providerConfigPath})——${String(error)}。`
         + '请修复 `providerConfigPath`,或直接通过本插件的 `routes` 配置模型端点。',
       )
     }
+    configAbsent = true
   }
-  if (providerEntries === undefined) {
+  if (!configAbsent) {
     let zc: { provider?: Record<string, ZcodeProviderEntry> }
     try {
       zc = JSON.parse(raw) as { provider?: Record<string, ZcodeProviderEntry> }
@@ -296,6 +287,21 @@ export function extractRoutes(
       )
     }
     providerEntries = Object.entries(zc.provider ?? {})
+  }
+  if (configAbsent || providerEntries.length === 0) {
+    const derived = nativeAccountProviders({
+      ...(native.builtinPath === undefined ? {} : { builtinPath: native.builtinPath }),
+      credentialsPath: native.credentialsPath,
+      log: (message) => { log?.(message) },
+    })
+    const derivedEntries = Object.entries(derived)
+    if (derivedEntries.length > 0) {
+      providerEntries = derivedEntries
+      log?.(`zcode-provider: 插件 provider 配置${configAbsent ? '未发现' : '为空'}(${providerConfigPath});已从官方 ZCode 本机登录态推导账号路由(${derivedEntries.map(([pid]) => pid).join(', ')})`)
+    } else if (configAbsent) {
+      log?.(`zcode-provider: 未发现可选 provider 配置 ${providerConfigPath},本机亦无已登录的官方 ZCode 账号;仅使用插件自身 routes`)
+      return []
+    }
   }
   const routes: ZcodeRoute[] = []
   for (const [pid, pc] of providerEntries) {

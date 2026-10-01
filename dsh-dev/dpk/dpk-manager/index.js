@@ -35,11 +35,12 @@ const TOOL = 'dpk'
 const DESCRIPTION = [
   'Manage DSH plugin packages: inspect or verify a .dpk archive, pack a package directory into a .dpk,',
   'install a verified archive into the current profile, list what dpk installed locally (with managed data state),',
-  'inspect a package\'s managed data volumes (data), or purge them (purge).',
+  'inspect a package\'s managed data volumes (data), export its config volumes to a file (export),',
+  'import them back on another machine (import), or delete them for good (purge).',
   'A .dpk is a validated zip carrying one standard DSH package; verify before installing.',
   'install changes this profile for every session and requires danger-full-access permission or approval for this call;',
   'it runs through the same plugin manager service as plugin_manager, so approval does not change the session permission mode.',
-  'purge deletes a package\'s managed data volumes (config/state/cache) for good and requires the same approval.',
+  'import overwrites the package\'s config volumes and purge deletes all its volumes; both require the same approval.',
   'dryRun reports the deterministic store path and the exact hand-off without writing anything.',
 ].join(' ')
 
@@ -48,10 +49,10 @@ const PARAMETERS = {
   type: 'object',
   properties: {
     action: { type: 'string', enum: DPK_ACTIONS, description: 'Operation to perform.' },
-    file: { type: 'string', description: 'Archive path for inspect, verify, and install.' },
+    file: { type: 'string', description: 'Archive path for inspect, verify, and install; data-file path for import.' },
     directory: { type: 'string', description: 'Package directory for pack.' },
-    output: { type: 'string', description: 'For pack: the .dpk path to write; defaults to <name>-<version>.dpk in the working directory.' },
-    name: { type: 'string', description: 'For which/data/purge: a package name, optionally name@version.' },
+    output: { type: 'string', description: 'For pack: the .dpk path to write; for export: the data-file path; both default under the working directory.' },
+    name: { type: 'string', description: 'For which/data/export/import/purge: a package name, optionally name@version.' },
     profile: { type: 'string', description: 'For install: target profile; defaults to this session profile.' },
     dryRun: { type: 'boolean', description: 'For install: verify and unpack nothing; report the store path and the exact hand-off only.' },
     force: { type: 'boolean', description: 'For install: re-extract even when the digest is already stored.' },
@@ -85,13 +86,16 @@ export function apply(ctx, config = {}) {
     },
     async execute(args, exec) {
       const home = config.home ?? process.env.DSH_HOME ?? undefined
-      // purge deletes the package's managed data outside the profile; it earns
-      // the same gate as an install (destructive, profile-adjacent, irreversible).
-      if (args.action === 'purge') {
+      // purge and data import mutate the package's managed data outside the
+      // profile; they earn the same gate as an install (destructive,
+      // profile-adjacent, irreversible).
+      if (args.action === 'purge' || args.action === 'import') {
         await judgeEscalation(ctx, exec, {
           requestedMode: 'danger-full-access',
-          subject: 'data purge',
-          justification: `dpk purge ${args.name ?? ''}. Purging deletes every managed data volume (config, state, cache) of the package for good.`,
+          subject: args.action === 'purge' ? 'data purge' : 'data import',
+          justification: args.action === 'purge'
+            ? `dpk purge ${args.name ?? ''}. Purging deletes every managed data volume (config, state, cache) of the package for good.`
+            : `dpk import ${args.name ?? ''} ${args.file ?? ''}. Importing overwrites the package's config volumes with the carried file contents.`,
         })
       }
       const installer = args.action === 'install' && args.dryRun !== true
@@ -108,7 +112,7 @@ export function apply(ctx, config = {}) {
     presentCall: args => ({
       card: 'generic',
       title: `DPK ${String(args?.action ?? '')}`.trim(),
-      kind: (args?.action === 'install' && args?.dryRun !== true) || args?.action === 'purge' ? 'other' : 'read',
+      kind: (args?.action === 'install' && args?.dryRun !== true) || args?.action === 'purge' || args?.action === 'import' ? 'other' : 'read',
       rawInput: args?.file ?? args?.directory ?? args?.name ?? String(args?.action ?? ''),
     }),
   })
