@@ -380,6 +380,6 @@ $DSH_HOME/dpk/
 
 ### 13.4 校验
 
-- 声明在 `pack` 时严格校验（id/class/path 文法、唯一性、seed 存在且在包内、seed ≤ 1 MiB、卷数 ≤ 64），并复制进 `dpk.json` 的 `data` 字段；
-- `verify` 对 `data` 副本再跑同一套校验，且与 `package/` 内声明交叉比对，不一致即拒绝；
+- 声明在 `pack` 时严格校验（id/class/path 文法、唯一性、seed 存在且在包内、seed ≤ 1 MiB、卷数 ≤ 64），且**仅**随 `dpk.json` 的 `dsh` 逐字副本携带（2.1.8–2.1.9 曾另写一份顶层 `data` 副本，因白名单读取端整包拒收，已于 2.1.10 移除；顶层 `data` 现为未知字段，读到即拒）；
+- `verify` 对 `dsh.data` 副本再跑同一套校验，且与 `package/` 内声明交叉比对，不一致即拒绝；
 - `install` 在**官方安装器成功之后**物化卷（dpkg 也是先解包再放 conffile），失败即中止且不留半装状态。

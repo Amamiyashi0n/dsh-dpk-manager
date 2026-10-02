@@ -10,7 +10,8 @@
  * (`docs/testing.md`「Product-visible plugins require a non-unit REAL-composition test」),
  * 且函数式插件要额外断言"没有 default 导出被 Loader 当成插件主体"。
  *
- * 用法:node tests/loader-composition.mjs
+ * 用法:npm run test:integration(需要仓库 devDependencies 里的 Cordis 家族包,
+ * 不随归档解包环境运行——包内默认 `npm test` 不含本文件)
  */
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

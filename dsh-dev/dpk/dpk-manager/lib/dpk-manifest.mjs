@@ -30,7 +30,7 @@ export const ROLES = new Set(['bundle', 'client', 'plain'])
 const SHA256_HEX = /^[0-9a-f]{64}$/
 const MANIFEST_KEYS = new Set([
   'dpk', 'name', 'version', 'createdAt', 'generator', 'entry', 'roles',
-  'dsh', 'engines', 'peerDependencies', 'files', 'integrity', 'data',
+  'dsh', 'engines', 'peerDependencies', 'files', 'integrity',
 ])
 const FILE_KEYS = new Set(['path', 'size', 'sha256'])
 
@@ -105,13 +105,17 @@ export function buildManifest(input) {
     entry: DPK_ENTRY,
     roles: [...input.roles],
     ...input.dsh === undefined ? {} : { dsh: input.dsh },
-    ...input.data === undefined || input.data.length === 0 ? {} : { data: { volumes: input.data } },
     ...input.engines === undefined ? {} : { engines: input.engines },
     ...input.peerDependencies === undefined ? {} : { peerDependencies: input.peerDependencies },
     files,
     integrity: { algorithm: INTEGRITY_ALGORITHM, digest: computeIntegrity(files) },
   }
-  return validateManifest(manifest)
+  // The archive carries the manifest as built — without the top-level `data`
+  // copy — so pre-volumes whitelist readers accept it. Validation still runs
+  // (it throws on any rule violation) but its normalized output, which always
+  // spells volumes as `data`, is the caller's in-memory fact, not the bytes.
+  validateManifest(manifest)
+  return manifest
 }
 
 /**
@@ -172,13 +176,12 @@ export function validateManifest(value) {
     if (!isPlainObject(field)) throw new DpkManifestError(`dpk.json: ${key} must be an object`, 'DPK_MANIFEST_FIELD')
   }
 
-  // Managed data volumes (SPEC §13): the declaration rides along as a copy of
-  // the package's own `dsh.data`, revalidated on read so an untrusted archive
-  // can never inject a volume the packer would have refused.
-  let dataVolumes
-  if (value.data !== undefined) {
-    if (!isPlainObject(value.data)) throw new DpkManifestError('dpk.json: data must be an object', 'DPK_MANIFEST_FIELD')
-    dataVolumes = parseDataDeclaration(value.data, 'dpk.json: data')
+  // Managed data volumes (SPEC §13): the declaration lives in exactly one
+  // place, the verbatim `dsh` copy, and is revalidated on read so an
+  // untrusted archive can never inject a volume the packer would have
+  // refused. A top-level `data` key is rejected by the whitelist above.
+  if (value.dsh !== undefined && value.dsh.data !== undefined) {
+    parseDataDeclaration(value.dsh.data, 'dpk.json: dsh.data')
   }
 
   const files = value.files
@@ -245,7 +248,6 @@ export function validateManifest(value) {
     entry,
     roles: [...roles],
     ...value.dsh === undefined ? {} : { dsh: value.dsh },
-    ...value.data === undefined ? {} : { data: { volumes: dataVolumes.map(volume => ({ ...volume })) } },
     ...value.engines === undefined ? {} : { engines: { ...value.engines } },
     ...value.peerDependencies === undefined ? {} : { peerDependencies: { ...value.peerDependencies } },
     files: normalizedFiles,
@@ -277,7 +279,7 @@ export function compareManifestToPackage(manifest, source) {
   const claimed = JSON.stringify(manifest.dsh ?? null)
   if (expected !== claimed) problems.push('dsh: dpk.json copy differs from package.json')
   const expectedVolumes = source.dataVolumes ?? []
-  const claimedVolumes = manifest.data?.volumes ?? []
+  const claimedVolumes = manifest.dsh?.data?.volumes ?? []
   if (JSON.stringify(expectedVolumes) !== JSON.stringify(claimedVolumes)) {
     problems.push('data: dpk.json volume declaration differs from package.json')
   }

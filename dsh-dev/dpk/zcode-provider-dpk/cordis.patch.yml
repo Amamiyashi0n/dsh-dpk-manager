@@ -1,4 +1,6 @@
 # zcode-provider 自带的组合层:把插件插入当前 profile
+# name 是 loader 的模块说明符,与插件运行时注册名一致(本包不走 npm 分发,
+# 永远以 @local/ 形式安装)。
 - insert:
     - id: '@local/zcode-provider'
       name: '@local/zcode-provider'

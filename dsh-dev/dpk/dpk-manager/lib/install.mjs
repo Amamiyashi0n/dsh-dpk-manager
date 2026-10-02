@@ -113,6 +113,10 @@ export async function installArchive(options) {
   const root = options.root ?? dpkRoot(options.home)
   const digest = manifest.integrity.digest
   const packageDir = join(storeDir(root, digest), 'package')
+  // The profile this install targets comes from the explicit argument; the
+  // ambient DSH variables describe the *running* session's profile, which a
+  // Host-provided tool call must never silently retarget (a test inside DSH,
+  // or an install into another profile, would write policy into this one).
   const home = options.home ?? process.env.DSH_HOME ?? defaultDshHome()
   const profile = options.profile
     ?? process.env.DSH_PROFILE
@@ -152,7 +156,7 @@ export async function installArchive(options) {
   // published ones (this manager included). The import is deliberate and
   // digest-verified, so opt the profile out before pnpm starts. A policy we
   // cannot write only risks the cooldown, never the install itself.
-  const profileDir = process.env.DSH_PROFILE_DIR ?? join(home, 'profiles', profile)
+  const profileDir = join(home, 'profiles', profile)
   try {
     if (await disableReleaseAgeCooldown(profileDir)) {
       log(`policy   minimumReleaseAge: 0 -> ${join(profileDir, 'pnpm-workspace.yaml')}`)
@@ -169,10 +173,11 @@ export async function installArchive(options) {
   })
 
   // Managed data volumes (SPEC §13): the declaration is re-read from the
-  // stored package.json (the manifest copy was validated at verify time), and
-  // the volumes materialise only after the official install succeeded — dpkg
-  // places conffiles after the package unpacks, never before.
-  const volumes = manifest.data?.volumes ?? parseDataDeclaration(
+  // stored package.json (the single authoritative copy; the manifest's `dsh`
+  // duplicate was validated at verify time), and the volumes materialise only
+  // after the official install succeeded — dpkg places conffiles after the
+  // package unpacks, never before.
+  const volumes = parseDataDeclaration(
     JSON.parse(await readFile(join(placed.packageDir, 'package.json'), 'utf8')).dsh?.data,
     `${manifest.name}: package.json`,
   )

@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { packDirectory } from '../lib/pack.mjs'
 import { installArchive } from '../lib/install.mjs'
+import { verifyArchive } from '../lib/verify.mjs'
 import {
   parseDataDeclaration, dataRoot, volumePath, materializeVolumes,
   describeVolumes, purgeVolumes, exportConfigVolumes, importConfigVolumes,
@@ -247,7 +248,7 @@ test('the manifest carries the declaration and verify still passes', async () =>
   const packed = await packDirectory(await makeManagedPackage())
   const strip = volume => Object.fromEntries(Object.entries(volume).filter(([, value]) => value !== undefined))
   assert.deepEqual(
-    packed.manifest.data.volumes.map(strip),
+    packed.manifest.dsh.data.volumes.map(strip),
     [
       { id: 'providers', class: 'config', path: 'providers.json', seed: 'seeds/providers.json' },
       { id: 'prompts', class: 'config', path: 'prompt-overrides.json', seed: 'seeds/prompts.json' },
@@ -256,6 +257,32 @@ test('the manifest carries the declaration and verify still passes', async () =>
       { id: 'captcha', class: 'cache', path: 'captcha-profile/cookies' },
     ],
   )
+  // The written archive itself carries the declaration in exactly one place:
+  // the verbatim dsh copy. A top-level `data` key is an unknown field and
+  // every reader rejects the whole archive over it.
+  const { readZipEntry, readZipIndex } = await import('../lib/zip.mjs')
+  const written = JSON.parse(readZipEntry(packed.buffer, readZipIndex(packed.buffer).entries.find(entry => entry.path === 'dpk.json')))
+  assert.equal(written.data, undefined, 'no top-level data key is written')
+  assert.equal(JSON.stringify(written.dsh.data.volumes), JSON.stringify(packed.manifest.dsh.data.volumes), 'dsh.data.volumes carries the declaration')
+})
+
+test('a top-level data key is rejected as an unknown field', async () => {
+  const packed = await packDirectory(await makeManagedPackage())
+  const { readZipEntry, readZipIndex, writeZip } = await import('../lib/zip.mjs')
+  const index = readZipIndex(packed.buffer)
+  const entries = index.entries.map(entry => ({
+    path: entry.path,
+    data: readZipEntry(packed.buffer, entry),
+    mode: 0o644,
+  }))
+  const manifestEntry = entries.find(entry => entry.path === 'dpk.json')
+  // The 2.1.8–2.1.9 spelling: the volume declaration duplicated at top level.
+  manifestEntry.data = Buffer.from(JSON.stringify({
+    ...JSON.parse(manifestEntry.data.toString('utf8')),
+    data: { volumes: packed.manifest.dsh.data.volumes },
+  }, undefined, 2), 'utf8')
+  const legacy = writeZip(entries)
+  await assert.rejects(() => verifyArchive(legacy), /unknown field: data/)
 })
 
 test('the declaration refuses unclean seed paths', () => {

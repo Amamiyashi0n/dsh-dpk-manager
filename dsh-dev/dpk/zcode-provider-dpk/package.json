@@ -1,7 +1,7 @@
 {
   "name": "@local/zcode-provider",
   "description": "Standalone white-box ZCode-compatible provider for DeepSeek Harness",
-  "version": "2.6.6",
+  "version": "2.6.7",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -99,7 +99,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/sync-client-prompts.mjs && node scripts/bundle-entry.mjs",
-    "test": "node tests/equivalence.mjs && node tests/storage.mjs && node tests/prompt-remote.mjs && node tests/auth-backend.mjs && node tests/credentials.mjs && node tests/route-resolution.mjs && node tests/entitlements.mjs && node tests/usage.mjs && node tests/usage-remote.mjs && node tests/diagnostics.mjs && node tests/client.mjs && node tests/offpeak.mjs && node tests/official-prompt.mjs && node tests/captcha.mjs && node tests/captcha-remote.mjs && node tests/image-wire.mjs && node tests/official-wire.mjs && node tests/app-server.mjs && node tests/loader-composition.mjs && node tests/app-server-discovery.mjs && node tests/native-account.mjs && node tests/standalone-package.mjs"
+    "test": "node tests/equivalence.mjs && node tests/storage.mjs && node tests/prompt-remote.mjs && node tests/auth-backend.mjs && node tests/credentials.mjs && node tests/route-resolution.mjs && node tests/entitlements.mjs && node tests/usage.mjs && node tests/usage-remote.mjs && node tests/diagnostics.mjs && node tests/client.mjs && node tests/offpeak.mjs && node tests/official-prompt.mjs && node tests/captcha.mjs && node tests/captcha-remote.mjs && node tests/image-wire.mjs && node tests/official-wire.mjs && node tests/app-server.mjs && node tests/app-server-discovery.mjs && node tests/native-account.mjs && node tests/standalone-package.mjs",
+    "test:integration": "node tests/loader-composition.mjs"
   },
   "license": "MIT",
   "dsh": {
