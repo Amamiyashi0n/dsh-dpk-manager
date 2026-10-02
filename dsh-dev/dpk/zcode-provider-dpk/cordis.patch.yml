@@ -1,7 +1,9 @@
 # zcode-provider 自带的组合层:把插件插入当前 profile
-# name 是 loader 的模块说明符,与插件运行时注册名一致(本包不走 npm 分发,
-# 永远以 @local/ 形式安装)。
+# name 是 loader 的模块说明符,与 package.json 本名一致——dpk 安装时会把
+# store 副本与这里的 name 行一起本地化为 @local/zcode-provider。id 是条目
+# 身份,保持 @local/zcode-provider(与插件运行时注册名、client.js 的 Remote
+# 引用一致)。
 - insert:
     - id: '@local/zcode-provider'
-      name: '@local/zcode-provider'
+      name: 'zcode-provider'
       config: {}

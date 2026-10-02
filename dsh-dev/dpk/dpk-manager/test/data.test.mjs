@@ -285,6 +285,27 @@ test('a top-level data key is rejected as an unknown field', async () => {
   await assert.rejects(() => verifyArchive(legacy), /unknown field: data/)
 })
 
+test('a bare-named archive verifies and the scope is still added at install time', async () => {
+  const root = await makePackage({
+    manifest: {
+      name: 'bare-named-tool',
+      dsh: { manifestVersion: 1, bundle: { patch: './cordis.patch.yml' }, data: { volumes: [{ id: 'cfg', class: 'config', path: 'cfg.json' }] } },
+    },
+  })
+  const packed = await packDirectory(root)
+  assert.equal(packed.manifest.name, 'bare-named-tool', 'pack never burns a scope into the archive')
+  const verified = await verifyArchive(packed.buffer, { deep: true })
+  assert.equal(verified.manifest.name, 'bare-named-tool', 'verify accepts the bare name on both sides of the comparison')
+  const home = await makeHome()
+  const installer = async () => {}
+  const result = await installArchive({
+    file: 'bare.dpk', buffer: packed.buffer, home, profile: 'test',
+    installer, log: () => {},
+  })
+  const stored = JSON.parse(await readFile(join(result.packageDir, 'package.json'), 'utf8'))
+  assert.equal(stored.name, '@local/bare-named-tool', 'the install action adds the @local marking')
+})
+
 test('the declaration refuses unclean seed paths', () => {
   for (const bad of [
     { id: 'a', class: 'config', path: 'a.json', seed: '../escape.json' },

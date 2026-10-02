@@ -143,16 +143,16 @@ test('refuses a package name the registry would refuse', async () => {
   await assert.rejects(validateDshPackage(await makePackage({ manifest: { name: 'x'.repeat(215) } })), error => error.code === 'PACKAGE_NAME')
   {
     const facts = await validateDshPackage(await makePackage({ manifest: { name: 'plain-unscooped' } }))
-    assert.equal(facts.name, '@local/plain-unscooped', 'an unscoped name is localized, not refused')
-    assert.ok(facts.checkNotes.some(note => note.includes('@local/plain-unscooped')), facts.checkNotes.join(','))
+    assert.equal(facts.name, 'plain-unscooped', 'the bare name is carried as-is; the scope is added at install time, not here')
+    assert.ok(facts.checkNotes.some(note => note.includes('plain-unscooped')), facts.checkNotes.join(','))
   }
   {
     const facts = await validateDshPackage(await makePackage({ manifest: { name: '@other/scoped' } }))
-    assert.equal(facts.name, '@local/scoped', 'a foreign scope is re-scoped to @local')
+    assert.equal(facts.name, '@other/scoped', 'a foreign scope is carried as-is; install re-scopes to @local')
   }
   {
     const facts = await validateDshPackage(await makePackage({ manifest: { name: '@local/already' } }))
-    assert.equal(facts.name, '@local/already', 'a local name passes through')
+    assert.equal(facts.name, '@local/already', 'a source that already carries @local passes through unchanged')
   }
 })
 

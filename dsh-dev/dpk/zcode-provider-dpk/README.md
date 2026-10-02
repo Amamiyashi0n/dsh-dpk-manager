@@ -170,9 +170,9 @@ node ../dpk-manager/dpk.mjs install dist/zcode-provider-<version>.dpk -p web --h
 安装后**必须核实** profile 链接已更新(`~/.dsh/profiles/web/package.json` 中 `zcode-provider` 指向新 digest 的 store 目录)。dpk 工具经 `~/.dsh/node_modules/@deepseek-ai` junction 定位 DSH CLI——工作区搬移后该 junction 会悬空,install 只解包到 store 却报 `the DSH CLI was not found`,profile 停留旧版(2026-09-30 实际发生:2.5.35/2.5.36 两版"安装成功"实则未生效,线上一直是 2.5.34,靠 wire 抓包才发现)。修复:`rmdir` 旧 junction 后 `mklink /J` 重指 `dsh-dev\deepseek-harness
 ode_modules\@deepseek-ai`。
 
-当前版本 **2.6.7**。近版本要点：
+当前版本 **2.6.8**。近版本要点：
 
-- **2.6.7** 打包修复:卷声明只随 `dsh` 逐字副本携带,不再写顶层 `data` 键(2.6.6 的归档因此被旧白名单读取端整包拒收);`tests/loader-composition.mjs` 移出默认 `npm test` 链,归档解包环境不再出现依赖维护者 monorepo 的恒红测试。分发仅走 `.dpk`,不发布 npm。
+- **2.6.8** 打包分层修正:归档携带包**本名**(`zcode-provider`),`@local/` 作用域由 dpk **安装动作**添加(store 副本、patch 行、台账、数据卷根),pack 阶段不再预烧作用域;卷声明只随 `dsh` 逐字副本携带,不再写顶层 `data` 键(2.6.6 的归档因此被旧白名单读取端整包拒收);`tests/loader-composition.mjs` 移出默认 `npm test` 链(改 `test:integration`),归档解包环境不再出现依赖维护者 monorepo 的恒红测试。分发仅走 `.dpk`,不发布 npm。
 
 - **2.6.6** 修复 Windows ZCode 安装发现和 app-server 启动链：使用正确的 `reg query` 语法，支持从空 `InstallLocation` 的卸载项回退，Electron 宿主优先使用自身 Node 运行时，委托启动失败时回退直连 wire；Coding Plan 缺失 identity 时仅在唯一 provisioning key 候选下恢复。
 

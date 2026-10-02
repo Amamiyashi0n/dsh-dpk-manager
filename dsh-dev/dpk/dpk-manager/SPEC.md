@@ -101,7 +101,7 @@ const TARBALL_SPEC = /\.(?:tgz|tar\.gz)(?:#.*)?$/i
 | 字段 | 类型 | 必填 | 约束 |
 | --- | --- | --- | --- |
 | `dpk` | integer | ✅ | 格式版本，本规范为 `1`。大于实现支持值时拒绝（"更新的 DPK 版本"），不猜测 |
-| `name` | string | ✅ | 必须等于 `package/package.json` 的 `name`；须匹配 npm 包名文法且带 `@local/` 作用域（见 §6.1） |
+| `name` | string | ✅ | 必须等于 `package/package.json` 的 `name`；须匹配 npm 包名文法（见 §6.1）。归档携带包的**本名**；`@local/` 作用域是**安装期标识**，由 dpk 在安装动作里加到 store 副本、patch 行、台账与数据卷根上，pack 阶段不写入任何作用域 |
 | `version` | string | ✅ | 必须等于 `package.json` 的 `version`；须为 semver |
 | `createdAt` | string | ✅ | RFC 3339 / ISO 8601 UTC，用于溯源；**不参与**完整性计算。默认取可复现时刻 `1980-01-01T00:00:00.000Z`，`--created-at now` 才写真实构建时间（见 §5 可复现性） |
 | `generator` | string | ✅ | `<tool>/<version>`，例如 `dpk/1.0.0` |
@@ -155,7 +155,7 @@ DPK 的"严格"体现在这里：以下规则**逐条镜像 DSH 自己的读取�
 | --- | --- |
 | `package/` 内不得出现 `.dpk` 文件：归档不是内容；打包与校验一律拒绝（`PACKAGE_NESTED_ARCHIVE`），历史归档在导入时由 store 剥离 | DPK 规范自身约定（防嵌套归档事件） |
 | `name` 匹配 `^(?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*$` 且 ≤214 字符 | `install-spec.ts:31-32` |
-| `name` 缺少 `@local/` 作用域时**自动补全**（`PACKAGE_LOCAL_SCOPE` 提示写入 checkNotes）：DPK 是本地分发格式，所有 dpk 写出的层（归档清单、store 副本、账本）统一携带 `@local/`，本地包不得遮蔽 registry 上的公共名；源目录本身不被改动 | DPK 规范自身约定 |
+| `name` 不带作用域是**常态**：归档携带本名，`@local/` 由**安装动作**添加（`localizeStoredPackage` 改写 store 副本与 patch 行，台账与数据卷根随之）：DPK 是本地分发格式，安装后的名字统一为 `@local/<本名>`，本地包不得遮蔽 registry 上的公共名；源目录与归档本身永不被改写或预烧作用域（2.1.10 之前打包器曾在 pack 期改写，属分层颠倒，已修正） | DPK 规范自身约定 |
 | `version` 为非空 semver | `dsh-package-manifest` 的 `DshPackageManifest.version` |
 | `private`、`description`、`license`、`repository` | 可选，类型正确即可 |
 | `engines.dsh` / `engines.node` 为字符串 | `types.ts:57-66` |

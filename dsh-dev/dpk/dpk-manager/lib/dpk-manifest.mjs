@@ -261,10 +261,11 @@ export function validateManifest(value) {
  */
 export function compareManifestToPackage(manifest, source) {
   const problems = []
-  // Both sides read through the same normalization: an archive written before
-  // the @local convention is consistent with its own package.json, not a
-  // contradiction, once the claimed name is localized the same way.
-  if (localizeName(manifest.name) !== source.name) problems.push(`name: dpk.json says ${manifest.name}, package.json says ${source.name}`)
+  // Both sides normalize through localizeName: archives since 2.1.10 carry the
+  // bare name and the scope is added at install, while older archives (and
+  // pre-2.1.10 readers) localized at pack time. Either era stays consistent
+  // with its own package.json.
+  if (localizeName(manifest.name) !== localizeName(source.name)) problems.push(`name: dpk.json says ${manifest.name}, package.json says ${source.name}`)
   if (manifest.version !== source.version) {
     problems.push(`version: dpk.json says ${manifest.version}, package.json says ${source.version}`)
   }

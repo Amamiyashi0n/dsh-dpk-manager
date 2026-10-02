@@ -247,7 +247,7 @@ test('an unscoped source installs under the @local scope in store, ledger, and p
     extraFiles: { 'cordis.patch.yml': "- insert:\n    - id: plain-tool\n      name: 'plain-tool'" },
   })
   const packed = await packDirectory(dir)
-  assert.equal(packed.manifest.name, '@local/plain-tool', 'the archive manifest carries the local scope')
+  assert.equal(packed.manifest.name, 'plain-tool', 'the archive manifest carries the bare name; the scope is an install-time marking')
   const exec = recorder()
   const result = await installArchive({
     file: 'plain.dpk', buffer: packed.buffer, home, profile: 'test',

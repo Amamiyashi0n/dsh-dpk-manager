@@ -1,7 +1,7 @@
 {
-  "name": "@local/zcode-provider",
+  "name": "zcode-provider",
   "description": "Standalone white-box ZCode-compatible provider for DeepSeek Harness",
-  "version": "2.6.7",
+  "version": "2.6.8",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

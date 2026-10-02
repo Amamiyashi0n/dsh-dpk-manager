@@ -266,8 +266,9 @@ export async function validateDshPackage(directory) {
   const checkNotes = []
   let checkNote
   if (!name.startsWith(LOCAL_SCOPE)) {
-    manifest.name = localizeName(name)
-    checkNote = `name     ${name} -> ${manifest.name} (the ${LOCAL_SCOPE} scope is added locally)`
+    // Layering (SPEC §6.1): the archive carries the package's own bare name;
+    // the @local scope is an install-time marking. Nothing is rewritten here.
+    checkNote = `name     ${name} (bare; the ${LOCAL_SCOPE} scope is added at install time)`
   }
   const version = stringField(manifest, 'version')
   if (version === undefined) throw new PackageError('package.json: version is required', 'PACKAGE_VERSION')
