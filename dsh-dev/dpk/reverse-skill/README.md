@@ -1,4 +1,6 @@
-# @local/dsh-reverse-skill
+# dsh-reverse-skill
+
+> 分发名 `dsh-reverse-skill`(本名);dpk 安装后以 `@local/dsh-reverse-skill` 出现在 profile 与插件面板(下面的 plugin_manager 命令目标用的就是安装后名字)。
 
 DSH 适配层：把客户端中立的 [reverse-skill](https://github.com/zhaoxuya520/reverse-skill) 安全技能路由包，做成一个标准的 DSH 插件包（bundle），安装后本 profile 的每个会话都能在标准技能目录里看到它的技能。
 

@@ -1,6 +1,6 @@
 {
-  "name": "@local/dsh-reverse-skill",
-  "version": "2.0.0",
+  "name": "dsh-reverse-skill",
+  "version": "2.0.1",
   "private": true,
   "type": "module",
   "description": "Serves every skill of the client-neutral reverse-skill security router to DSH sessions.",

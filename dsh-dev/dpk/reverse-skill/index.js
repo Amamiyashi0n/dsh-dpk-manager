@@ -4,7 +4,7 @@
  * and the bundle serves the checkout's `skills/` root. One package, one `.dpk`.
  * See lib/skill-dir.js for the frontmatter and precedence contract.
  *
- * @module @local/dsh-reverse-skill
+ * @module dsh-reverse-skill
  */
 
 import { registerSkillDir } from './lib/skill-dir.js'

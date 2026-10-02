@@ -1,5 +1,8 @@
-# Bundle layer for @local/dsh-reverse-skill: one Host plugin row that registers
+# Bundle layer for dsh-reverse-skill: one Host plugin row that registers
 # the `reverse-skill` skill provider on ctx.skills.
+# name 是 loader 的模块说明符,与 package.json 本名一致——dpk 安装时会把
+# store 副本与这里的 name 行一起本地化为 @local/dsh-reverse-skill;
+# id 是条目身份,与插件运行时注册名(name 导出)一致。
 #
 # 「只要逆向功能」:roots 逐个列出逆向模块目录,而不是用 `skills` 全目录。
 # 对应 skills/config/routing.json 里以逆向为主的路由:
@@ -24,7 +27,7 @@
 # 模块代次,进程重启后可用更简洁的 `roots: [skills]` + `include: [...]` 表达同一集合。
 - insert:
     - id: dsh-reverse-skill
-      name: '@local/dsh-reverse-skill'
+      name: 'dsh-reverse-skill'
       config:
         repoRoot: 'C:\Users\Amamiya\Documents\deepseek-harness\默认工作区\vendor\reverse-skill'
         roots:
