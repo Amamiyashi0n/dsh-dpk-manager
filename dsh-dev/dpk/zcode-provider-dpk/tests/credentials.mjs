@@ -4,14 +4,14 @@
  *
  * 用法:node tests/credentials.mjs
  */
-import { createCipheriv, randomBytes } from 'node:crypto'
+import { createCipheriv, createHash, randomBytes } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const { deriveCredentialKey, decryptStoreValue, readCredentialStore, resolvePlanCredential, defaultCredentialsPath } =
+const { codingPlanApiKeyKey, deriveCredentialKey, decryptStoreValue, readCredentialStore, resolvePlanCredential, defaultCredentialsPath } =
   await import(pathToFileURL(join(here, '..', 'lib', 'credentials.js')).href)
 
 const failures = []
@@ -63,12 +63,64 @@ try {
   check('individual coding plan:取账号级 provisioned key', individual.apiKey === secret, `${individual.apiKey} / ${individual.source}`)
   check('individual coding plan:来源标记 credential-store', individual.source === 'credential-store')
 
+  const encodedIdentity = 'account/with spaces?'
+  const encodedPath = join(dir, 'credentials-encoded-identity.json')
+  writeFileSync(encodedPath, JSON.stringify({
+    [`account-provider:${INDIVIDUAL}:identity`]: encodedIdentity,
+    [`account-provider:coding-plan:${INDIVIDUAL}:account:${encodeURIComponent(encodedIdentity)}:api-key`]: encrypt('encoded-identity-key'),
+  }), 'utf8')
+  const encoded = resolvePlanCredential({
+    credentialsPath: encodedPath, providerId: INDIVIDUAL, family: 'bigmodel',
+    planKind: 'individual-coding-plan', home: HOME, user: USER,
+  })
+  check('individual coding plan:identity 按官方规则 URL 编码后取 key', encoded.apiKey === 'encoded-identity-key', `${encoded.apiKey} / ${encoded.source}`)
+
+  const recoveredPath = join(dir, 'credentials-recovered.json')
+  const recoveredIdentity = 'identity/with spaces?'
+  const recoveredKey = 'recovered-provisioned-key'
+  const recoveryLogs = []
+  writeFileSync(recoveredPath, JSON.stringify({
+    [codingPlanApiKeyKey(INDIVIDUAL, recoveredIdentity)]: encrypt(recoveredKey),
+  }), 'utf8')
+  const recovered = resolvePlanCredential({
+    credentialsPath: recoveredPath, providerId: INDIVIDUAL, family: 'bigmodel',
+    planKind: 'individual-coding-plan', home: HOME, user: USER,
+    log: (message) => recoveryLogs.push(message),
+  })
+  check('individual coding plan:identity 缺失时唯一 provisioned-key 可恢复',
+    recovered.apiKey === recoveredKey && recovered.source === 'credential-store')
+  check('individual coding plan:identity 缺失时记录恢复原因',
+    recoveryLogs.some((message) => message.includes('按唯一 provisioned-key 恢复')))
+
+  const ambiguousPath = join(dir, 'credentials-ambiguous.json')
+  writeFileSync(ambiguousPath, JSON.stringify({
+    [codingPlanApiKeyKey(INDIVIDUAL, 'first')]: encrypt('first-key'),
+    [codingPlanApiKeyKey(INDIVIDUAL, 'second')]: encrypt('second-key'),
+  }), 'utf8')
+  const ambiguous = resolvePlanCredential({
+    credentialsPath: ambiguousPath, providerId: INDIVIDUAL, family: 'bigmodel',
+    planKind: 'individual-coding-plan', home: HOME, user: USER,
+  })
+  check('individual coding plan:多个 provisioned-key 不会随机选择',
+    ambiguous.apiKey === '' && ambiguous.source === 'none')
+
   const startPlan = resolvePlanCredential({
     credentialsPath: credPath, providerId: 'account:bigmodel-start-plan', family: 'bigmodel',
     planKind: 'start-plan', fallbackApiKey: 'config-start-token', home: HOME, user: USER,
   })
   check('start plan:active provider 命中 family 时取 zcodejwttoken', startPlan.apiKey === 'jwt-from-store', `${startPlan.apiKey} / ${startPlan.source}`)
   check('start plan:来源标记 zcode-jwt', startPlan.source === 'zcode-jwt')
+
+  const jwtAliasPath = join(dir, 'credentials-jwt-alias.json')
+  writeFileSync(jwtAliasPath, JSON.stringify({
+    'oauth:active_provider': encrypt('bigmodel'),
+    zcodeJwtToken: encrypt('jwt-from-camel-case-key'),
+  }), 'utf8')
+  const camelCaseJwt = resolvePlanCredential({
+    credentialsPath: jwtAliasPath, providerId: 'account:bigmodel-start-plan', family: 'bigmodel',
+    planKind: 'start-plan', fallbackApiKey: 'config-start-token', home: HOME, user: USER,
+  })
+  check('start plan:兼容官方 zcodeJwtToken 键名', camelCaseJwt.apiKey === 'jwt-from-camel-case-key')
 
   const otherFamily = resolvePlanCredential({
     credentialsPath: credPath, providerId: 'account:zai-start-plan', family: 'zai',
@@ -92,6 +144,18 @@ try {
   check('凭证库不可读:返回空表', Object.keys(emptyStore).length === 0)
 
   check('默认凭证路径位于受管 state 卷', defaultCredentialsPath('X:\\root') === join('X:\\root', 'state', 'credentials.json'))
+
+  const previousSecret = process.env.ZCODE_CREDENTIAL_SECRET
+  try {
+    process.env.ZCODE_CREDENTIAL_SECRET = 'fixture-custom-secret'
+    const customKey = deriveCredentialKey(HOME, USER)
+    check('解密:ZCODE_CREDENTIAL_SECRET 优先于机器回退种子',
+      customKey.equals(createHash('sha256').update('fixture-custom-secret').digest())
+      && !customKey.equals(key))
+  } finally {
+    if (previousSecret === undefined) delete process.env.ZCODE_CREDENTIAL_SECRET
+    else process.env.ZCODE_CREDENTIAL_SECRET = previousSecret
+  }
 } finally {
   rmSync(dir, { recursive: true, force: true })
 }

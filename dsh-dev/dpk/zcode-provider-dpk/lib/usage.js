@@ -19,6 +19,7 @@
  * @module zcode-provider/usage
  */
 import { createHash } from 'node:crypto';
+import { safeOrigin } from './diagnostics.js';
 import { fetchOffPeakAvailability, resolveOffPeakEligibility, } from './offpeak.js';
 import { accountProviderSnapshot, buildCodingPlanSnapshot, buildMcpQuotaSnapshot, normalizeQuota, parseCodingPlanEntitlement, resolveStartPlanBalance, } from './entitlements.js';
 /** 官方 quota 路径(相对 bigmodel API 根)。 */
@@ -87,9 +88,19 @@ export function bigmodelOriginFrom(baseURL) {
 }
 class UsageHttpError extends Error {
     status;
-    constructor(status) {
-        super(`HTTP ${status}`);
+    fields;
+    constructor(status, fields = {}) {
+        const parts = [`HTTP ${status}`];
+        if (fields.code !== undefined)
+            parts.push(`code=${fields.code}`);
+        const description = fields.msg ?? fields.message ?? fields.error ?? fields.detail;
+        if (description !== undefined && description !== '')
+            parts.push(`msg=${description}`);
+        if (fields.request_id !== undefined && fields.request_id !== '')
+            parts.push(`request_id=${fields.request_id}`);
+        super(parts.join(' '));
         this.status = status;
+        this.fields = fields;
     }
 }
 class UsageTimeoutError extends Error {
@@ -131,9 +142,37 @@ async function getJson(url, auth, deps, explicitHeaders, signal) {
                     : { 'x-device-mid': deps.deviceMid.trim() }),
             },
         });
-        if (!response.ok)
-            throw new UsageHttpError(response.status);
-        return response.json();
+        const responseText = await response.text();
+        if (!response.ok) {
+            let fields = {};
+            try {
+                const body = JSON.parse(responseText);
+                if (typeof body === 'object' && body !== null && !Array.isArray(body)) {
+                    const record = body;
+                    const code = typeof record.code === 'number' || typeof record.code === 'string' ? record.code : undefined;
+                    const textField = (value) => {
+                        if (typeof value === 'string')
+                            return value.trim() || undefined;
+                        if (typeof value === 'number' || typeof value === 'boolean')
+                            return String(value);
+                        return undefined;
+                    };
+                    fields = {
+                        ...(code === undefined ? {} : { code }),
+                        ...(textField(record.msg) === undefined ? {} : { msg: textField(record.msg) }),
+                        ...(textField(record.message) === undefined ? {} : { message: textField(record.message) }),
+                        ...(textField(record.error) === undefined ? {} : { error: textField(record.error) }),
+                        ...(textField(record.detail) === undefined ? {} : { detail: textField(record.detail) }),
+                        ...(textField(record.request_id) === undefined ? {} : { request_id: textField(record.request_id) }),
+                    };
+                }
+            }
+            catch (_notJson) {
+                // The status remains useful when a gateway returns HTML or plain text.
+            }
+            throw new UsageHttpError(response.status, fields);
+        }
+        return JSON.parse(responseText);
     });
     let timer;
     const timeout = new Promise((_resolve, reject) => {
@@ -253,6 +292,12 @@ function unavailableSnapshot(input) {
         quota: null,
     };
 }
+function errorMessage(error) {
+    return error instanceof Error ? error.message : String(error);
+}
+function usageDiagnostic(deps, level, phase, message, details) {
+    deps.diagnostics?.record({ level, phase, message, ...(details === undefined ? {} : { details }) });
+}
 /**
  * 读取不会依赖模型统计或 MCP 服务的核心权益快照。
  *
@@ -288,40 +333,72 @@ export async function fetchEntitlementReport(deps, signal) {
     const tasks = [];
     if (origin !== undefined && planKey) {
         tasks.push((async () => {
+            const endpoint = `${origin}${QUOTA_PATH}`;
             try {
-                quota = normalizeQuota(await getJson(`${origin}${QUOTA_PATH}`, planKey, deps, undefined, signal));
+                quota = normalizeQuota(await getJson(endpoint, planKey, deps, undefined, signal));
                 return undefined;
             }
             catch (error) {
-                return { source: 'quota', reason: String(error) };
+                const reason = errorMessage(error);
+                usageDiagnostic(deps, 'error', 'quota', 'Coding Plan quota 请求失败', { endpoint, error: reason });
+                return { source: 'quota', reason };
             }
         })());
         tasks.push((async () => {
+            const endpoint = `${origin}${SUBSCRIPTION_PATH}`;
             try {
-                codingEntitlement = parseCodingPlanEntitlement(await getJson(`${origin}${SUBSCRIPTION_PATH}`, planKey, deps, undefined, signal));
+                codingEntitlement = parseCodingPlanEntitlement(await getJson(endpoint, planKey, deps, undefined, signal));
                 return undefined;
             }
             catch (error) {
                 subscriptionAuthFailed = error instanceof UsageHttpError && [401, 403].includes(error.status);
-                return { source: 'subscription', reason: String(error) };
+                const reason = errorMessage(error);
+                usageDiagnostic(deps, 'error', 'subscription', 'Coding Plan subscription 请求失败', { endpoint, error: reason, authFailed: subscriptionAuthFailed });
+                return { source: 'subscription', reason };
             }
         })());
     }
     else {
-        failures.push({ source: 'quota', reason: origin === undefined ? 'baseURL 无法推导 origin' : '缺少账号 Coding Plan key' });
+        const reason = origin === undefined ? 'baseURL 无法推导 origin' : '缺少账号 Coding Plan key';
+        usageDiagnostic(deps, 'error', 'route-discovery', 'Coding Plan 权益请求未发出', {
+            reason,
+            baseURL: deps.bigmodelBaseURL ?? null,
+            origin: origin ?? null,
+            hasPlanApiKey: Boolean(planKey),
+            codingProviderId: deps.codingProviderId ?? null,
+        });
+        failures.push({ source: 'quota', reason });
     }
     if (jwt) {
         tasks.push((async () => {
+            const endpoint = `${deps.endpointOrigin}${START_PLAN_BALANCE_PATH}?app_version=${encodeURIComponent(deps.appVersion)}`;
             try {
-                const url = `${deps.endpointOrigin}${START_PLAN_BALANCE_PATH}?app_version=${encodeURIComponent(deps.appVersion)}`;
-                startResolution = resolveStartPlanBalance(await getJson(url, jwt, deps, undefined, signal), startProvider, generatedAt);
+                startResolution = resolveStartPlanBalance(await getJson(endpoint, jwt, deps, undefined, signal), startProvider, generatedAt);
                 return undefined;
             }
             catch (error) {
                 startAuthFailed = error instanceof UsageHttpError && [401, 403].includes(error.status);
-                return { source: 'start-plan', reason: String(error) };
+                const reason = errorMessage(error);
+                usageDiagnostic(deps, 'error', 'start-plan', 'Start Plan balance 请求失败', {
+                    endpoint,
+                    error: reason,
+                    authFailed: startAuthFailed,
+                    hasDeviceMid: deps.deviceMid !== undefined && deps.deviceMid.trim() !== '',
+                });
+                return { source: 'start-plan', reason };
             }
         })());
+    }
+    else {
+        usageDiagnostic(deps, 'warn', 'start-plan', 'Start Plan 未找到登录凭据', {
+            currentProvider: current,
+            activeProvider: deps.activeProvider ?? null,
+            accountFamily: family,
+            startProviderId: deps.startProviderId ?? null,
+            hasJwt: Boolean(jwt),
+            hasOAuthAccessToken: Boolean(oauthAccessToken),
+            endpointOrigin: safeOrigin(deps.endpointOrigin) ?? '[invalid]',
+        });
     }
     // 核心端点彼此独立：一个慢服务只消耗一个超时窗口。
     const taskFailures = await Promise.all(tasks);
@@ -416,9 +493,19 @@ export async function fetchUsageSupplement(deps, signal) {
                 return undefined;
             }
             catch (error) {
-                return { source: 'model-usage', reason: String(error) };
+                const reason = errorMessage(error);
+                usageDiagnostic(deps, 'error', 'model-usage', '模型用量请求失败', { endpoint: `${origin}${MODEL_USAGE_PATH}`, error: reason });
+                return { source: 'model-usage', reason };
             }
         })());
+    }
+    else if (origin === undefined || !planKey) {
+        usageDiagnostic(deps, 'warn', 'model-usage', '模型用量请求未发出', {
+            reason: origin === undefined ? 'baseURL 无法推导 origin' : '缺少账号 Coding Plan key',
+            baseURL: deps.bigmodelBaseURL ?? null,
+            origin: origin ?? null,
+            hasPlanApiKey: Boolean(planKey),
+        });
     }
     if (jwt && oauthAccessToken) {
         tasks.push((async () => {
@@ -446,7 +533,7 @@ export async function fetchUsageSupplement(deps, signal) {
             catch (error) {
                 // Official MCP quota is an optional data plane. Its failure must not
                 // downgrade or add a visible failure to the entitlement snapshot.
-                void error;
+                usageDiagnostic(deps, 'debug', 'mcp-usage', 'MCP 用量请求失败（可选数据）', { error: errorMessage(error) });
                 mcpQuota = undefined;
                 return undefined;
             }

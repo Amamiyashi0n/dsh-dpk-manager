@@ -1,7 +1,7 @@
 /* zcode-provider bundled entry: inlines vendored dsh-llm and schemastery for zero-peer-resolution import; boundary discipline lives in src and unbundled modules */
 
 // lib/index.unbundled.js
-import { existsSync as existsSync5, readFileSync as readFileSync7 } from "node:fs";
+import { existsSync as existsSync6, readFileSync as readFileSync7 } from "node:fs";
 import { randomUUID as randomUUID4 } from "node:crypto";
 import { arch as nodeArch, platform as nodePlatform, release as nodeRelease } from "node:os";
 import { join as join7 } from "node:path";
@@ -4978,8 +4978,8 @@ function printable(value) {
     return void 0;
   return trimmed;
 }
-function osCategory(platform) {
-  switch (platform.split("-")[0]) {
+function osCategory(platform2) {
+  switch (platform2.split("-")[0]) {
     case "darwin":
       return "macos";
     case "win32":
@@ -4992,7 +4992,7 @@ function buildSourceHeaders(profile) {
   const version2 = printable(profile.appVersion) ?? "unknown";
   const title = printable(profile.sourceTitle) ?? "electron";
   const origin = printable(profile.endpointOrigin) ?? ZCODE_ENDPOINT_ORIGIN;
-  const platform = printable(profile.platform);
+  const platform2 = printable(profile.platform);
   const release2 = printable(profile.releaseChannel);
   const osVersion = printable(profile.osVersion);
   const headers = {
@@ -5004,12 +5004,12 @@ function buildSourceHeaders(profile) {
     "X-Client-Timezone": printable(profile.clientTimezone) ?? "unknown",
     "X-ZCode-Agent": "glm"
   };
-  if (platform)
-    headers["X-Platform"] = platform;
+  if (platform2)
+    headers["X-Platform"] = platform2;
   if (release2)
     headers["X-Release-Channel"] = release2;
-  if (platform)
-    headers["X-Os-Category"] = osCategory(platform);
+  if (platform2)
+    headers["X-Os-Category"] = osCategory(platform2);
   if (osVersion)
     headers["X-Os-Version"] = osVersion;
   return headers;
@@ -5348,7 +5348,7 @@ function officialRuntimePrompt(providerId, modelId, context = {}) {
 // lib/credentials.js
 import { createDecipheriv as createDecipheriv2, createHash as createHash2 } from "node:crypto";
 import { readFileSync as readFileSync2 } from "node:fs";
-import { homedir as homedir2, userInfo } from "node:os";
+import { homedir as homedir2, platform, userInfo } from "node:os";
 
 // lib/storage.js
 import { homedir } from "node:os";
@@ -5368,11 +5368,36 @@ function defaultTelemetryStatePath(storageRoot) {
 
 // lib/credentials.js
 var ENCRYPTED_PREFIX = "enc:v1:";
-var FALLBACK_SEED = (home, user) => `zcode-credential-fallback:win32:${home}:${user}`;
+var FALLBACK_SEED = (home, user) => `zcode-credential-fallback:${platform()}:${home}:${user}`;
 var identityKey = (providerId) => `account-provider:${providerId}:identity`;
-var codingPlanApiKeyKey = (providerId, identity) => `account-provider:coding-plan:${providerId}:account:${identity}:api-key`;
+var codingPlanApiKeyKey = (providerId, identity) => `account-provider:coding-plan:${providerId}:account:${encodeURIComponent(identity)}:api-key`;
 var ZCODE_JWT_KEY = "zcodejwttoken";
 var ACTIVE_PROVIDER_KEY = "oauth:active_provider";
+function uniqueProvisionedCredential(store, providerId, read, log) {
+  const prefix = `account-provider:coding-plan:${providerId}:account:`;
+  const suffix = ":api-key";
+  const candidates = /* @__PURE__ */ new Map();
+  for (const name2 of Object.keys(store)) {
+    if (!name2.startsWith(prefix) || !name2.endsWith(suffix))
+      continue;
+    const encodedIdentity = name2.slice(prefix.length, -suffix.length);
+    if (encodedIdentity === "")
+      continue;
+    try {
+      decodeURIComponent(encodedIdentity);
+      const apiKey = read(name2);
+      if (apiKey !== "")
+        candidates.set(encodedIdentity, apiKey);
+    } catch {
+    }
+  }
+  if (candidates.size === 1)
+    return candidates.values().next().value;
+  if (candidates.size > 1) {
+    log?.(`zcode-provider: \u51ED\u8BC1\u89E3\u6790 ${providerId} identity=\u7F3A\u5931,provisioned-key \u5019\u9009\u4E0D\u552F\u4E00`);
+  }
+  return void 0;
+}
 function readCredentialStore(credentialsPath) {
   try {
     const parsed = JSON.parse(readFileSync2(credentialsPath, "utf8"));
@@ -5404,7 +5429,8 @@ function decryptStoreValue(value, key) {
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
 }
 function deriveCredentialKey(home, user) {
-  return createHash2("sha256").update(FALLBACK_SEED(home, user)).digest();
+  const secret = process.env.ZCODE_CREDENTIAL_SECRET?.trim() || FALLBACK_SEED(home, user);
+  return createHash2("sha256").update(secret).digest();
 }
 function defaultHome() {
   return process.env.USERPROFILE?.trim() || homedir2();
@@ -5467,14 +5493,25 @@ function resolvePlanCredential(input) {
       const provisioned = read(codingPlanApiKeyKey(input.providerId, identity));
       if (provisioned)
         return { apiKey: provisioned, source: "credential-store" };
+      input.log?.(`zcode-provider: \u51ED\u8BC1\u89E3\u6790 ${input.providerId} identity=\u547D\u4E2D,provisioned-key=\u7F3A\u5931\u6216\u89E3\u5BC6\u5931\u8D25`);
+    } else {
+      const recovered = uniqueProvisionedCredential(store, input.providerId, read, input.log);
+      if (recovered !== void 0) {
+        input.log?.(`zcode-provider: \u51ED\u8BC1\u89E3\u6790 ${input.providerId} identity=\u7F3A\u5931,\u6309\u552F\u4E00 provisioned-key \u6062\u590D`);
+        return { apiKey: recovered, source: "credential-store" };
+      }
+      input.log?.(`zcode-provider: \u51ED\u8BC1\u89E3\u6790 ${input.providerId} identity=\u7F3A\u5931\u6216\u89E3\u5BC6\u5931\u8D25`);
     }
   }
   if (input.planKind === "start-plan" || input.planKind === "off-peak") {
     const active = read(ACTIVE_PROVIDER_KEY);
     if (input.family !== void 0 && active === input.family) {
-      const jwt = read(ZCODE_JWT_KEY);
+      const jwt = read(ZCODE_JWT_KEY) || read("zcodeJwtToken");
       if (jwt)
         return { apiKey: jwt, source: "zcode-jwt" };
+      input.log?.(`zcode-provider: \u51ED\u8BC1\u89E3\u6790 ${input.providerId} active_provider=\u5339\u914D(${input.family}),jwt=\u7F3A\u5931\u6216\u89E3\u5BC6\u5931\u8D25`);
+    } else {
+      input.log?.(`zcode-provider: \u51ED\u8BC1\u89E3\u6790 ${input.providerId} active_provider=\u4E0D\u5339\u914D\u6216\u7F3A\u5931(\u671F\u671B ${input.family ?? "unknown"})`);
     }
   }
   if (fallback)
@@ -5483,14 +5520,14 @@ function resolvePlanCredential(input) {
 }
 
 // lib/native-account.js
-import { readFileSync as readFileSync3 } from "node:fs";
+import { existsSync as existsSync2, readFileSync as readFileSync3 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { join as join3 } from "node:path";
+import { dirname as dirname2, join as join3 } from "node:path";
 
 // lib/app-server-discovery.js
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { dirname, join as join2 } from "node:path";
+import { dirname, join as join2, win32 as win32Path } from "node:path";
 import { homedir as homedir3 } from "node:os";
 var CLI_RELATIVE = join2("resources", "glm", "zcode.cjs");
 var BUILTIN_RELATIVE = join2("resources", "config", "provider", "zcode-builtin.json");
@@ -5515,52 +5552,98 @@ function regValue(output, name2) {
     const match = /^\s*(.+?)\s+REG_(?:SZ|EXPAND_SZ)\s+(.+?)\s*$/u.exec(line);
     if (match === null)
       continue;
-    if (wanted === void 0 || match[1] === wanted || match[1].startsWith("(")) {
+    if (wanted === void 0 ? match[1].startsWith("(") : match[1] === wanted) {
       return match[2];
     }
   }
   return void 0;
 }
-function regQuery(args) {
+function runRegistryQuery(args) {
   const run = spawnSync("reg", [...args], { encoding: "utf8", windowsHide: true, timeout: 4e3 });
-  return run.status === 0 && run.stdout.length > 0 ? run.stdout : void 0;
+  return {
+    status: run.status,
+    stdout: String(run.stdout ?? ""),
+    stderr: String(run.stderr ?? "")
+  };
 }
-function windowsRegistryRoots() {
+function rootsFromAppPathsOutput(output) {
   const roots = [];
+  const exe = regValue(output, "(default)");
+  const dir = regValue(output, "Path");
+  if (exe !== void 0)
+    roots.push(dirname(exe));
+  if (dir !== void 0 && dir.trim() !== "")
+    roots.push(dir.replace(/[\\/]+$/u, ""));
+  return roots;
+}
+function executableFromUninstallString(value) {
+  const command = value?.trim() ?? "";
+  if (command === "")
+    return void 0;
+  if (command.startsWith('"')) {
+    const end = command.indexOf('"', 1);
+    if (end > 1)
+      return command.slice(1, end);
+  }
+  const exeEnd = command.search(/\.exe(?:\s|$)/iu);
+  if (exeEnd >= 0)
+    return command.slice(0, exeEnd + 4).trim();
+  return command.split(/\s+/u)[0] || void 0;
+}
+function installRootFromUninstallString(value) {
+  const executable = executableFromUninstallString(value);
+  if (executable === void 0)
+    return void 0;
+  const root = win32Path.dirname(executable);
+  return root === "." ? void 0 : root.replace(/[\\/]+$/u, "");
+}
+function rootFromUninstallOutput(output) {
+  const display = regValue(output, "DisplayName");
+  if (display === void 0 || !/^zcode(\s|$)/iu.test(display))
+    return void 0;
+  const location = regValue(output, "InstallLocation")?.trim();
+  if (location !== void 0 && location !== "")
+    return location.replace(/[\\/]+$/u, "");
+  return installRootFromUninstallString(regValue(output, "UninstallString"));
+}
+function windowsRegistryRoots(run = runRegistryQuery, log = () => {
+}) {
+  const roots = [];
+  const query = (args, label) => {
+    const result = run(args);
+    if (result.status !== 0) {
+      const detail = result.stderr.trim();
+      log(`zcode-provider: registry query failed (${label}),status=${String(result.status)}${detail ? `,error=${detail}` : ""}`);
+      return void 0;
+    }
+    return result.stdout.trim() === "" ? void 0 : result.stdout;
+  };
   const appPaths = [
     ["HKCU", "SOFTWARE", "Microsoft", "Windows", "CurrentVersion", "App Paths", "zcode.exe"],
     ["HKLM", "SOFTWARE", "Microsoft", "Windows", "CurrentVersion", "App Paths", "zcode.exe"]
   ];
   for (const [hive, ...path] of appPaths) {
-    const output = regQuery([hive, "query", path.join("\\")]);
+    const output = query(["query", `${hive}\\${path.join("\\")}`], `App Paths ${hive}`);
     if (output === void 0)
       continue;
-    const exe = regValue(output, "(default)");
-    const dir = regValue(output, "Path");
-    for (const candidate of exe !== void 0 ? [dirname(exe)] : [])
-      roots.push(candidate);
-    if (dir !== void 0)
-      roots.push(dir.replace(/[\\/]+$/u, ""));
+    roots.push(...rootsFromAppPathsOutput(output));
   }
   for (const hive of ["HKCU", "HKLM"]) {
     for (const view of ["SOFTWARE", "SOFTWARE\\WOW6432Node"]) {
       const key = `${hive}\\${view}\\Microsoft\\Windows\\CurrentVersion\\Uninstall`;
-      const listing = regQuery([hive, "query", key]);
+      const listing = query(["query", key], `Uninstall listing ${key}`);
       if (listing === void 0)
         continue;
       for (const sub of listing.split(/\r?\n/u)) {
         const keyMatch = /^HKEY_\w+\\(.+)$/u.exec(sub.trim());
         if (keyMatch === null)
           continue;
-        const output = regQuery([hive, "query", keyMatch[1]]);
+        const output = query(["query", `${hive}\\${keyMatch[1]}`], `Uninstall entry ${keyMatch[1]}`);
         if (output === void 0)
           continue;
-        const display = regValue(output, "DisplayName");
-        if (display === void 0 || !/^zcode(\s|$)/iu.test(display))
-          continue;
-        const location = regValue(output, "InstallLocation");
-        if (location !== void 0 && location !== "")
-          roots.push(location.replace(/[\\/]+$/u, ""));
+        const root = rootFromUninstallOutput(output);
+        if (root !== void 0)
+          roots.push(root);
       }
     }
   }
@@ -5621,14 +5704,38 @@ function discoverZcodeInstall(roots) {
 // lib/native-account.js
 var ACCOUNT_RULE = /^account:(bigmodel|zai)-(individual-coding-plan|team-coding-plan|start-plan)$/;
 function nativeStorageDir() {
-  return process.env.ZCODE_STORAGE_DIR?.trim() || join3(homedir4(), ".zcode", "v2");
+  const explicit = process.env.ZCODE_STORAGE_DIR?.trim();
+  if (explicit)
+    return explicit;
+  const dataBaseDir = process.env.ZCODE_DATA_BASE_DIR?.trim();
+  if (dataBaseDir)
+    return join3(dataBaseDir, ".zcode", "v2");
+  return join3(homedir4(), ".zcode", "v2");
 }
 function nativeCredentialPath() {
   return join3(nativeStorageDir(), "credentials.json");
 }
+function nativeTelemetryStatePath() {
+  return join3(nativeStorageDir(), "telemetry-state.json");
+}
 function discoveredBuiltinCatalogPath() {
+  const explicit = process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE?.trim();
+  if (explicit)
+    return explicit;
+  const cliPath = process.env.DSH_ZCODE_CLI_PATH?.trim();
+  if (cliPath)
+    return join3(dirname2(dirname2(cliPath)), "config", "provider", "zcode-builtin.json");
+  const repo = process.env.DSH_ZCODE_REPO?.trim();
+  if (repo)
+    return join3(repo, "re-zcode", "zcode-unpacked", "resources", "config", "provider", "zcode-builtin.json");
   return discoverZcodeInstall()?.builtinProviderConfigPath;
 }
+var FALLBACK_ENDPOINTS = [
+  { key: "builtin:bigmodel-coding-plan", family: "bigmodel", modes: ["individual-coding-plan", "team-coding-plan"], baseURL: "https://open.bigmodel.cn/api/anthropic" },
+  { key: "builtin:bigmodel-start-plan", family: "bigmodel", modes: ["start-plan"], baseURL: "https://zcode.z.ai/api/v1/zcode-plan/anthropic" },
+  { key: "builtin:zai-coding-plan", family: "zai", modes: ["individual-coding-plan", "team-coding-plan"], baseURL: "https://api.z.ai/api/anthropic" },
+  { key: "builtin:zai-start-plan", family: "zai", modes: ["start-plan"], baseURL: "https://zcode.z.ai/api/v1/zcode-plan/anthropic" }
+];
 function accountEndpointsFromCatalog(catalog) {
   const rules = catalog?.config?.providerConfigRules?.providerRules;
   if (!Array.isArray(rules))
@@ -5664,18 +5771,37 @@ function accountEndpointsFromCatalog(catalog) {
 }
 function nativeAccountProviders(options = {}) {
   const builtinPath = options.builtinPath?.trim() || discoveredBuiltinCatalogPath();
-  if (builtinPath === void 0 || builtinPath === "")
-    return {};
   let catalog;
-  try {
-    catalog = JSON.parse(readFileSync3(builtinPath, "utf8"));
-  } catch (_missingOrInvalid) {
-    options.log?.(`zcode-provider: \u5185\u7F6E\u76EE\u5F55\u4E0D\u53EF\u8BFB(${builtinPath}),\u8DF3\u8FC7\u672C\u673A\u8D26\u53F7\u8DEF\u7531\u63A8\u5BFC`);
-    return {};
+  let catalogEndpoints = [];
+  if (builtinPath === void 0 || builtinPath === "") {
+    options.log?.("zcode-provider: \u672A\u5B9A\u4F4D\u5230\u5B98\u65B9 zcode-builtin.json,\u4F7F\u7528\u5185\u7F6E\u7AEF\u70B9\u5019\u9009");
+  } else {
+    options.log?.(`zcode-provider: \u5C1D\u8BD5\u8BFB\u53D6\u5B98\u65B9\u5185\u7F6E\u76EE\u5F55(${builtinPath})`);
+    try {
+      catalog = JSON.parse(readFileSync3(builtinPath, "utf8"));
+      catalogEndpoints = accountEndpointsFromCatalog(catalog);
+      options.log?.(`zcode-provider: \u5B98\u65B9\u5185\u7F6E\u76EE\u5F55\u53EF\u8BFB,\u8BC6\u522B\u8D26\u53F7\u7AEF\u70B9 ${catalogEndpoints.length} \u4E2A`);
+    } catch (error) {
+      options.log?.(`zcode-provider: \u5B98\u65B9\u5185\u7F6E\u76EE\u5F55\u4E0D\u53EF\u8BFB(${builtinPath}),\u539F\u56E0=${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const endpoints = catalogEndpoints.length > 0 ? catalogEndpoints : FALLBACK_ENDPOINTS;
+  if (catalogEndpoints.length === 0) {
+    options.log?.(`zcode-provider: \u4F7F\u7528 ${endpoints.length} \u4E2A\u5B98\u65B9\u7AEF\u70B9\u5019\u9009,\u9010\u9879\u6267\u884C\u51ED\u8BC1\u95E8\u63A7`);
   }
   const credentialsPath = options.credentialsPath?.trim() || nativeCredentialPath();
+  const credentialStore = readCredentialStore(credentialsPath);
+  let credentialFileState = `\u5B58\u5728=${existsSync2(credentialsPath)},\u53EF\u8BFB\u952E\u6570=${Object.keys(credentialStore).length}`;
+  if (existsSync2(credentialsPath)) {
+    try {
+      JSON.parse(readFileSync3(credentialsPath, "utf8"));
+    } catch (error) {
+      credentialFileState += `,JSON=\u975E\u6CD5(${error instanceof Error ? error.message : String(error)})`;
+    }
+  }
+  options.log?.(`zcode-provider: \u5B98\u65B9\u51ED\u8BC1\u5E93\u8DEF\u5F84=${credentialsPath},${credentialFileState}`);
   const entries = {};
-  for (const endpoint of accountEndpointsFromCatalog(catalog)) {
+  for (const endpoint of endpoints) {
     const resolved = endpoint.modes.map((mode) => resolvePlanCredential({
       credentialsPath,
       providerId: `account:${endpoint.family}-${mode}`,
@@ -5685,10 +5811,14 @@ function nativeAccountProviders(options = {}) {
         options.log?.(message);
       }
     })).find((credential) => credential.apiKey !== "");
-    if (resolved === void 0)
+    if (resolved === void 0) {
+      options.log?.(`zcode-provider: \u7AEF\u70B9 ${endpoint.key} \u672A\u901A\u8FC7\u51ED\u8BC1\u95E8\u63A7`);
       continue;
+    }
     entries[endpoint.key] = { kind: "anthropic", options: { baseURL: endpoint.baseURL, apiKey: resolved.apiKey } };
+    options.log?.(`zcode-provider: \u7AEF\u70B9 ${endpoint.key} \u5DF2\u901A\u8FC7\u51ED\u8BC1\u95E8\u63A7,credential=${resolved.source}`);
   }
+  options.log?.(`zcode-provider: \u672C\u673A\u8D26\u53F7\u8DEF\u7531\u63A8\u5BFC\u5B8C\u6210,\u4EA7\u51FA ${Object.keys(entries).length} \u6761(${Object.keys(entries).join(", ") || "none"})`);
   return entries;
 }
 
@@ -6210,6 +6340,121 @@ function createCaptchaRemoteService(ctx, broker) {
 // lib/usage.js
 import { createHash as createHash3 } from "node:crypto";
 
+// lib/diagnostics.js
+var DIAGNOSTICS_REMOTE_NAMESPACE = "zcodeDiagnostics";
+var REMOTE_METHOD_DESCRIPTOR3 = "@deepseek-ai/dsh-typert-protocol/remote-methods";
+var MAX_ENTRIES = 200;
+var SENSITIVE_KEY = /authorization|api[-_]?key|access[-_]?token|refresh[-_]?token|jwt|secret|password|cookie|credential|private[-_]?key/i;
+var SAFE_CREDENTIAL_SOURCES = /* @__PURE__ */ new Set(["credential-store", "zcode-jwt", "config", "none"]);
+function sanitizeText(value) {
+  return value.replace(/Bearer\s+[^\s,;]+/gi, "Bearer [redacted]").replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, "[redacted-jwt]").replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, "$1[redacted]@").replace(/([?&](?:api[-_]?key|access[-_]?token|refresh[-_]?token|token|secret|password|authorization)=)[^&#\s]+/gi, "$1[redacted]").replace(/((?:api[-_]?key|access[-_]?token|refresh[-_]?token|secret|password|authorization)\s*[:=]\s*["']?)[^,;\s}"']+/gi, "$1[redacted]").slice(0, 1e3);
+}
+function sanitizeValue(key, value) {
+  if (/credential/i.test(key) && typeof value === "string" && SAFE_CREDENTIAL_SOURCES.has(value))
+    return value;
+  if (SENSITIVE_KEY.test(key))
+    return typeof value === "boolean" || value === null ? value : "[redacted]";
+  return typeof value === "string" ? sanitizeText(value) : value;
+}
+function sanitizeDetails(details) {
+  if (details === void 0)
+    return void 0;
+  const output = {};
+  for (const [key, value] of Object.entries(details))
+    output[key] = sanitizeValue(key, value);
+  return output;
+}
+function safeOrigin(value) {
+  if (value === void 0 || value.trim() === "")
+    return void 0;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return void 0;
+  }
+}
+var DiagnosticLog = class {
+  maxEntries;
+  entries = [];
+  nextId = 1;
+  context = {};
+  constructor(maxEntries = MAX_ENTRIES) {
+    this.maxEntries = maxEntries;
+  }
+  updateContext(values) {
+    for (const [key, value] of Object.entries(values))
+      this.context[key] = sanitizeValue(key, value);
+  }
+  record(event) {
+    const details = sanitizeDetails(event.details);
+    const entry = {
+      id: this.nextId++,
+      at: (/* @__PURE__ */ new Date()).toISOString(),
+      level: event.level,
+      phase: sanitizeText(event.phase),
+      message: sanitizeText(event.message),
+      ...details === void 0 ? {} : { details }
+    };
+    this.entries.push(entry);
+    if (this.entries.length > this.maxEntries)
+      this.entries.splice(0, this.entries.length - this.maxEntries);
+  }
+  snapshot(limit = this.maxEntries) {
+    const bounded = Number.isFinite(limit) ? Math.max(1, Math.min(this.maxEntries, Math.floor(limit))) : this.maxEntries;
+    return {
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      context: { ...this.context },
+      entries: this.entries.slice(-bounded).map((entry) => ({
+        ...entry,
+        ...entry.details === void 0 ? {} : { details: { ...entry.details } }
+      }))
+    };
+  }
+  clear() {
+    this.entries = [];
+  }
+};
+function markRemote2(prototype, methodName) {
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, REMOTE_METHOD_DESCRIPTOR3)?.value;
+  const marker = Object.freeze({ method: methodName, invocation: Object.freeze({ kind: "direct" }) });
+  Object.defineProperty(prototype, REMOTE_METHOD_DESCRIPTOR3, {
+    configurable: true,
+    value: Object.freeze({
+      version: 1,
+      methods: Object.freeze([...descriptor?.methods ?? [], marker])
+    })
+  });
+}
+function createDiagnosticsRemoteService(ctx, log) {
+  class ZcodeDiagnosticsRemoteService {
+    typertRemote;
+    constructor() {
+      this.typertRemote = void 0;
+    }
+    async snapshot(request, signal) {
+      signal?.throwIfAborted();
+      const snapshot3 = log.snapshot(request?.limit);
+      signal?.throwIfAborted();
+      return snapshot3;
+    }
+    async clear(signal) {
+      signal?.throwIfAborted();
+      log.clear();
+      return await this.snapshot(void 0, signal);
+    }
+  }
+  markRemote2(ZcodeDiagnosticsRemoteService.prototype, "snapshot");
+  markRemote2(ZcodeDiagnosticsRemoteService.prototype, "clear");
+  const service = new ZcodeDiagnosticsRemoteService();
+  service.typertRemote = Object.freeze({
+    service,
+    serviceKey: DIAGNOSTICS_REMOTE_NAMESPACE,
+    namespace: DIAGNOSTICS_REMOTE_NAMESPACE
+  });
+  ctx.provide(DIAGNOSTICS_REMOTE_NAMESPACE, service);
+  return service;
+}
+
 // lib/offpeak.js
 var OFF_PEAK_QUEUE_WAIT_CAP_MS = 5 * 6e4;
 
@@ -6660,9 +6905,19 @@ function bigmodelOriginFrom(baseURL) {
 }
 var UsageHttpError = class extends Error {
   status;
-  constructor(status) {
-    super(`HTTP ${status}`);
+  fields;
+  constructor(status, fields = {}) {
+    const parts = [`HTTP ${status}`];
+    if (fields.code !== void 0)
+      parts.push(`code=${fields.code}`);
+    const description = fields.msg ?? fields.message ?? fields.error ?? fields.detail;
+    if (description !== void 0 && description !== "")
+      parts.push(`msg=${description}`);
+    if (fields.request_id !== void 0 && fields.request_id !== "")
+      parts.push(`request_id=${fields.request_id}`);
+    super(parts.join(" "));
     this.status = status;
+    this.fields = fields;
   }
 };
 var UsageTimeoutError = class extends Error {
@@ -6694,9 +6949,35 @@ async function getJson(url, auth, deps, explicitHeaders, signal) {
         ...!isZcodeOrigin || deps.deviceMid === void 0 || deps.deviceMid.trim() === "" ? {} : { "x-device-mid": deps.deviceMid.trim() }
       }
     });
-    if (!response.ok)
-      throw new UsageHttpError(response.status);
-    return response.json();
+    const responseText = await response.text();
+    if (!response.ok) {
+      let fields = {};
+      try {
+        const body = JSON.parse(responseText);
+        if (typeof body === "object" && body !== null && !Array.isArray(body)) {
+          const record2 = body;
+          const code = typeof record2.code === "number" || typeof record2.code === "string" ? record2.code : void 0;
+          const textField = (value) => {
+            if (typeof value === "string")
+              return value.trim() || void 0;
+            if (typeof value === "number" || typeof value === "boolean")
+              return String(value);
+            return void 0;
+          };
+          fields = {
+            ...code === void 0 ? {} : { code },
+            ...textField(record2.msg) === void 0 ? {} : { msg: textField(record2.msg) },
+            ...textField(record2.message) === void 0 ? {} : { message: textField(record2.message) },
+            ...textField(record2.error) === void 0 ? {} : { error: textField(record2.error) },
+            ...textField(record2.detail) === void 0 ? {} : { detail: textField(record2.detail) },
+            ...textField(record2.request_id) === void 0 ? {} : { request_id: textField(record2.request_id) }
+          };
+        }
+      } catch (_notJson) {
+      }
+      throw new UsageHttpError(response.status, fields);
+    }
+    return JSON.parse(responseText);
   });
   let timer;
   const timeout = new Promise((_resolve, reject) => {
@@ -6793,6 +7074,12 @@ function unavailableSnapshot(input) {
     quota: null
   };
 }
+function errorMessage2(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+function usageDiagnostic(deps, level, phase, message, details) {
+  deps.diagnostics?.record({ level, phase, message, ...details === void 0 ? {} : { details } });
+}
 async function fetchEntitlementReport(deps, signal) {
   signal?.throwIfAborted();
   const generatedAt = Date.now();
@@ -6822,36 +7109,67 @@ async function fetchEntitlementReport(deps, signal) {
   const tasks = [];
   if (origin !== void 0 && planKey) {
     tasks.push((async () => {
+      const endpoint = `${origin}${QUOTA_PATH}`;
       try {
-        quota = normalizeQuota(await getJson(`${origin}${QUOTA_PATH}`, planKey, deps, void 0, signal));
+        quota = normalizeQuota(await getJson(endpoint, planKey, deps, void 0, signal));
         return void 0;
       } catch (error) {
-        return { source: "quota", reason: String(error) };
+        const reason = errorMessage2(error);
+        usageDiagnostic(deps, "error", "quota", "Coding Plan quota \u8BF7\u6C42\u5931\u8D25", { endpoint, error: reason });
+        return { source: "quota", reason };
       }
     })());
     tasks.push((async () => {
+      const endpoint = `${origin}${SUBSCRIPTION_PATH}`;
       try {
-        codingEntitlement = parseCodingPlanEntitlement(await getJson(`${origin}${SUBSCRIPTION_PATH}`, planKey, deps, void 0, signal));
+        codingEntitlement = parseCodingPlanEntitlement(await getJson(endpoint, planKey, deps, void 0, signal));
         return void 0;
       } catch (error) {
         subscriptionAuthFailed = error instanceof UsageHttpError && [401, 403].includes(error.status);
-        return { source: "subscription", reason: String(error) };
+        const reason = errorMessage2(error);
+        usageDiagnostic(deps, "error", "subscription", "Coding Plan subscription \u8BF7\u6C42\u5931\u8D25", { endpoint, error: reason, authFailed: subscriptionAuthFailed });
+        return { source: "subscription", reason };
       }
     })());
   } else {
-    failures.push({ source: "quota", reason: origin === void 0 ? "baseURL \u65E0\u6CD5\u63A8\u5BFC origin" : "\u7F3A\u5C11\u8D26\u53F7 Coding Plan key" });
+    const reason = origin === void 0 ? "baseURL \u65E0\u6CD5\u63A8\u5BFC origin" : "\u7F3A\u5C11\u8D26\u53F7 Coding Plan key";
+    usageDiagnostic(deps, "error", "route-discovery", "Coding Plan \u6743\u76CA\u8BF7\u6C42\u672A\u53D1\u51FA", {
+      reason,
+      baseURL: deps.bigmodelBaseURL ?? null,
+      origin: origin ?? null,
+      hasPlanApiKey: Boolean(planKey),
+      codingProviderId: deps.codingProviderId ?? null
+    });
+    failures.push({ source: "quota", reason });
   }
   if (jwt) {
     tasks.push((async () => {
+      const endpoint = `${deps.endpointOrigin}${START_PLAN_BALANCE_PATH}?app_version=${encodeURIComponent(deps.appVersion)}`;
       try {
-        const url = `${deps.endpointOrigin}${START_PLAN_BALANCE_PATH}?app_version=${encodeURIComponent(deps.appVersion)}`;
-        startResolution = resolveStartPlanBalance(await getJson(url, jwt, deps, void 0, signal), startProvider, generatedAt);
+        startResolution = resolveStartPlanBalance(await getJson(endpoint, jwt, deps, void 0, signal), startProvider, generatedAt);
         return void 0;
       } catch (error) {
         startAuthFailed = error instanceof UsageHttpError && [401, 403].includes(error.status);
-        return { source: "start-plan", reason: String(error) };
+        const reason = errorMessage2(error);
+        usageDiagnostic(deps, "error", "start-plan", "Start Plan balance \u8BF7\u6C42\u5931\u8D25", {
+          endpoint,
+          error: reason,
+          authFailed: startAuthFailed,
+          hasDeviceMid: deps.deviceMid !== void 0 && deps.deviceMid.trim() !== ""
+        });
+        return { source: "start-plan", reason };
       }
     })());
+  } else {
+    usageDiagnostic(deps, "warn", "start-plan", "Start Plan \u672A\u627E\u5230\u767B\u5F55\u51ED\u636E", {
+      currentProvider: current,
+      activeProvider: deps.activeProvider ?? null,
+      accountFamily: family,
+      startProviderId: deps.startProviderId ?? null,
+      hasJwt: Boolean(jwt),
+      hasOAuthAccessToken: Boolean(oauthAccessToken),
+      endpointOrigin: safeOrigin(deps.endpointOrigin) ?? "[invalid]"
+    });
   }
   const taskFailures = await Promise.all(tasks);
   signal?.throwIfAborted();
@@ -6920,9 +7238,18 @@ async function fetchUsageSupplement(deps, signal) {
         modelUsage = parseModelUsage(await getJson(url, planKey, deps, void 0, signal), range);
         return void 0;
       } catch (error) {
-        return { source: "model-usage", reason: String(error) };
+        const reason = errorMessage2(error);
+        usageDiagnostic(deps, "error", "model-usage", "\u6A21\u578B\u7528\u91CF\u8BF7\u6C42\u5931\u8D25", { endpoint: `${origin}${MODEL_USAGE_PATH}`, error: reason });
+        return { source: "model-usage", reason };
       }
     })());
+  } else if (origin === void 0 || !planKey) {
+    usageDiagnostic(deps, "warn", "model-usage", "\u6A21\u578B\u7528\u91CF\u8BF7\u6C42\u672A\u53D1\u51FA", {
+      reason: origin === void 0 ? "baseURL \u65E0\u6CD5\u63A8\u5BFC origin" : "\u7F3A\u5C11\u8D26\u53F7 Coding Plan key",
+      baseURL: deps.bigmodelBaseURL ?? null,
+      origin: origin ?? null,
+      hasPlanApiKey: Boolean(planKey)
+    });
   }
   if (jwt && oauthAccessToken) {
     tasks.push((async () => {
@@ -6945,7 +7272,7 @@ async function fetchUsageSupplement(deps, signal) {
         mcpQuota = buildMcpQuotaSnapshot(await getJson(`${deps.endpointOrigin}${MCP_USAGE_PATH}`, jwt, deps, headers, signal), scope) ?? void 0;
         return void 0;
       } catch (error) {
-        void error;
+        usageDiagnostic(deps, "debug", "mcp-usage", "MCP \u7528\u91CF\u8BF7\u6C42\u5931\u8D25\uFF08\u53EF\u9009\u6570\u636E\uFF09", { error: errorMessage2(error) });
         mcpQuota = void 0;
         return void 0;
       }
@@ -7077,16 +7404,16 @@ function renderUsageReport(report) {
 
 // lib/usage-remote.js
 var USAGE_REMOTE_NAMESPACE = "zcodeEntitlements";
-var REMOTE_METHOD_DESCRIPTOR3 = "@deepseek-ai/dsh-typert-protocol/remote-methods";
+var REMOTE_METHOD_DESCRIPTOR4 = "@deepseek-ai/dsh-typert-protocol/remote-methods";
 var TRACE_REMOTE = process.env.DSH_ZCODE_TRACE === "1";
 function traceRemote(method, phase, startedAt) {
   if (TRACE_REMOTE)
     console.error(`[zcode-provider:trace] ${method} ${phase} ${Date.now() - startedAt}ms`);
 }
-function markRemote2(prototype, methodName) {
-  const descriptor = Object.getOwnPropertyDescriptor(prototype, REMOTE_METHOD_DESCRIPTOR3)?.value;
+function markRemote3(prototype, methodName) {
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, REMOTE_METHOD_DESCRIPTOR4)?.value;
   const marker = Object.freeze({ method: methodName, invocation: Object.freeze({ kind: "direct" }) });
-  Object.defineProperty(prototype, REMOTE_METHOD_DESCRIPTOR3, {
+  Object.defineProperty(prototype, REMOTE_METHOD_DESCRIPTOR4, {
     configurable: true,
     value: Object.freeze({
       version: 1,
@@ -7130,8 +7457,8 @@ function createUsageRemoteService(ctx, collectEntitlements, collectSupplement, c
       };
     }
   }
-  markRemote2(ZcodeEntitlementsRemoteService.prototype, "snapshot");
-  markRemote2(ZcodeEntitlementsRemoteService.prototype, "usage");
+  markRemote3(ZcodeEntitlementsRemoteService.prototype, "snapshot");
+  markRemote3(ZcodeEntitlementsRemoteService.prototype, "usage");
   const service = new ZcodeEntitlementsRemoteService();
   service.typertRemote = Object.freeze({
     service,
@@ -7143,8 +7470,8 @@ function createUsageRemoteService(ctx, collectEntitlements, collectSupplement, c
 }
 
 // lib/prompt-storage.js
-import { existsSync as existsSync2, mkdirSync, readFileSync as readFileSync4, writeFileSync } from "node:fs";
-import { dirname as dirname2, join as join4 } from "node:path";
+import { existsSync as existsSync3, mkdirSync, readFileSync as readFileSync4, writeFileSync } from "node:fs";
+import { dirname as dirname3, join as join4 } from "node:path";
 function defaultPromptOverridesPath(storageRoot) {
   return join4(storageRoot?.trim() || defaultStorageRoot(), "config", "prompt-overrides.json");
 }
@@ -7184,7 +7511,7 @@ function normalize(value) {
   return result;
 }
 function readPromptOverrides(path) {
-  if (!existsSync2(path))
+  if (!existsSync3(path))
     return {};
   try {
     return normalize(JSON.parse(readFileSync4(path, "utf8")));
@@ -7193,7 +7520,7 @@ function readPromptOverrides(path) {
   }
 }
 function writePromptOverrides(path, value) {
-  mkdirSync(dirname2(path), { recursive: true });
+  mkdirSync(dirname3(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(normalize(value), null, 2)}
 `, { encoding: "utf8", mode: 384 });
 }
@@ -7205,11 +7532,11 @@ function hasPromptOverrides(value) {
 
 // lib/prompt-remote.js
 var PROMPT_REMOTE_NAMESPACE = "zcodePrompts";
-var REMOTE_METHOD_DESCRIPTOR4 = "@deepseek-ai/dsh-typert-protocol/remote-methods";
-function markRemote3(prototype, methodName) {
-  const descriptor = Object.getOwnPropertyDescriptor(prototype, REMOTE_METHOD_DESCRIPTOR4)?.value;
+var REMOTE_METHOD_DESCRIPTOR5 = "@deepseek-ai/dsh-typert-protocol/remote-methods";
+function markRemote4(prototype, methodName) {
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, REMOTE_METHOD_DESCRIPTOR5)?.value;
   const marker = Object.freeze({ method: methodName, invocation: Object.freeze({ kind: "direct" }) });
-  Object.defineProperty(prototype, REMOTE_METHOD_DESCRIPTOR4, {
+  Object.defineProperty(prototype, REMOTE_METHOD_DESCRIPTOR5, {
     configurable: true,
     value: Object.freeze({
       version: 1,
@@ -7244,8 +7571,8 @@ function createPromptRemoteService(ctx, store) {
       return await this.snapshot(signal);
     }
   }
-  markRemote3(ZcodePromptRemoteService.prototype, "snapshot");
-  markRemote3(ZcodePromptRemoteService.prototype, "mutate");
+  markRemote4(ZcodePromptRemoteService.prototype, "snapshot");
+  markRemote4(ZcodePromptRemoteService.prototype, "mutate");
   const service = new ZcodePromptRemoteService();
   service.typertRemote = Object.freeze({
     service,
@@ -7257,12 +7584,15 @@ function createPromptRemoteService(ctx, store) {
 }
 
 // lib/openzcode-app-server.js
-import { spawn } from "node:child_process";
+import { spawn, spawnSync as spawnSync2 } from "node:child_process";
 import { createHash as createHash4, randomUUID as randomUUID3 } from "node:crypto";
-import { existsSync as existsSync3, mkdtempSync, readFileSync as readFileSync5, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
+import { existsSync as existsSync4, mkdtempSync, readFileSync as readFileSync5, rmSync, writeFileSync as writeFileSync2 } from "node:fs";
 import { homedir as homedir5, tmpdir } from "node:os";
-import { dirname as dirname3, join as join5, resolve as resolve3 } from "node:path";
-var DEFAULT_NODE_PATH = process.env.DSH_NODE_PATH?.trim() || "node";
+import { dirname as dirname4, join as join5, resolve as resolve3 } from "node:path";
+function defaultNodePath() {
+  return process.env.DSH_NODE_PATH?.trim() || (process.versions.electron !== void 0 ? process.execPath : "node");
+}
+var DEFAULT_NODE_PATH = defaultNodePath();
 var DISCOVERED_INSTALL = discoverZcodeInstall();
 var DEFAULT_CLI_PATH = process.env.DSH_ZCODE_CLI_PATH?.trim() || DISCOVERED_INSTALL?.cliPath || "";
 var DEFAULT_STORAGE_DIR = process.env.ZCODE_STORAGE_DIR?.trim() || "";
@@ -7638,7 +7968,7 @@ var OpenZCodeAppServerTransport = class {
     this.accountConfigRevision = void 0;
     if (this.generatedProviderConfigPath) {
       try {
-        rmSync(dirname3(this.generatedProviderConfigPath), { recursive: true, force: true });
+        rmSync(dirname4(this.generatedProviderConfigPath), { recursive: true, force: true });
       } catch {
       }
       this.generatedProviderConfigPath = void 0;
@@ -7782,13 +8112,21 @@ var OpenZCodeAppServerTransport = class {
       return await this.startPromise;
     const nodePath = this.config.nodePath?.trim() || DEFAULT_NODE_PATH;
     const cliPath = this.config.cliPath?.trim() || DEFAULT_CLI_PATH;
+    this.log(`openzcode-app-server launch: nodePath=${nodePath},cliPath=${cliPath},electronNode=${process.versions.electron !== void 0}`);
     if (!cliPath) {
       throw new LlmError("app-server cliPath is not configured and no ZCode install was found (searched the registry App Paths, PATH, installed-programs entries, and the usual install directories); install ZCode on this machine, or set appServer.cliPath", "CONFIGURATION");
     }
-    if (nodePath !== "node" && !existsSync3(nodePath)) {
+    const isElectronNode = process.versions.electron !== void 0 && resolve3(nodePath).toLowerCase() === resolve3(process.execPath).toLowerCase();
+    const isBareNode = nodePath === "node" || nodePath === "node.exe";
+    if (isBareNode) {
+      const probe = spawnSync2(nodePath, ["--version"], { encoding: "utf8", windowsHide: true, timeout: 4e3 });
+      if (probe.error !== void 0 || probe.status !== 0) {
+        throw new LlmError(`app-server nodePath is not executable: ${nodePath}; set appServer.nodePath to a Node executable` + (probe.error === void 0 ? "" : ` (${probe.error.message})`), "CONFIGURATION");
+      }
+    } else if (!existsSync4(nodePath)) {
       throw new LlmError(`app-server nodePath does not exist: ${nodePath}`, "CONFIGURATION");
     }
-    if (!existsSync3(cliPath))
+    if (!existsSync4(cliPath))
       throw new LlmError(`app-server cliPath does not exist: ${cliPath}`, "CONFIGURATION");
     this.startPromise = new Promise((resolve4, reject) => {
       const env = {
@@ -7797,13 +8135,14 @@ var OpenZCodeAppServerTransport = class {
         ...dataBaseDirFromStorageDir(this.config.storageDir) ? {
           ZCODE_DATA_BASE_DIR: dataBaseDirFromStorageDir(this.config.storageDir)
         } : {},
-        ...this.config.builtinProviderConfigPath?.trim() ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: this.config.builtinProviderConfigPath.trim() } : {}
+        ...this.config.builtinProviderConfigPath?.trim() ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: this.config.builtinProviderConfigPath.trim() } : {},
+        ...isElectronNode ? { ELECTRON_RUN_AS_NODE: "1" } : {}
       };
       const personalProviderConfigPath = this.config.personalProviderConfigPath?.trim() || this.generatedProviderConfigPath || (this.config.storageDir?.trim() ? join5(this.config.storageDir.trim(), "provider_config.json") : "");
       if (personalProviderConfigPath) {
         env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE = personalProviderConfigPath;
       }
-      const toolchainBin = dirname3(nodePath);
+      const toolchainBin = dirname4(nodePath);
       const toolchainRoot = toolchainBin.replace(/[\\/]\w+64[\\/]bin$/i, "");
       const pathParts = [
         toolchainBin,
@@ -8047,9 +8386,9 @@ function defaultAppServerPaths() {
   const discovered = discoverZcodeInstall();
   const repo = process.env.DSH_ZCODE_REPO?.trim() || "";
   const zcodeRoot = repo ? join5(repo, "re-zcode", "zcode-unpacked", "resources") : "";
-  const storageDir = process.env.ZCODE_STORAGE_DIR?.trim() || join5(homedir5(), ".zcode", "v2");
+  const storageDir = process.env.ZCODE_STORAGE_DIR?.trim() || (process.env.ZCODE_DATA_BASE_DIR?.trim() ? join5(process.env.ZCODE_DATA_BASE_DIR.trim(), ".zcode", "v2") : join5(homedir5(), ".zcode", "v2"));
   return {
-    nodePath: process.env.DSH_NODE_PATH?.trim() || "node",
+    nodePath: defaultNodePath(),
     cliPath: process.env.DSH_ZCODE_CLI_PATH?.trim() || discovered?.cliPath || (zcodeRoot ? join5(zcodeRoot, "glm", "zcode.cjs") : ""),
     storageDir,
     builtinProviderConfigPath: process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE?.trim() || discovered?.builtinProviderConfigPath || (zcodeRoot ? join5(zcodeRoot, "config", "provider", "zcode-builtin.json") : ""),
@@ -8058,8 +8397,8 @@ function defaultAppServerPaths() {
 }
 
 // lib/auth-backend.js
-import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync6, writeFileSync as writeFileSync3 } from "node:fs";
-import { dirname as dirname4, join as join6 } from "node:path";
+import { existsSync as existsSync5, mkdirSync as mkdirSync2, readFileSync as readFileSync6, writeFileSync as writeFileSync3 } from "node:fs";
+import { dirname as dirname5, join as join6 } from "node:path";
 var AUTH_BACKEND_REMOTE_NAMESPACE = "zcodeAuthBackend";
 function defaultAuthBackendPath(storageRoot) {
   return join6(storageRoot?.trim() || defaultStorageRoot(), "state", "auth-backend.json");
@@ -8068,7 +8407,7 @@ function normalizeAuthBackend(value) {
   return value === "closezcode-app-server" ? "closezcode-app-server" : "openzcode-app-server";
 }
 function readAuthBackend(path) {
-  if (!existsSync4(path))
+  if (!existsSync5(path))
     return "openzcode-app-server";
   try {
     const parsed = JSON.parse(readFileSync6(path, "utf8"));
@@ -8078,18 +8417,18 @@ function readAuthBackend(path) {
   }
 }
 function writeAuthBackend(path, backend) {
-  mkdirSync2(dirname4(path), { recursive: true });
+  mkdirSync2(dirname5(path), { recursive: true });
   writeFileSync3(path, `${JSON.stringify({ backend: normalizeAuthBackend(backend) }, null, 2)}
 `, {
     encoding: "utf8",
     mode: 384
   });
 }
-var REMOTE_METHOD_DESCRIPTOR5 = "@deepseek-ai/dsh-typert-protocol/remote-methods";
-function markRemote4(prototype, methodName) {
-  const descriptor = Object.getOwnPropertyDescriptor(prototype, REMOTE_METHOD_DESCRIPTOR5)?.value;
+var REMOTE_METHOD_DESCRIPTOR6 = "@deepseek-ai/dsh-typert-protocol/remote-methods";
+function markRemote5(prototype, methodName) {
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, REMOTE_METHOD_DESCRIPTOR6)?.value;
   const marker = Object.freeze({ method: methodName, invocation: Object.freeze({ kind: "direct" }) });
-  Object.defineProperty(prototype, REMOTE_METHOD_DESCRIPTOR5, {
+  Object.defineProperty(prototype, REMOTE_METHOD_DESCRIPTOR6, {
     configurable: true,
     value: Object.freeze({
       version: 1,
@@ -8119,8 +8458,8 @@ function createAuthBackendRemoteService(ctx, store) {
       return await this.snapshot(signal);
     }
   }
-  markRemote4(ZcodeAuthBackendRemoteService.prototype, "snapshot");
-  markRemote4(ZcodeAuthBackendRemoteService.prototype, "mutate");
+  markRemote5(ZcodeAuthBackendRemoteService.prototype, "snapshot");
+  markRemote5(ZcodeAuthBackendRemoteService.prototype, "mutate");
   const service = new ZcodeAuthBackendRemoteService();
   service.typertRemote = Object.freeze({
     service,
@@ -8215,6 +8554,9 @@ function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, nat
       throw new Error(`zcode-provider: \u63D2\u4EF6 provider \u914D\u7F6E\u4E0D\u662F\u5408\u6CD5 JSON(${providerConfigPath})\u2014\u2014${String(error)}\u3002`);
     }
     providerEntries = Object.entries(zc.provider ?? {});
+    log?.(`zcode-provider: \u8BFB\u53D6\u63D2\u4EF6 provider \u914D\u7F6E(${providerConfigPath}),\u6761\u76EE\u6570=${providerEntries.length}`);
+  } else {
+    log?.(`zcode-provider: \u63D2\u4EF6 provider \u914D\u7F6E\u4E0D\u5B58\u5728(${providerConfigPath}),\u542F\u52A8\u5B98\u65B9\u672C\u673A\u8D26\u53F7\u56DE\u9000`);
   }
   if (configAbsent || providerEntries.length === 0) {
     const derived = nativeAccountProviders({
@@ -8235,11 +8577,15 @@ function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, nat
   }
   const routes = [];
   for (const [pid, pc] of providerEntries) {
-    if (pc.enabled === false && !includeDisabled)
+    if (pc.enabled === false && !includeDisabled) {
+      log?.(`zcode-provider: \u8DF3\u8FC7 provider ${pid},\u539F\u56E0=disabled`);
       continue;
+    }
     const o = pc.options ?? {};
-    if (!o.baseURL || !o.apiKey)
+    if (!o.baseURL || !o.apiKey) {
+      log?.(`zcode-provider: \u8DF3\u8FC7 provider ${pid},\u539F\u56E0=${!o.baseURL ? "baseURL \u7F3A\u5931" : "apiKey \u7F3A\u5931"}`);
       continue;
+    }
     const kind = pc.kind ?? "anthropic";
     const base = o.baseURL.replace(/\/+$/, "");
     let models = [];
@@ -8266,8 +8612,10 @@ function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, nat
         defaultEffort: "max"
       }));
     }
-    if (!models.length)
+    if (!models.length) {
+      log?.(`zcode-provider: \u8DF3\u8FC7 provider ${pid},\u539F\u56E0=\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A`);
       continue;
+    }
     const family = /bigmodel/i.test(pid) ? "bigmodel" : /zai/i.test(pid) ? "zai" : void 0;
     const plan = /start-plan/i.test(pid) ? "Start Plan" : /team-coding-plan/i.test(pid) ? "Team Plan" : /off-peak/i.test(pid) ? "Off-Peak" : /coding-plan/i.test(pid) ? "Coding Plan" : void 0;
     let display = pc.name ?? pid;
@@ -8325,6 +8673,7 @@ function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, nat
         twin.models.push(m);
     }
   }
+  log?.(`zcode-provider: \u8DEF\u7531\u63D0\u53D6\u5B8C\u6210,\u53EF\u7528\u8DEF\u7531\u6570=${deduped.length}`);
   return deduped;
 }
 function blockText(content) {
@@ -8640,6 +8989,16 @@ function modelLabel(conn, id) {
     return `${id} \xB7 Coding Plan`;
   return id;
 }
+function isAppServerTransportUnavailable(error) {
+  const candidate = error;
+  const code = candidate?.code;
+  const message = String(candidate?.message ?? error);
+  if (code === "CONFIGURATION" || code === "STREAM_CLOSED")
+    return true;
+  if (code !== "SERVER")
+    return false;
+  return /failed to start|app-server exited \(|transport disposed|stdin (?:is closed|write failed)|spawn .*ENOENT/iu.test(message);
+}
 var ZcodeAdapter = class extends LlmAdapter {
   getConn;
   wire;
@@ -8721,10 +9080,18 @@ var ZcodeAdapter = class extends LlmAdapter {
     const mode = conn.access?.mode;
     const engineDelegated = mode === "start-plan" || mode === "off-peak";
     if (engineDelegated && this.wire?.authBackend?.() === "openzcode-app-server" && this.wire?.appServer !== void 0 && conn.family !== void 0 && !hasCustomPromptLayers) {
-      for await (const chunk of this.wire.appServer.generate(options, conn, this.wire.workspacePath?.(options.sessionId))) {
-        yield chunk;
+      let emitted = false;
+      try {
+        for await (const chunk of this.wire.appServer.generate(options, conn, this.wire.workspacePath?.(options.sessionId))) {
+          emitted = true;
+          yield chunk;
+        }
+        return;
+      } catch (error) {
+        if (emitted || !isAppServerTransportUnavailable(error))
+          throw error;
+        this.wire.log?.(`zcode-provider: app-server \u4E0D\u53EF\u7528(${String(error)});\u672C\u6B21\u6539\u8D70\u76F4\u8FDE wire`);
       }
-      return;
     }
     if (hasCustomPromptLayers && this.wire?.authBackend?.() === "openzcode-app-server" && this.wire?.appServer !== void 0 && conn.family !== void 0) {
       this.wire.log?.("zcode-provider: custom system prompt enabled; bypassing openzcode-app-server for this request");
@@ -8996,6 +9363,9 @@ async function* translateZcodeEvents(events) {
   }
   throw new LlmError("zcode stream ended before message_stop", "STREAM_CLOSED");
 }
+function diagnosticRouteId(route) {
+  return route?.id ?? route?.route ?? null;
+}
 function readActiveProvider(config) {
   const value = readCredentialValue(config.credentialsPath ?? defaultCredentialsPath(), ACTIVE_PROVIDER_KEY, {
     fallbackPath: config.nativeCredentialsPath ?? nativeCredentialPath(),
@@ -9112,23 +9482,75 @@ function readField(value, fallback) {
 }
 function apply(ctx, config = {}) {
   const ns = ctx.fiber?.entry?.options.id ?? name;
+  const diagnostics = new DiagnosticLog();
   const log = (message) => {
     ctx.logger.debug(message);
+    diagnostics.record({ level: "debug", phase: "route-discovery", message });
+  };
+  const logInfo = (phase, message) => {
+    ctx.logger.info(message);
+    diagnostics.record({ level: "info", phase, message });
+  };
+  const logWarn = (phase, message) => {
+    ctx.logger.warn(message);
+    diagnostics.record({ level: "warn", phase, message });
   };
   const telemetryStatePath = config.telemetryStatePath ?? defaultTelemetryStatePath();
+  const officialTelemetryStatePath = nativeTelemetryStatePath();
+  const pluginDeviceMid = readDeviceMid(telemetryStatePath);
+  const officialDeviceMid = readDeviceMid(officialTelemetryStatePath);
+  const deviceMid = pluginDeviceMid ?? officialDeviceMid;
   const credentialsPath = config.credentialsPath ?? defaultCredentialsPath();
   const promptOverridesPath = config.promptOverridesPath ?? defaultPromptOverridesPath();
   const authBackendPath = config.authBackendPath ?? defaultAuthBackendPath();
+  diagnostics.updateContext({
+    providerConfigPath: config.providerConfigPath ?? DEFAULT_CONFIG_PATH,
+    credentialsPath,
+    nativeCredentialsPath: config.nativeCredentialsPath ?? nativeCredentialPath(),
+    nativeBuiltinCatalogPath: config.nativeBuiltinCatalogPath ?? discoveredBuiltinCatalogPath() ?? null,
+    officialStorageDir: process.env.ZCODE_STORAGE_DIR?.trim() || (process.env.ZCODE_DATA_BASE_DIR?.trim() ? `${process.env.ZCODE_DATA_BASE_DIR.trim()}/.zcode/v2` : `${process.env.USERPROFILE?.trim() || process.env.HOME?.trim() || ""}/.zcode/v2`),
+    telemetryStatePath,
+    officialTelemetryStatePath,
+    pluginDeviceMidPresent: pluginDeviceMid !== void 0,
+    officialDeviceMidPresent: officialDeviceMid !== void 0,
+    deviceMidPresent: deviceMid !== void 0,
+    deviceMidSource: pluginDeviceMid !== void 0 ? "plugin" : officialDeviceMid !== void 0 ? "official" : "none",
+    promptOverridesPath,
+    authBackendPath,
+    endpointOrigin: safeOrigin(config.endpointOrigin ?? ZCODE_ENDPOINT_ORIGIN) ?? "[invalid]",
+    appVersion: config.appVersion ?? ZCODE_CLIENT_VERSION,
+    platform: `${nodePlatform()}-${nodeArch()}`
+  });
+  diagnostics.record({ level: "info", phase: "startup", message: "zcode-provider \u5F00\u59CB\u6FC0\u6D3B" });
+  diagnostics.record({
+    level: "debug",
+    phase: "startup",
+    message: "\u8BCA\u65AD\u80FD\u529B\u5DF2\u542F\u7528",
+    details: {
+      nativeCredentialSecretConfigured: Boolean(process.env.ZCODE_CREDENTIAL_SECRET?.trim()),
+      dataBaseDirConfigured: Boolean(process.env.ZCODE_DATA_BASE_DIR?.trim()),
+      storageDirConfigured: Boolean(process.env.ZCODE_STORAGE_DIR?.trim()),
+      pluginDeviceMidPresent: pluginDeviceMid !== void 0,
+      officialDeviceMidPresent: officialDeviceMid !== void 0,
+      deviceMidPresent: deviceMid !== void 0,
+      deviceMidSource: pluginDeviceMid !== void 0 ? "plugin" : officialDeviceMid !== void 0 ? "official" : "none"
+    }
+  });
   let authBackend = normalizeAuthBackend(config.authBackend ?? readAuthBackend(authBackendPath));
   const legacyPromptOverrides = readField(config.promptOverrides, {});
   let promptOverrides = readPromptOverrides(promptOverridesPath);
+  const scheduleAfterHmr = (operation) => {
+    const hmr = ctx.get("hmr");
+    const queued = typeof hmr?.runAfterCurrent === "function" ? hmr.runAfterCurrent(operation) : operation();
+    return queued.then(() => void 0);
+  };
   if (!hasPromptOverrides(promptOverrides) && hasPromptOverrides(legacyPromptOverrides)) {
     promptOverrides = { ...legacyPromptOverrides };
     writePromptOverrides(promptOverridesPath, promptOverrides);
     const settings = ctx.get("settings");
     if (settings !== void 0) {
-      void Promise.resolve(settings.mutate(ns, [{ op: "unset", path: ["promptOverrides"] }])).catch((error) => {
-        ctx.logger.warn(`zcode-provider: \u6E05\u7406\u65E7\u63D0\u793A\u8BCD\u914D\u7F6E\u5931\u8D25: ${String(error)}`);
+      void scheduleAfterHmr(() => settings.mutate(ns, [{ op: "unset", path: ["promptOverrides"] }])).catch((error) => {
+        logWarn("storage", `zcode-provider: \u6E05\u7406\u65E7\u63D0\u793A\u8BCD\u914D\u7F6E\u5931\u8D25: ${String(error)}`);
       });
     }
   }
@@ -9160,14 +9582,14 @@ function apply(ctx, config = {}) {
         ...changed.map((key) => ({ op: "set", path: ["routes", key], value: routes[key] })),
         ...removedOpenAiRoutes.map((key) => ({ op: "unset", path: ["routes", key] }))
       ];
-      void Promise.resolve(settings.mutate(ns, ops)).then(() => {
-        ctx.logger.info(`zcode-provider: \u5DF2\u540C\u6B65 ${changed.length} \u6761 Anthropic \u8DEF\u7531,\u79FB\u9664 ${removedOpenAiRoutes.length} \u6761 OpenAI \u8DEF\u7531`);
+      void scheduleAfterHmr(() => settings.mutate(ns, ops)).then(() => {
+        logInfo("route-sync", `zcode-provider: \u5DF2\u540C\u6B65 ${changed.length} \u6761 Anthropic \u8DEF\u7531,\u79FB\u9664 ${removedOpenAiRoutes.length} \u6761 OpenAI \u8DEF\u7531`);
       }).catch((error) => {
-        ctx.logger.warn(`zcode-provider: \u540C\u6B65\u8DEF\u7531\u5931\u8D25: ${String(error)}`);
+        logWarn("route-sync", `zcode-provider: \u540C\u6B65\u8DEF\u7531\u5931\u8D25: ${String(error)}`);
       });
     }
   }
-  ctx.logger.info(`zcode-provider: \u5DF2\u63A5\u5165 ${Object.keys(routes).length} \u6761 zcode \u6A21\u578B\u8DEF\u7531: ${Object.entries(routes).map(([key, r]) => `${r.id ?? key}(${r.kind ?? "anthropic"}:${(r.models ?? []).map((m) => m.id).join("/")})`).join(", ")}`);
+  logInfo("startup", `zcode-provider: \u5DF2\u63A5\u5165 ${Object.keys(routes).length} \u6761 zcode \u6A21\u578B\u8DEF\u7531: ${Object.entries(routes).map(([key, r]) => `${r.id ?? key}(${r.kind ?? "anthropic"}:${(r.models ?? []).map((m) => m.id).join("/")})`).join(", ")}`);
   const profileOf = () => {
     const appVersion = config.appVersion ?? ZCODE_CLIENT_VERSION;
     return {
@@ -9179,13 +9601,13 @@ function apply(ctx, config = {}) {
       osVersion: nodeRelease(),
       clientLanguage: Intl.DateTimeFormat().resolvedOptions().locale,
       clientTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      deviceMid: readDeviceMid(telemetryStatePath)
+      deviceMid
     };
   };
   const signer = config.signingEnabled ?? true ? new ClientRequestSigner({ log }) : void 0;
   const appServer = config.appServer?.enabled === true ? new OpenZCodeAppServerTransport(config.appServer, log) : void 0;
   if (appServer !== void 0) {
-    ctx.logger.info(`zcode-provider: \u9274\u6743\u94FE\u8DEF=${authBackend}`);
+    logInfo("startup", `zcode-provider: \u9274\u6743\u94FE\u8DEF=${authBackend}`);
   }
   const captchaBroker = new WebCaptchaBroker();
   const lifecycleCtx = ctx;
@@ -9202,9 +9624,37 @@ function apply(ctx, config = {}) {
   const usageDeps = (range, timeoutMs) => {
     const planRoute = Object.values(routes).find((r) => r.access?.mode === "individual-coding-plan");
     const startRoute = Object.values(routes).find((r) => r.access?.mode === "start-plan");
+    const planOrigin = planRoute === void 0 ? void 0 : bigmodelOriginFrom(planRoute.baseURL);
+    diagnostics.updateContext({
+      codingPlanRoute: diagnosticRouteId(planRoute),
+      codingPlanOrigin: planOrigin ?? null,
+      codingPlanHasApiKey: planRoute !== void 0 && planRoute.apiKey.trim() !== "",
+      codingPlanCredential: planRoute?.credential ?? null,
+      startPlanRoute: diagnosticRouteId(startRoute),
+      startPlanOrigin: startRoute === void 0 ? null : safeOrigin(startRoute.baseURL) ?? null,
+      startPlanHasJwt: startRoute !== void 0 && startRoute.apiKey.trim() !== "",
+      startPlanCredential: startRoute?.credential ?? null
+    });
     const activeProvider = readActiveProvider(config);
-    const planKind = planRoute?.access?.mode ?? startRoute?.access?.mode;
     const accountFamily = (planRoute?.family ?? startRoute?.family) === "zai" ? "zai" : "bigmodel";
+    diagnostics.record({
+      level: "info",
+      phase: "route-discovery",
+      message: "\u5DF2\u89E3\u6790\u6743\u76CA\u8DEF\u7531",
+      details: {
+        codingPlanRoute: diagnosticRouteId(planRoute),
+        codingPlanOrigin: planOrigin ?? null,
+        codingPlanHasApiKey: planRoute !== void 0 && planRoute.apiKey.trim() !== "",
+        codingPlanCredential: planRoute?.credential ?? null,
+        startPlanRoute: diagnosticRouteId(startRoute),
+        startPlanOrigin: startRoute === void 0 ? null : safeOrigin(startRoute.baseURL) ?? null,
+        startPlanHasJwt: startRoute !== void 0 && startRoute.apiKey.trim() !== "",
+        startPlanCredential: startRoute?.credential ?? null,
+        activeProvider: activeProvider ?? null,
+        activeProviderMatchesFamily: activeProvider === void 0 || activeProvider === accountFamily
+      }
+    });
+    const planKind = planRoute?.access?.mode ?? startRoute?.access?.mode;
     const oauthAccessToken = readCredentialValue(credentialsPath, `oauth:${accountFamily}:access_token`, {
       fallbackPath: config.nativeCredentialsPath ?? nativeCredentialPath(),
       log: (message) => {
@@ -9212,18 +9662,18 @@ function apply(ctx, config = {}) {
       }
     });
     return {
-      ...planRoute === void 0 ? {} : { bigmodelOrigin: bigmodelOriginFrom(planRoute.baseURL) },
+      ...planRoute === void 0 ? {} : { bigmodelOrigin: planOrigin, bigmodelBaseURL: planRoute.baseURL },
       ...planRoute === void 0 ? {} : { planApiKey: planRoute.apiKey },
       ...startRoute === void 0 ? {} : { zcodeJwt: startRoute.apiKey },
       ...oauthAccessToken === "" ? {} : { oauthAccessToken },
       accountFamily,
       ...planRoute === void 0 ? {} : { codingProviderId: officialProviderId({
-        route: planRoute.id ?? "",
+        route: diagnosticRouteId(planRoute) ?? "",
         family: planRoute.family,
         access: planRoute.access
       }) },
       ...startRoute === void 0 ? {} : { startProviderId: officialProviderId({
-        route: startRoute.id ?? "",
+        route: diagnosticRouteId(startRoute) ?? "",
         family: startRoute.family,
         access: startRoute.access
       }) },
@@ -9239,7 +9689,8 @@ function apply(ctx, config = {}) {
       deviceMid: profileOf().deviceMid,
       endpointOrigin: config.endpointOrigin ?? ZCODE_ENDPOINT_ORIGIN,
       appVersion: config.appVersion ?? ZCODE_CLIENT_VERSION,
-      timeoutMs
+      timeoutMs,
+      diagnostics
     };
   };
   let entitlementCache = { fetchedAt: 0 };
@@ -9343,15 +9794,21 @@ function apply(ctx, config = {}) {
         return typeof provider === "string" && provider.trim() !== "" ? provider : void 0;
       };
       createUsageRemoteService(remoteCtx, collectEntitlementReport, collectUsageSupplement, collectDefaultProvider);
-      ctx.logger.info("zcode-provider: ZCode \u6743\u76CA\u9762\u677F Remote \u670D\u52A1\u5DF2\u5C31\u7EEA");
+      logInfo("remote", "zcode-provider: ZCode \u6743\u76CA\u9762\u677F Remote \u670D\u52A1\u5DF2\u5C31\u7EEA");
     } catch (error) {
-      ctx.logger.warn(`zcode-provider: \u6743\u76CA\u9762\u677F Remote \u670D\u52A1\u6CE8\u518C\u5931\u8D25: ${String(error)}`);
+      logWarn("remote", `zcode-provider: \u6743\u76CA\u9762\u677F Remote \u670D\u52A1\u6CE8\u518C\u5931\u8D25: ${String(error)}`);
+    }
+    try {
+      createDiagnosticsRemoteService(remoteCtx, diagnostics);
+      logInfo("remote", "zcode-provider: \u8BCA\u65AD\u65E5\u5FD7 Remote \u670D\u52A1\u5DF2\u5C31\u7EEA");
+    } catch (error) {
+      logWarn("remote", `zcode-provider: \u8BCA\u65AD\u65E5\u5FD7 Remote \u670D\u52A1\u6CE8\u518C\u5931\u8D25: ${String(error)}`);
     }
     try {
       createCaptchaRemoteService(remoteCtx, captchaBroker);
-      ctx.logger.info("zcode-provider: DSH Web UI \u9A8C\u8BC1\u7801 Remote \u670D\u52A1\u5DF2\u5C31\u7EEA");
+      logInfo("remote", "zcode-provider: DSH Web UI \u9A8C\u8BC1\u7801 Remote \u670D\u52A1\u5DF2\u5C31\u7EEA");
     } catch (error) {
-      ctx.logger.warn(`zcode-provider: DSH Web UI \u9A8C\u8BC1\u7801 Remote \u670D\u52A1\u6CE8\u518C\u5931\u8D25: ${String(error)}`);
+      logWarn("remote", `zcode-provider: DSH Web UI \u9A8C\u8BC1\u7801 Remote \u670D\u52A1\u6CE8\u518C\u5931\u8D25: ${String(error)}`);
     }
     try {
       createPromptRemoteService(remoteCtx, {
@@ -9384,7 +9841,7 @@ function apply(ctx, config = {}) {
   const runtimePromptContext = (sessionId) => {
     const agents = ctx.get("agents");
     const cwd = sessionId === void 0 ? process.cwd() : agents?.get(sessionId)?.session?.header?.cwd ?? process.cwd();
-    return { cwd, isGitRepository: existsSync5(join7(cwd, ".git")) };
+    return { cwd, isGitRepository: existsSync6(join7(cwd, ".git")) };
   };
   const regs = [];
   for (const key of Object.keys(routes)) {

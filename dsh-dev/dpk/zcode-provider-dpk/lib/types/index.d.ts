@@ -189,6 +189,8 @@ export interface Config {
 /** 设置层持久化的一条路由:由 zcode 设备配置派生,`id` 与派生路由的 `route` 同义。 */
 interface StoredRoute {
     id?: string;
+    /** Native fallback routes use the provider key as `route` before persistence. */
+    route?: string;
     display: string;
     kind?: string;
     baseURL: string;

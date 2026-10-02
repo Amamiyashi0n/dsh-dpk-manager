@@ -19,7 +19,7 @@ const ROUTES = [
   'builtin:bigmodel-start-plan',
 ]
 
-async function probe(routesConfig) {
+async function probe(routesConfig, overrides = {}) {
   const logs = []
   const adapters = new Map()
   const mutations = []
@@ -63,11 +63,13 @@ async function probe(routesConfig) {
     credentialsPath: join(fixtures, 'credentials.json'),
     telemetryStatePath: join(fixtures, 'telemetry-state.json'),
     signingEnabled: false,
+    ...overrides,
     ...(routesConfig === undefined ? {} : { routes: routesConfig }),
   })
   const registrationOrder = [...adapters.keys()]
   const initialSnapshot = await services.get('zcodeEntitlements').snapshot({ range: '30d' })
-  return { logs, adapters, mutations, services, applyResult, registrationOrder, initialSnapshot }
+  const diagnosticsSnapshot = await services.get('zcodeDiagnostics').snapshot()
+  return { logs, adapters, mutations, services, applyResult, registrationOrder, initialSnapshot, diagnosticsSnapshot }
 }
 
 function fields(line) {
@@ -141,6 +143,17 @@ check('initial entitlement snapshot confirms both account routes',
   derived.initialSnapshot.core.accountProviders['account:bigmodel-individual-coding-plan'].state.entitled === true
   && derived.initialSnapshot.core.accountProviders['account:bigmodel-start-plan'].state.entitled === true)
 
+const resolvedRouteEvent = derived.diagnosticsSnapshot.entries.find((entry) => (
+  entry.phase === 'route-discovery' && entry.message === '已解析权益路由'
+))
+check('diagnostics identify the native fallback Start Plan route',
+  resolvedRouteEvent?.details?.startPlanRoute === 'builtin:bigmodel-start-plan',
+  JSON.stringify(resolvedRouteEvent?.details))
+check('diagnostics identify the native fallback Coding Plan route',
+  resolvedRouteEvent?.details?.codingPlanRoute === 'builtin:bigmodel-coding-plan'
+    && resolvedRouteEvent?.details?.codingPlanCredential === 'credential-store',
+  JSON.stringify(resolvedRouteEvent?.details))
+
 const callsAfterWarmSnapshot = fetchCalls
 await derived.services.get('zcodeEntitlements').snapshot({ range: '30d' })
 check('repeated entitlement snapshot reuses the warmed report', fetchCalls === callsAfterWarmSnapshot,
@@ -184,6 +197,45 @@ check('temporary entitlement outage retains last-known-good account facts',
   degradedSnapshot.core.accountProviders['account:bigmodel-individual-coding-plan'].state.entitled === true
   && degradedSnapshot.core.accountProviders['account:bigmodel-start-plan'].state.entitled === true,
   JSON.stringify(degradedSnapshot.core.accountProviders))
+
+const fallbackProbe = await probe(undefined, {
+  authBackend: 'openzcode-app-server',
+  appServer: {
+    enabled: true,
+    nodePath: join(fixtures, 'missing-node.exe'),
+    cliPath: join(fixtures, 'app-server.mjs'),
+    cwd: here,
+  },
+})
+const originalModelFetch = globalThis.fetch
+globalThis.fetch = async (url, init) => {
+  if (String(url).includes('/v1/messages')) {
+    const body = [
+      'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":1,"output_tokens":0}}}\n\n',
+      'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"direct-fallback-ok"}}\n\n',
+      'event: content_block_stop\ndata: {"type":"content_block_stop","index":0}\n\n',
+      'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}\n\n',
+      'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+    ].join('')
+    return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+  }
+  return await originalModelFetch(url, init)
+}
+try {
+  const chunks = []
+  for await (const chunk of fallbackProbe.adapters.get('builtin:bigmodel-start-plan').stream({
+    provider: 'builtin:bigmodel-start-plan',
+    model: 'GLM-5.3-Flash',
+    reasoningEffort: 'max',
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'fallback' }] }],
+  })) chunks.push(chunk)
+  check('app-server 启动失败后回退直连 wire',
+    chunks.some((chunk) => chunk.type === 'text-delta' && chunk.text === 'direct-fallback-ok'),
+    JSON.stringify(chunks))
+} finally {
+  globalThis.fetch = originalModelFetch
+}
 
 globalThis.fetch = originalFetch
 

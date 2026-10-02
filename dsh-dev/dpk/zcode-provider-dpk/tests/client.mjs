@@ -191,6 +191,10 @@ test('captcha SDK failures remove the script and replace stale unmarked nodes', 
     async snapshot() { return { ok: true, value: { revision: 0, backend: 'openzcode-app-server' } } },
     async mutate() { return { ok: true, value: { revision: 1, backend: 'openzcode-app-server' } } },
   }
+  const diagnosticsRemote = {
+    async snapshot() { return { ok: true, value: { generatedAt: '', context: {}, entries: [] } } },
+    async clear() { return { ok: true, value: { generatedAt: '', context: {}, entries: [] } } },
+  }
   const services = {
     remote: {
       async $mount() {
@@ -198,6 +202,7 @@ test('captcha SDK failures remove the script and replace stale unmarked nodes', 
         this.zcodeEntitlements = usageRemote
         this.zcodePrompts = promptRemote
         this.zcodeAuthBackend = authBackendRemote
+        this.zcodeDiagnostics = diagnosticsRemote
       },
     },
     slots: {
@@ -216,6 +221,7 @@ test('captcha SDK failures remove the script and replace stale unmarked nodes', 
       if (name === 'remote.zcodeEntitlements') return services.remote.zcodeEntitlements
       if (name === 'remote.zcodePrompts') return services.remote.zcodePrompts
       if (name === 'remote.zcodeAuthBackend') return services.remote.zcodeAuthBackend
+      if (name === 'remote.zcodeDiagnostics') return services.remote.zcodeDiagnostics
       throw new Error(`unexpected service ${name}`)
     },
   })
@@ -343,6 +349,10 @@ test('client owns the entitlement panel and an additive Web UI captcha overlay',
     snapshot: async () => ({ ok: true, value: { revision: 0, backend: 'openzcode-app-server' } }),
     mutate: async request => ({ ok: true, value: { revision: 1, backend: request.backend } }),
   }
+  const diagnosticsRemote = {
+    snapshot: async () => ({ ok: true, value: { generatedAt: '', context: {}, entries: [] } }),
+    clear: async () => ({ ok: true, value: { generatedAt: '', context: {}, entries: [] } }),
+  }
   const messages = {
     available: 'Entitled',
     codingPlan: 'Coding Plan',
@@ -360,6 +370,7 @@ test('client owns the entitlement panel and an additive Web UI captcha overlay',
         this.zcodeCaptcha = captchaRemote
         this.zcodePrompts = promptRemote
         this.zcodeAuthBackend = authBackendRemote
+        this.zcodeDiagnostics = diagnosticsRemote
       },
     },
     slots: {
@@ -379,6 +390,7 @@ test('client owns the entitlement panel and an additive Web UI captcha overlay',
       if (name === 'remote.zcodeCaptcha') return services.remote.zcodeCaptcha
       if (name === 'remote.zcodePrompts') return services.remote.zcodePrompts
       if (name === 'remote.zcodeAuthBackend') return services.remote.zcodeAuthBackend
+      if (name === 'remote.zcodeDiagnostics') return services.remote.zcodeDiagnostics
       throw new Error(`unexpected service ${name}`)
     },
   }
@@ -397,15 +409,17 @@ test('client owns the entitlement panel and an additive Web UI captcha overlay',
       ['zcodePrompts', 'mutate', 1],
       ['zcodeAuthBackend', 'snapshot', 0],
       ['zcodeAuthBackend', 'mutate', 1],
+      ['zcodeDiagnostics', 'snapshot', 1],
+      ['zcodeDiagnostics', 'clear', 0],
     ]),
   )
   assert.equal(
     JSON.stringify(contribution.descriptors.map(value => value.parameters[0]?.codec?.mode ?? null)),
-    JSON.stringify(['strict', 'strict', 'strict', 'strict', 'strict', null, 'strict', null, 'strict']),
+    JSON.stringify(['strict', 'strict', 'strict', 'strict', 'strict', null, 'strict', null, 'strict', 'strict', null]),
   )
   assert.equal(
     JSON.stringify(contribution.descriptors.map(value => value.cancellation ?? null)),
-    JSON.stringify([{ parameter: 'signal' }, { parameter: 'signal' }, { parameter: 'signal' }, null, null, { parameter: 'signal' }, { parameter: 'signal' }, { parameter: 'signal' }, { parameter: 'signal' }]),
+    JSON.stringify([{ parameter: 'signal' }, { parameter: 'signal' }, { parameter: 'signal' }, null, null, { parameter: 'signal' }, { parameter: 'signal' }, { parameter: 'signal' }, { parameter: 'signal' }, { parameter: 'signal' }, { parameter: 'signal' }]),
   )
   assert.deepEqual(
     registrations.map(value => `${value.spec.name}:${value.spec.id ?? value.spec.key}`).sort(),
@@ -416,6 +430,19 @@ test('client owns the entitlement panel and an additive Web UI captcha overlay',
       'sidebar.panellist:zcode-entitlements',
     ],
   )
+  assert.match(source, /key: 'diagnostics'/)
+  assert.match(source, /tr\('logsTab'\)/)
+  assert.doesNotMatch(source, /key: 'zcode-diagnostics'/)
+  assert.doesNotMatch(source, /id: 'zcode-diagnostics'/)
+  assert.doesNotMatch(source, /contextEntries/)
+  assert.doesNotMatch(source, /logsContext/)
+  assert.doesNotMatch(source, /logsDescription/)
+  assert.doesNotMatch(source, /logsDetails/)
+  assert.doesNotMatch(source, /diagnosticColor/)
+  assert.doesNotMatch(source, /logsAll|logsDebug|logsInfo|logsWarn|logsError/)
+  assert.doesNotMatch(source, /const \[filter, setFilter\]/)
+  assert.match(source, /role: 'log'/)
+  assert.match(source, /map\(diagnosticLine\)\.join\('\\n'\)/)
   assert.match(source, /const PROMPT_LAYERS = \/\* DSH_PROMPT_LAYERS \*\//)
   assert.match(source, /身份提示词/)
   assert.match(source, /Agent 主提示词/)

@@ -11,18 +11,22 @@
  * @module zcode-provider/native-account
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { discoverZcodeInstall } from './app-server-discovery.js'
-import { resolvePlanCredential } from './credentials.js'
+import { readCredentialStore, resolvePlanCredential } from './credentials.js'
 
 /** 内置目录里会被采纳的账号规则:`account:<family>-<plan>`。 */
 const ACCOUNT_RULE = /^account:(bigmodel|zai)-(individual-coding-plan|team-coding-plan|start-plan)$/
 
-/** 官方存储目录(与 app-server 传输默认一致:环境覆写 > `~/.zcode/v2`)。 */
+/** 官方存储目录(与官方 credential service 一致:环境覆写 > `~/.zcode/v2`)。 */
 export function nativeStorageDir(): string {
-  return process.env.ZCODE_STORAGE_DIR?.trim() || join(homedir(), '.zcode', 'v2')
+  const explicit = process.env.ZCODE_STORAGE_DIR?.trim()
+  if (explicit) return explicit
+  const dataBaseDir = process.env.ZCODE_DATA_BASE_DIR?.trim()
+  if (dataBaseDir) return join(dataBaseDir, '.zcode', 'v2')
+  return join(homedir(), '.zcode', 'v2')
 }
 
 /** 官方凭证库路径。 */
@@ -30,10 +34,32 @@ export function nativeCredentialPath(): string {
   return join(nativeStorageDir(), 'credentials.json')
 }
 
-/** 已发现安装自带的内置目录路径;本机无安装时为 undefined。 */
+/** 官方 ZCode 设备状态路径。 */
+export function nativeTelemetryStatePath(): string {
+  return join(nativeStorageDir(), 'telemetry-state.json')
+}
+
+/**
+ * 已发现安装自带的内置目录路径。优先使用显式路径和开发仓库路径，
+ * 再走安装发现；这些路径必须与官方 app-server 使用同一份目录。
+ */
 export function discoveredBuiltinCatalogPath(): string | undefined {
+  const explicit = process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE?.trim()
+  if (explicit) return explicit
+  const cliPath = process.env.DSH_ZCODE_CLI_PATH?.trim()
+  if (cliPath) return join(dirname(dirname(cliPath)), 'config', 'provider', 'zcode-builtin.json')
+  const repo = process.env.DSH_ZCODE_REPO?.trim()
+  if (repo) return join(repo, 're-zcode', 'zcode-unpacked', 'resources', 'config', 'provider', 'zcode-builtin.json')
   return discoverZcodeInstall()?.builtinProviderConfigPath
 }
+
+/** 官方目录不可用时的稳定端点兜底；仍由凭证门控，不会注册死路由。 */
+const FALLBACK_ENDPOINTS: NativeAccountEndpoint[] = [
+  { key: 'builtin:bigmodel-coding-plan', family: 'bigmodel', modes: ['individual-coding-plan', 'team-coding-plan'], baseURL: 'https://open.bigmodel.cn/api/anthropic' },
+  { key: 'builtin:bigmodel-start-plan', family: 'bigmodel', modes: ['start-plan'], baseURL: 'https://zcode.z.ai/api/v1/zcode-plan/anthropic' },
+  { key: 'builtin:zai-coding-plan', family: 'zai', modes: ['individual-coding-plan', 'team-coding-plan'], baseURL: 'https://api.z.ai/api/anthropic' },
+  { key: 'builtin:zai-start-plan', family: 'zai', modes: ['start-plan'], baseURL: 'https://zcode.z.ai/api/v1/zcode-plan/anthropic' },
+]
 
 /** 目录中一条账号端点:插件条目键 + 官方 provider 族 + 可解析的套餐模式。 */
 export interface NativeAccountEndpoint {
@@ -92,18 +118,37 @@ export function nativeAccountProviders(options: {
   log?: (message: string) => void
 } = {}): Record<string, NativeProviderEntry> {
   const builtinPath = options.builtinPath?.trim() || discoveredBuiltinCatalogPath()
-  if (builtinPath === undefined || builtinPath === '') return {}
   let catalog: unknown
-  try {
-    catalog = JSON.parse(readFileSync(builtinPath, 'utf8')) as unknown
-  } catch (_missingOrInvalid) {
-    // 增强输入静默降级:目录读不到等同"本机没有可推导的账号端点"
-    options.log?.(`zcode-provider: 内置目录不可读(${builtinPath}),跳过本机账号路由推导`)
-    return {}
+  let catalogEndpoints: NativeAccountEndpoint[] = []
+  if (builtinPath === undefined || builtinPath === '') {
+    options.log?.('zcode-provider: 未定位到官方 zcode-builtin.json,使用内置端点候选')
+  } else {
+    options.log?.(`zcode-provider: 尝试读取官方内置目录(${builtinPath})`)
+    try {
+      catalog = JSON.parse(readFileSync(builtinPath, 'utf8')) as unknown
+      catalogEndpoints = accountEndpointsFromCatalog(catalog)
+      options.log?.(`zcode-provider: 官方内置目录可读,识别账号端点 ${catalogEndpoints.length} 个`)
+    } catch (error) {
+      options.log?.(`zcode-provider: 官方内置目录不可读(${builtinPath}),原因=${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  const endpoints = catalogEndpoints.length > 0 ? catalogEndpoints : FALLBACK_ENDPOINTS
+  if (catalogEndpoints.length === 0) {
+    options.log?.(`zcode-provider: 使用 ${endpoints.length} 个官方端点候选,逐项执行凭证门控`)
   }
   const credentialsPath = options.credentialsPath?.trim() || nativeCredentialPath()
+  const credentialStore = readCredentialStore(credentialsPath)
+  let credentialFileState = `存在=${existsSync(credentialsPath)},可读键数=${Object.keys(credentialStore).length}`
+  if (existsSync(credentialsPath)) {
+    try {
+      JSON.parse(readFileSync(credentialsPath, 'utf8')) as unknown
+    } catch (error) {
+      credentialFileState += `,JSON=非法(${error instanceof Error ? error.message : String(error)})`
+    }
+  }
+  options.log?.(`zcode-provider: 官方凭证库路径=${credentialsPath},${credentialFileState}`)
   const entries: Record<string, NativeProviderEntry> = {}
-  for (const endpoint of accountEndpointsFromCatalog(catalog)) {
+  for (const endpoint of endpoints) {
     const resolved = endpoint.modes
       .map((mode) => resolvePlanCredential({
         credentialsPath,
@@ -113,8 +158,13 @@ export function nativeAccountProviders(options: {
         log: (message) => { options.log?.(message) },
       }))
       .find((credential) => credential.apiKey !== '')
-    if (resolved === undefined) continue
+    if (resolved === undefined) {
+      options.log?.(`zcode-provider: 端点 ${endpoint.key} 未通过凭证门控`)
+      continue
+    }
     entries[endpoint.key] = { kind: 'anthropic', options: { baseURL: endpoint.baseURL, apiKey: resolved.apiKey } }
+    options.log?.(`zcode-provider: 端点 ${endpoint.key} 已通过凭证门控,credential=${resolved.source}`)
   }
+  options.log?.(`zcode-provider: 本机账号路由推导完成,产出 ${Object.keys(entries).length} 条(${Object.keys(entries).join(', ') || 'none'})`)
   return entries
 }

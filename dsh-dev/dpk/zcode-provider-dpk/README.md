@@ -30,7 +30,7 @@ DSH 负责：
 
 provider 配置、凭证和设备标识全部属于插件，存放在 dpk 受管数据卷 `~/.dsh/data/@local/zcode-provider`（见 dpk-manager SPEC §13）。这些文件缺失时插件仍会正常激活，并可完全通过自身 `routes` 配置运行。
 
-**2.6.0 破坏式数据迁移**：旧根 `~/.dsh/zcode-provider` **不再被读取**。安装 2.6.0 后：
+**2.6.0 破坏式数据迁移**：旧根 `~/.dsh/zcode-provider` **不再被读取**。安装 2.6.x 后：
 
 - `config/providers.json`、`config/prompt-overrides.json` 由 dpk 安装期从包内种子物化；
 - `state/credentials.json` 等凭证**不迁移**（加密密钥绑定用户与主目录，拷过去也解不开）——在新机器上重新登录官方 ZCode，或用 dpk 的 config 导出/导入搬运 `providers.json`；
@@ -47,14 +47,15 @@ DPK 的 `cordis.patch.yml` 会自行注册插件。profile 只需要把 `zcode-p
 2. **路由同步时**：把插件路由同步到 DSH settings，并清理 `openai` / `openai-compatible` 路由。同步动作由 DSH settings 服务执行，路由对象可能包含解密后的 `apiKey`；这与“凭证不写入 DPK 包”是两件事。
 3. **发送模型请求时**：按通道分路。`start-plan` / `off-peak` 且无提示词覆写时走**引擎会话委托**（spawn 官方 `zcode.cjs app-server --stdio`，session/create→setModel→send→轮询 messages，流式吐增量，历史按 60K token 预算截断）；`coding-plan` 或带覆写时走**直连 wire**：把 DSH 历史、工具、工具结果和图片转换为 Anthropic `/v1/messages` 请求，丢弃上层原始 system 消息，注入插件装配的 system 块（见下「提示词覆写」），再附加会话、设备、归因和签名头。响应的 SSE 流会转换回 DSH 的文本、推理、工具调用和用量事件。
 4. **打开权益面板或调用工具时**：Host 查询配额、订阅、余额及按需的模型用量/MCP 用量；浏览器只通过 Remote 接收规范化快照，不直接读取凭证。
-5. **遇到 Start Plan 验证码时**：仅在收到业务码 `3007` 且启用验证码时，Host 向已经打开的 DSH Web UI 发布一次性挑战。Web UI 的全局浮层承载阿里云验证码；成功后 Host 只携带一次性 param 重试原模型请求一次。插件不会启动或控制额外浏览器进程。
+5. **查看诊断时**：进入「ZCode 权益」页面内的「日志诊断」页签，按时间倒序读取 Host 最近 200 条完整启动、路由、凭证解析和请求事件；日志只保留 origin、端点、HTTP/解析错误和凭据存在性等诊断字段，不传递 Authorization、API key、JWT 或完整凭证。可刷新或清空。
+6. **遇到 Start Plan 验证码时**：仅在收到业务码 `3007` 且启用验证码时，Host 向已经打开的 DSH Web UI 发布一次性挑战。Web UI 的全局浮层承载阿里云验证码；成功后 Host 只携带一次性 param 重试原模型请求一次。插件不会启动或控制额外浏览器进程。
 
 ### 本地读写边界
 
 - 读取：`~/.dsh/data/@local/zcode-provider/config/providers.json`、`credentials.json`、`telemetry-state.json`、`prompt-overrides.json`。
 - 直接写入：提示词编辑器通过插件 Remote 直接写入 `prompt-overrides.json`；不会把提示词内容写入 Web profile 的 `cordis.patch.yml`。
 - 间接写入：`settings.mutate()` 只用于派生路由（包括 `apiKey` 字段）以及清理旧版 profile 中的 `promptOverrides`。
-- 内存状态：权益缓存和 last-known-good 状态默认只在当前进程保存。
+- 内存状态：权益缓存、last-known-good 状态和最近 200 条诊断日志默认只在当前进程保存；诊断日志清空或重启 DSH 后消失。
 
 ### 对外发送的数据
 
@@ -147,11 +148,11 @@ DPK 同时包含：
 
 ## 构建与测试
 
-项目命令使用传统 Node（`C:\Program Files\nodejs`；本机 MSYS2 已删除，勿指回）：
+项目命令使用传统 Node（`C:\Program Files\nodejs`）：
 
 ~~~bash
 npm run build   # tsc -p tsconfig.json && scripts/sync-client-prompts.mjs
-npm test        # 全套房：EXIT=0 / 470 项断言(2.5.34)
+npm test        # 全套测试
 ~~~
 
 测试包含真实 Cordis Loader 组合、官方 system prompt/协议、签名、Web UI 验证码桥接、SSE tool-call 转换，以及独立包边界扫描。
@@ -169,7 +170,16 @@ node ../dpk-manager/dpk.mjs install dist/zcode-provider-<version>.dpk -p web --h
 安装后**必须核实** profile 链接已更新(`~/.dsh/profiles/web/package.json` 中 `zcode-provider` 指向新 digest 的 store 目录)。dpk 工具经 `~/.dsh/node_modules/@deepseek-ai` junction 定位 DSH CLI——工作区搬移后该 junction 会悬空,install 只解包到 store 却报 `the DSH CLI was not found`,profile 停留旧版(2026-09-30 实际发生:2.5.35/2.5.36 两版"安装成功"实则未生效,线上一直是 2.5.34,靠 wire 抓包才发现)。修复:`rmdir` 旧 junction 后 `mklink /J` 重指 `dsh-dev\deepseek-harness
 ode_modules\@deepseek-ai`。
 
-当前版本 **2.5.37**。近版本要点：
+当前版本 **2.6.6**。近版本要点：
+
+- **2.6.6** 修复 Windows ZCode 安装发现和 app-server 启动链：使用正确的 `reg query` 语法，支持从空 `InstallLocation` 的卸载项回退，Electron 宿主优先使用自身 Node 运行时，委托启动失败时回退直连 wire；Coding Plan 缺失 identity 时仅在唯一 provisioning key 候选下恢复。
+
+- **2.6.5** 修复权益诊断中的 native fallback 路由显示：使用实际 `route` 字段，缺失的 Coding Plan 凭证保持为 `null`，避免把“没有路由”误显示成已脱敏凭证。
+
+- **2.6.4** 修复远端权益诊断：设备标识按插件受管状态优先、官方 ZCode 状态回退；Start Plan HTTP 错误保留服务端安全字段；路由设置同步排队到 HMR 当前事务之后。
+
+- **2.6.3** 扩充日志诊断：记录官方目录定位、凭证文件状态、解密/凭证门控结果、回退端点、active provider、路由与 origin；诊断页按时间倒序显示全部文本日志，不再按级别筛选。
+- **2.6.2** 将 `zcodeDiagnostics` Remote 和诊断日志收进「ZCode 权益」页面内的「日志诊断」页签，避免增加独立左侧入口；日志默认保留 200 条并脱敏。
 
 - **2.5.31** start-plan/off-peak 改走引擎会话委托（session/send 流式 + 60K 历史预算）；模型名追加通道后缀 `· Start Plan` / `· Coding Plan` / `· 错峰`；generateText 直连加 10 分钟硬超时。
 - **2.5.32** 后置层改为真覆写语义（逐块替换/清空＝移除/0 块省略 system）；空串在保存链路（client→Remote→normalize）作为显式清空标记贯通。

@@ -9,7 +9,8 @@
  *
  *  1. Windows App Paths registry (`zcode.exe` → install root),
  *  2. `zcode` on PATH (`where`/`which`),
- *  3. Add/Remove Programs registry (DisplayName match → InstallLocation),
+ *  3. Add/Remove Programs registry (DisplayName match → InstallLocation or
+ *     the directory containing UninstallString),
  *  4. the well-known per-user and per-machine install directories.
  *
  * Every candidate root is verified by the CLI bundle actually being there, so
@@ -30,6 +31,22 @@ export interface ZcodeInstall {
  * @returns the install when the CLI bundle exists under the root, else undefined.
  */
 export declare function zcodeInstallFromRoot(root: string): ZcodeInstall | undefined;
+export interface RegistryQueryResult {
+    status: number | null;
+    stdout: string;
+    stderr: string;
+}
+export type RegistryQueryRunner = (args: readonly string[]) => RegistryQueryResult;
+/** Pull verified-install candidates from one App Paths value block. */
+export declare function rootsFromAppPathsOutput(output: string): string[];
+/** Extract a Windows executable path from an uninstall command line. */
+export declare function executableFromUninstallString(value: string | undefined): string | undefined;
+/** Resolve an uninstall command to its candidate installation directory. */
+export declare function installRootFromUninstallString(value: string | undefined): string | undefined;
+/** Pull an installation root from one Add/Remove Programs value block. */
+export declare function rootFromUninstallOutput(output: string): string | undefined;
+/** Candidate roots from the Windows registry: App Paths first, then uninstall. */
+export declare function windowsRegistryRoots(run?: RegistryQueryRunner, log?: (message: string) => void): string[];
 /**
  * Find the ZCode install on this machine. Every candidate is verified against
  * the CLI bundle on disk; the first verified root wins. The result is cached —

@@ -20,6 +20,7 @@ window.__ModuleLoader__.load({
     const CAPTCHA_REMOTE_NAMESPACE = 'zcodeCaptcha'
     const PROMPT_REMOTE_NAMESPACE = 'zcodePrompts'
     const AUTH_BACKEND_REMOTE_NAMESPACE = 'zcodeAuthBackend'
+    const DIAGNOSTICS_REMOTE_NAMESPACE = 'zcodeDiagnostics'
     const PROMPT_LAYERS = /* DSH_PROMPT_LAYERS */ [
   {
     "id": "identity",
@@ -41,7 +42,14 @@ window.__ModuleLoader__.load({
 
     const zh = {
       panel: 'ZCode 权益',
+      logsTab: '日志诊断',
       pageTitle: 'ZCode 权益与用量',
+      logsTitle: 'ZCode 诊断日志',
+      logsLoading: '正在读取诊断日志…',
+      logsEmpty: '暂无诊断记录。打开权益页或点击刷新后再查看。',
+      logsFailed: '诊断日志读取失败',
+      logsRefresh: '刷新日志',
+      logsClear: '清空日志',
       refresh: '刷新',
       loading: '正在读取权益…',
       loadTimeout: '权益读取超时，请检查网络后重试',
@@ -104,7 +112,14 @@ window.__ModuleLoader__.load({
     }
     const en = {
       panel: 'ZCode Entitlements',
+      logsTab: 'Diagnostics',
       pageTitle: 'ZCode Entitlements & Usage',
+      logsTitle: 'ZCode diagnostic logs',
+      logsLoading: 'Loading diagnostics…',
+      logsEmpty: 'No diagnostic entries yet. Open the entitlement page or refresh first.',
+      logsFailed: 'Diagnostics could not be loaded',
+      logsRefresh: 'Refresh logs',
+      logsClear: 'Clear logs',
       refresh: 'Refresh',
       loading: 'Loading entitlements…',
       loadTimeout: 'Entitlement loading timed out. Check the network and retry.',
@@ -230,6 +245,16 @@ window.__ModuleLoader__.load({
         directDescriptor(AUTH_BACKEND_REMOTE_NAMESPACE, 'mutate', 'zcode-provider#AuthBackendMutationRequest', true),
       ],
     }
+    const DIAGNOSTICS_REMOTE = {
+      package: '@local/zcode-provider',
+      descriptors: [
+        directDescriptor(DIAGNOSTICS_REMOTE_NAMESPACE, 'snapshot', '@local/zcode-provider#DiagnosticsSnapshotRequest', true),
+        {
+          ...directDescriptor(DIAGNOSTICS_REMOTE_NAMESPACE, 'clear', '@local/zcode-provider#DiagnosticsClearRequest', true),
+          parameters: [],
+        },
+      ],
+    }
     const REMOTES = {
       package: '@local/zcode-provider',
       descriptors: [
@@ -237,6 +262,7 @@ window.__ModuleLoader__.load({
         ...CAPTCHA_REMOTE.descriptors,
         ...PROMPT_REMOTE.descriptors,
         ...AUTH_BACKEND_REMOTE.descriptors,
+        ...DIAGNOSTICS_REMOTE.descriptors,
       ],
     }
 
@@ -250,6 +276,13 @@ window.__ModuleLoader__.load({
       usageLoading: false,
       usageError: undefined,
       usageRequest: 0,
+      listeners: new Set(),
+    }
+    const diagnosticsState = {
+      snapshot: undefined,
+      loading: false,
+      error: undefined,
+      request: 0,
       listeners: new Set(),
     }
     const REMOTE_TIMEOUT_MS = 10_000
@@ -452,6 +485,8 @@ window.__ModuleLoader__.load({
         if (promptRemote === undefined) throw new Error('zcode-provider: remote.zcodePrompts did not mount')
         const authBackendRemote = ctx.get(`remote.${AUTH_BACKEND_REMOTE_NAMESPACE}`)
         if (authBackendRemote === undefined) throw new Error('zcode-provider: remote.zcodeAuthBackend did not mount')
+        const diagnosticsRemote = ctx.get(`remote.${DIAGNOSTICS_REMOTE_NAMESPACE}`)
+        if (diagnosticsRemote === undefined) throw new Error('zcode-provider: remote.zcodeDiagnostics did not mount')
         const tr = ctx.locale ? ctx.locale.bind(NS) : key => (zh[key] ?? en[key] ?? key)
         if (ctx.locale) ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'zcode-provider: entitlement dictionaries')
 
@@ -472,6 +507,58 @@ window.__ModuleLoader__.load({
             if (timer !== undefined) clearTimeout(timer)
             controller.abort()
           }
+        }
+
+        function notifyDiagnostics() {
+          for (const listener of diagnosticsState.listeners) listener()
+        }
+
+        async function loadDiagnostics() {
+          const request = ++diagnosticsState.request
+          diagnosticsState.loading = true
+          diagnosticsState.error = undefined
+          notifyDiagnostics()
+          try {
+            const outcome = await callRemote(
+              signal => diagnosticsRemote.snapshot({ limit: 200 }, signal),
+              tr('logsFailed'),
+            )
+            if (request !== diagnosticsState.request) return
+            diagnosticsState.snapshot = remoteValue(outcome)
+          } catch (error) {
+            if (request === diagnosticsState.request) diagnosticsState.error = safeError(error)
+          } finally {
+            if (request === diagnosticsState.request) {
+              diagnosticsState.loading = false
+              notifyDiagnostics()
+            }
+          }
+        }
+
+        async function clearDiagnostics() {
+          try {
+            const outcome = await callRemote(
+              signal => diagnosticsRemote.clear(signal),
+              tr('logsFailed'),
+            )
+            diagnosticsState.snapshot = remoteValue(outcome)
+            diagnosticsState.error = undefined
+            notifyDiagnostics()
+          } catch (error) {
+            diagnosticsState.error = safeError(error)
+            notifyDiagnostics()
+          }
+        }
+
+        function useDiagnostics() {
+          const [, setRevision] = React.useState(0)
+          React.useEffect(() => {
+            const listener = () => setRevision(value => value + 1)
+            diagnosticsState.listeners.add(listener)
+            if (diagnosticsState.snapshot === undefined && !diagnosticsState.loading) void loadDiagnostics()
+            return () => { diagnosticsState.listeners.delete(listener) }
+          }, [])
+          return diagnosticsState
         }
 
         async function callCaptchaRemote(call, timeoutMessage, timeoutMs) {
@@ -1253,6 +1340,7 @@ window.__ModuleLoader__.load({
 
         function EntitlementsPage() {
           const snapshot = useSnapshot()
+          const [view, setView] = React.useState('overview')
           const report = snapshot?.core
           const supplement = state.usage?.supplement
           const coding = report?.entitlements?.codingPlan
@@ -1273,13 +1361,33 @@ window.__ModuleLoader__.load({
           return h('main', { style: { height: '100%', overflow: 'auto' } },
             h('div', { style: { width: 'min(980px, 100%)', margin: '0 auto', padding: '24px', boxSizing: 'border-box' } }, [
               h(Header, { key: 'header' }),
-              state.snapshotLoading && !report
+              h('div', { key: 'tabs', role: 'tablist', style: { display: 'flex', gap: 8, margin: '18px 0 4px', borderBottom: '1px solid color-mix(in srgb, currentColor 14%, transparent)' } }, [
+                h('button', {
+                  key: 'overview',
+                  type: 'button',
+                  role: 'tab',
+                  'aria-selected': view === 'overview',
+                  onClick: () => setView('overview'),
+                  style: { ...buttonStyle, width: 'auto', minWidth: 92, minHeight: 36, border: 0, borderBottom: view === 'overview' ? '2px solid #6e91ea' : '2px solid transparent', borderRadius: 0, padding: '0 8px', whiteSpace: 'nowrap', fontWeight: view === 'overview' ? 650 : 450 },
+                }, tr('panel')),
+                h('button', {
+                  key: 'diagnostics',
+                  type: 'button',
+                  role: 'tab',
+                  'aria-selected': view === 'diagnostics',
+                  onClick: () => setView('diagnostics'),
+                  style: { ...buttonStyle, width: 'auto', minWidth: 92, minHeight: 36, border: 0, borderBottom: view === 'diagnostics' ? '2px solid #6e91ea' : '2px solid transparent', borderRadius: 0, padding: '0 8px', whiteSpace: 'nowrap', fontWeight: view === 'diagnostics' ? 650 : 450 },
+                }, tr('logsTab')),
+              ]),
+              view === 'overview' && state.snapshotLoading && !report
                 ? h('div', { key: 'loading', role: 'status', style: { padding: '28px 0', ...mutedStyle } }, tr('loading'))
                 : null,
-              state.snapshotError
+              view === 'overview' && state.snapshotError
                 ? h('div', { key: 'error', role: 'alert', style: { padding: '12px 0', color: '#b42318' } }, `${tr('failed')}: ${state.snapshotError}`)
                 : null,
-              report
+              view === 'diagnostics'
+                ? h(DiagnosticsPanel, { key: 'diagnostics' })
+                : report
                 ? h(React.Fragment, { key: 'content' }, [
                     h('section', { key: 'overview', style: { ...sectionStyle, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14 } }, [
                       h(Metric, { key: 'plan', label: tr('codingPlan'), value: providerStatus(codingProvider), detail: codingDetail?.productName }),
@@ -1320,6 +1428,77 @@ window.__ModuleLoader__.load({
 
         function EntitlementsIcon({ size }) {
           return h(IconGaugeOutlineRegular, { size })
+        }
+
+        function diagnosticLine(entry) {
+          const fields = [
+            entry.at,
+            String(entry.level ?? '').toUpperCase(),
+            entry.phase,
+            entry.message,
+          ].filter(value => value !== undefined && value !== '')
+          const details = entry.details && Object.keys(entry.details).length > 0
+            ? ` ${JSON.stringify(entry.details)}`
+            : ''
+          return `${fields.join(' ')}${details}`
+        }
+
+        function DiagnosticsPanel() {
+          const diagnostics = useDiagnostics()
+          const entries = diagnostics.snapshot?.entries ?? []
+          const text = diagnostics.error
+            ? `${tr('logsFailed')}: ${diagnostics.error}`
+            : diagnostics.loading && diagnostics.snapshot === undefined
+              ? tr('logsLoading')
+              : entries.length > 0
+                ? entries.slice().reverse().map(diagnosticLine).join('\n')
+                : tr('logsEmpty')
+          const controlStyle = {
+            ...buttonStyle,
+            width: 'auto',
+            minWidth: 62,
+            minHeight: 32,
+            height: 32,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            padding: '0 10px',
+            whiteSpace: 'nowrap',
+          }
+          return h('div', { style: { display: 'grid', gap: 12, marginTop: 16, minWidth: 0 } }, [
+            h('div', { key: 'header', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', minWidth: 0 } }, [
+              h('h2', { key: 'title', style: { margin: 0, fontSize: 22, whiteSpace: 'nowrap' } }, tr('logsTitle')),
+              h('div', { key: 'actions', style: { display: 'flex', gap: 8, flex: '0 0 auto' } }, [
+                h('button', { key: 'refresh', type: 'button', onClick: () => void loadDiagnostics(), style: { ...controlStyle, minWidth: 92 } }, [
+                  h(IconRefreshOutlineRegular, { key: 'icon', size: 16 }),
+                  h('span', { key: 'label' }, tr('logsRefresh')),
+                ]),
+                h('button', { key: 'clear', type: 'button', onClick: () => void clearDiagnostics(), style: { ...controlStyle, minWidth: 78 } }, tr('logsClear')),
+              ]),
+            ]),
+            h('pre', {
+              key: 'log',
+              role: 'log',
+              'aria-live': 'polite',
+              style: {
+                margin: 0,
+                minHeight: 280,
+                maxHeight: 560,
+                overflow: 'auto',
+                boxSizing: 'border-box',
+                padding: '14px 16px',
+                border: '1px solid color-mix(in srgb, currentColor 18%, transparent)',
+                borderRadius: 6,
+                background: 'color-mix(in srgb, currentColor 5%, transparent)',
+                fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace',
+                fontSize: 12,
+                lineHeight: 1.6,
+                whiteSpace: 'pre-wrap',
+                overflowWrap: 'anywhere',
+              },
+            }, text),
+          ])
         }
 
         function captchaExpiryDelay(challenge) {

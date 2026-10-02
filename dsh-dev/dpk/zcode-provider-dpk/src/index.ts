@@ -54,6 +54,7 @@ import {
   discoveredBuiltinCatalogPath,
   nativeAccountProviders,
   nativeCredentialPath,
+  nativeTelemetryStatePath,
 } from './native-account.js'
 import {
   captchaRequestHeaders,
@@ -76,6 +77,11 @@ import {
   type UsageSupplement,
 } from './usage.js'
 import { createUsageRemoteService } from './usage-remote.js'
+import {
+  createDiagnosticsRemoteService,
+  DiagnosticLog,
+  safeOrigin,
+} from './diagnostics.js'
 import { reconcileUsageReport } from './entitlements.js'
 import {
   defaultProviderConfigPath,
@@ -287,6 +293,9 @@ export function extractRoutes(
       )
     }
     providerEntries = Object.entries(zc.provider ?? {})
+    log?.(`zcode-provider: 读取插件 provider 配置(${providerConfigPath}),条目数=${providerEntries.length}`)
+  } else {
+    log?.(`zcode-provider: 插件 provider 配置不存在(${providerConfigPath}),启动官方本机账号回退`)
   }
   if (configAbsent || providerEntries.length === 0) {
     const derived = nativeAccountProviders({
@@ -305,9 +314,15 @@ export function extractRoutes(
   }
   const routes: ZcodeRoute[] = []
   for (const [pid, pc] of providerEntries) {
-    if (pc.enabled === false && !includeDisabled) continue
+    if (pc.enabled === false && !includeDisabled) {
+      log?.(`zcode-provider: 跳过 provider ${pid},原因=disabled`)
+      continue
+    }
     const o = pc.options ?? {}
-    if (!o.baseURL || !o.apiKey) continue
+    if (!o.baseURL || !o.apiKey) {
+      log?.(`zcode-provider: 跳过 provider ${pid},原因=${!o.baseURL ? 'baseURL 缺失' : 'apiKey 缺失'}`)
+      continue
+    }
     const kind = pc.kind ?? 'anthropic'
     const base = o.baseURL.replace(/\/+$/, '')
     // 模型目录优先级:provider 顶层 models(zcode 的真实目录,含 limit/reasoning)
@@ -336,7 +351,10 @@ export function extractRoutes(
         defaultEffort: 'max',
       }))
     }
-    if (!models.length) continue
+    if (!models.length) {
+      log?.(`zcode-provider: 跳过 provider ${pid},原因=模型目录为空`)
+      continue
+    }
     const family = /bigmodel/i.test(pid) ? 'bigmodel' : /zai/i.test(pid) ? 'zai' : undefined
     // 套餐标明:从路由 id 识别 plan 类型,避免 start plan 显示成和 coding plan 同名
     const plan = /start-plan/i.test(pid) ? 'Start Plan'
@@ -395,6 +413,7 @@ export function extractRoutes(
       if (!twin.models.some((x) => x.id === m.id)) twin.models.push(m)
     }
   }
+  log?.(`zcode-provider: 路由提取完成,可用路由数=${deduped.length}`)
   return deduped
 }
 
@@ -821,6 +840,15 @@ function modelLabel(conn: ZcodeRoute, id: string): string {
   return id
 }
 
+function isAppServerTransportUnavailable(error: unknown): boolean {
+  const candidate = error as { code?: unknown; message?: unknown } | null
+  const code = candidate?.code
+  const message = String(candidate?.message ?? error)
+  if (code === 'CONFIGURATION' || code === 'STREAM_CLOSED') return true
+  if (code !== 'SERVER') return false
+  return /failed to start|app-server exited \(|transport disposed|stdin (?:is closed|write failed)|spawn .*ENOENT/iu.test(message)
+}
+
 /** 逐字段实现 ZCode-compatible Anthropic `/v1/messages` 请求。 */
 class ZcodeAdapter extends LlmAdapter {
   constructor(
@@ -936,14 +964,21 @@ class ZcodeAdapter extends LlmAdapter {
     const engineDelegated = mode === 'start-plan' || mode === 'off-peak'
     if (engineDelegated && this.wire?.authBackend?.() === 'openzcode-app-server'
       && this.wire?.appServer !== undefined && conn.family !== undefined && !hasCustomPromptLayers) {
-      for await (const chunk of this.wire.appServer.generate(
-        options,
-        conn,
-        this.wire.workspacePath?.(options.sessionId),
-      )) {
-        yield chunk
+      let emitted = false
+      try {
+        for await (const chunk of this.wire.appServer.generate(
+          options,
+          conn,
+          this.wire.workspacePath?.(options.sessionId),
+        )) {
+          emitted = true
+          yield chunk
+        }
+        return
+      } catch (error) {
+        if (emitted || !isAppServerTransportUnavailable(error)) throw error
+        this.wire.log?.(`zcode-provider: app-server 不可用(${String(error)});本次改走直连 wire`)
       }
-      return
     }
     if (hasCustomPromptLayers && this.wire?.authBackend?.() === 'openzcode-app-server'
       && this.wire?.appServer !== undefined && conn.family !== undefined) {
@@ -1267,6 +1302,8 @@ export interface Config {
 /** 设置层持久化的一条路由:由 zcode 设备配置派生,`id` 与派生路由的 `route` 同义。 */
 interface StoredRoute {
   id?: string
+  /** Native fallback routes use the provider key as `route` before persistence. */
+  route?: string
   display: string
   kind?: string
   baseURL: string
@@ -1275,6 +1312,10 @@ interface StoredRoute {
   family?: string
   access?: { type?: string; mode?: string; accountType?: string }
   credential?: CredentialSource
+}
+
+function diagnosticRouteId(route: StoredRoute | undefined): string | null {
+  return route?.id ?? route?.route ?? null
 }
 
 /**
@@ -1451,26 +1492,84 @@ function readField<T>(value: T | Volatile<T> | undefined, fallback: T): T {
  */
 export function apply(ctx: Context, config: Config = {}): void {
   const ns = ctx.fiber?.entry?.options.id ?? name
-  // 官方线格式 profile:版本/平台/时区/设备标识;设备标识只在激活时读一次
-  const log = (message: string): void => { ctx.logger.debug(message) }
+  const diagnostics = new DiagnosticLog()
+  // 官方线格式 profile:版本/平台/时区/设备标识;设备标识只在激活时读一次。
+  // 同一条启动/路由日志同时进入 DSH logger 和权益页诊断 Remote。
+  const log = (message: string): void => {
+    ctx.logger.debug(message)
+    diagnostics.record({ level: 'debug', phase: 'route-discovery', message })
+  }
+  const logInfo = (phase: string, message: string): void => {
+    ctx.logger.info(message)
+    diagnostics.record({ level: 'info', phase, message })
+  }
+  const logWarn = (phase: string, message: string): void => {
+    ctx.logger.warn(message)
+    diagnostics.record({ level: 'warn', phase, message })
+  }
   const telemetryStatePath = config.telemetryStatePath ?? defaultTelemetryStatePath()
+  const officialTelemetryStatePath = nativeTelemetryStatePath()
+  const pluginDeviceMid = readDeviceMid(telemetryStatePath)
+  const officialDeviceMid = readDeviceMid(officialTelemetryStatePath)
+  const deviceMid = pluginDeviceMid ?? officialDeviceMid
   const credentialsPath = config.credentialsPath ?? defaultCredentialsPath()
   // 可注入路径:测试用它隔离机器上的真实覆写状态
   const promptOverridesPath = config.promptOverridesPath ?? defaultPromptOverridesPath()
   const authBackendPath = config.authBackendPath ?? defaultAuthBackendPath()
+  diagnostics.updateContext({
+    providerConfigPath: config.providerConfigPath ?? DEFAULT_CONFIG_PATH,
+    credentialsPath,
+    nativeCredentialsPath: config.nativeCredentialsPath ?? nativeCredentialPath(),
+    nativeBuiltinCatalogPath: config.nativeBuiltinCatalogPath ?? discoveredBuiltinCatalogPath() ?? null,
+    officialStorageDir: process.env.ZCODE_STORAGE_DIR?.trim()
+      || (process.env.ZCODE_DATA_BASE_DIR?.trim()
+        ? `${process.env.ZCODE_DATA_BASE_DIR.trim()}/.zcode/v2`
+        : `${process.env.USERPROFILE?.trim() || process.env.HOME?.trim() || ''}/.zcode/v2`),
+    telemetryStatePath,
+    officialTelemetryStatePath,
+    pluginDeviceMidPresent: pluginDeviceMid !== undefined,
+    officialDeviceMidPresent: officialDeviceMid !== undefined,
+    deviceMidPresent: deviceMid !== undefined,
+    deviceMidSource: pluginDeviceMid !== undefined ? 'plugin' : officialDeviceMid !== undefined ? 'official' : 'none',
+    promptOverridesPath,
+    authBackendPath,
+    endpointOrigin: safeOrigin(config.endpointOrigin ?? ZCODE_ENDPOINT_ORIGIN) ?? '[invalid]',
+    appVersion: config.appVersion ?? ZCODE_CLIENT_VERSION,
+    platform: `${nodePlatform()}-${nodeArch()}`,
+  })
+  diagnostics.record({ level: 'info', phase: 'startup', message: 'zcode-provider 开始激活' })
+  diagnostics.record({
+    level: 'debug',
+    phase: 'startup',
+    message: '诊断能力已启用',
+    details: {
+      nativeCredentialSecretConfigured: Boolean(process.env.ZCODE_CREDENTIAL_SECRET?.trim()),
+      dataBaseDirConfigured: Boolean(process.env.ZCODE_DATA_BASE_DIR?.trim()),
+      storageDirConfigured: Boolean(process.env.ZCODE_STORAGE_DIR?.trim()),
+      pluginDeviceMidPresent: pluginDeviceMid !== undefined,
+      officialDeviceMidPresent: officialDeviceMid !== undefined,
+      deviceMidPresent: deviceMid !== undefined,
+      deviceMidSource: pluginDeviceMid !== undefined ? 'plugin' : officialDeviceMid !== undefined ? 'official' : 'none',
+    },
+  })
   let authBackend: AuthBackend = normalizeAuthBackend(config.authBackend ?? readAuthBackend(authBackendPath))
   // 激活不写盘:数据卷由 dpk 安装期物化(SPEC §13),运行期只由用户动作
   // (Remote 写入/设置迁移)落盘。全新安装因此是"零写激活",数据面状态
   // 由 dpk data 报告,而不是靠这里悄悄生成文件。
   const legacyPromptOverrides = readField(config.promptOverrides, {})
   let promptOverrides = readPromptOverrides(promptOverridesPath)
+  const scheduleAfterHmr = (operation: () => Promise<unknown>): Promise<void> => {
+    const hmr = ctx.get('hmr' as string) as { runAfterCurrent?: (task: () => Promise<unknown>) => Promise<unknown> } | undefined
+    const queued = typeof hmr?.runAfterCurrent === 'function' ? hmr.runAfterCurrent(operation) : operation()
+    return queued.then(() => undefined)
+  }
   if (!hasPromptOverrides(promptOverrides) && hasPromptOverrides(legacyPromptOverrides)) {
     promptOverrides = { ...legacyPromptOverrides }
     writePromptOverrides(promptOverridesPath, promptOverrides)
     const settings = ctx.get('settings' as string) as SettingsMutationTarget | undefined
     if (settings !== undefined) {
-      void Promise.resolve(settings.mutate(ns, [{ op: 'unset', path: ['promptOverrides'] }]))
-        .catch((error: unknown) => { ctx.logger.warn(`zcode-provider: 清理旧提示词配置失败: ${String(error)}`) })
+      void scheduleAfterHmr(() => settings.mutate(ns, [{ op: 'unset', path: ['promptOverrides'] }]))
+        .catch((error: unknown) => { logWarn('storage', `zcode-provider: 清理旧提示词配置失败: ${String(error)}`) })
     }
   }
   let promptRevision = 0
@@ -1518,14 +1617,14 @@ export function apply(ctx: Context, config: Config = {}): void {
         ...changed.map((key) => ({ op: 'set' as const, path: ['routes', key], value: routes[key] })),
         ...removedOpenAiRoutes.map((key) => ({ op: 'unset' as const, path: ['routes', key] })),
       ]
-      void Promise.resolve(settings.mutate(ns, ops))
+      void scheduleAfterHmr(() => settings.mutate(ns, ops))
         .then(() => {
-          ctx.logger.info(`zcode-provider: 已同步 ${changed.length} 条 Anthropic 路由,移除 ${removedOpenAiRoutes.length} 条 OpenAI 路由`)
+          logInfo('route-sync', `zcode-provider: 已同步 ${changed.length} 条 Anthropic 路由,移除 ${removedOpenAiRoutes.length} 条 OpenAI 路由`)
         })
-        .catch((error: unknown) => { ctx.logger.warn(`zcode-provider: 同步路由失败: ${String(error)}`) })
+        .catch((error: unknown) => { logWarn('route-sync', `zcode-provider: 同步路由失败: ${String(error)}`) })
     }
   }
-  ctx.logger.info(`zcode-provider: 已接入 ${Object.keys(routes).length} 条 zcode 模型路由: ${Object.entries(routes).map(([key, r]) => `${r.id ?? key}(${r.kind ?? 'anthropic'}:${(r.models ?? []).map((m) => m.id).join('/')})`).join(', ')}`)
+  logInfo('startup', `zcode-provider: 已接入 ${Object.keys(routes).length} 条 zcode 模型路由: ${Object.entries(routes).map(([key, r]) => `${r.id ?? key}(${r.kind ?? 'anthropic'}:${(r.models ?? []).map((m) => m.id).join('/')})`).join(', ')}`)
   const profileOf = (): WireProfile => {
     const appVersion = config.appVersion ?? ZCODE_CLIENT_VERSION
     return {
@@ -1537,7 +1636,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       osVersion: nodeRelease(),
       clientLanguage: Intl.DateTimeFormat().resolvedOptions().locale,
       clientTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      deviceMid: readDeviceMid(telemetryStatePath),
+      deviceMid,
     }
   }
   const signer = (config.signingEnabled ?? true) ? new ClientRequestSigner({ log }) : undefined
@@ -1545,7 +1644,7 @@ export function apply(ctx: Context, config: Config = {}): void {
     ? new OpenZCodeAppServerTransport(config.appServer, log)
     : undefined
   if (appServer !== undefined) {
-    ctx.logger.info(`zcode-provider: 鉴权链路=${authBackend}`)
+    logInfo('startup', `zcode-provider: 鉴权链路=${authBackend}`)
   }
   // 一个插件实例只保留一个挑战队列。每条路由共享它，避免同一浏览器会话出现多份
   // 相互抢占的验证码请求；卸载时会拒绝仍在等待的请求。
@@ -1569,12 +1668,40 @@ export function apply(ctx: Context, config: Config = {}): void {
   const usageDeps = (range: MonitorRange | undefined, timeoutMs: number): UsageDeps => {
     const planRoute = Object.values(routes).find((r) => r.access?.mode === 'individual-coding-plan')
     const startRoute = Object.values(routes).find((r) => r.access?.mode === 'start-plan')
-    // 错峰资格的本地前提:与官方 `resolveOffPeakCredentials` 同口径。
-    // `oauth:active_provider` 与 coding plan api key 都要从凭证库读一次。
+    const planOrigin = planRoute === undefined ? undefined : bigmodelOriginFrom(planRoute.baseURL)
+    diagnostics.updateContext({
+      codingPlanRoute: diagnosticRouteId(planRoute),
+      codingPlanOrigin: planOrigin ?? null,
+      codingPlanHasApiKey: planRoute !== undefined && planRoute.apiKey.trim() !== '',
+      codingPlanCredential: planRoute?.credential ?? null,
+      startPlanRoute: diagnosticRouteId(startRoute),
+      startPlanOrigin: startRoute === undefined ? null : safeOrigin(startRoute.baseURL) ?? null,
+      startPlanHasJwt: startRoute !== undefined && startRoute.apiKey.trim() !== '',
+      startPlanCredential: startRoute?.credential ?? null,
+    })
     const activeProvider = readActiveProvider(config)
-    const planKind = planRoute?.access?.mode ?? startRoute?.access?.mode
     const accountFamily: NonNullable<UsageDeps['accountFamily']> =
       (planRoute?.family ?? startRoute?.family) === 'zai' ? 'zai' : 'bigmodel'
+    diagnostics.record({
+      level: 'info',
+      phase: 'route-discovery',
+      message: '已解析权益路由',
+      details: {
+        codingPlanRoute: diagnosticRouteId(planRoute),
+        codingPlanOrigin: planOrigin ?? null,
+        codingPlanHasApiKey: planRoute !== undefined && planRoute.apiKey.trim() !== '',
+        codingPlanCredential: planRoute?.credential ?? null,
+        startPlanRoute: diagnosticRouteId(startRoute),
+        startPlanOrigin: startRoute === undefined ? null : safeOrigin(startRoute.baseURL) ?? null,
+        startPlanHasJwt: startRoute !== undefined && startRoute.apiKey.trim() !== '',
+        startPlanCredential: startRoute?.credential ?? null,
+        activeProvider: activeProvider ?? null,
+        activeProviderMatchesFamily: activeProvider === undefined || activeProvider === accountFamily,
+      },
+    })
+    // 错峰资格的本地前提:与官方 `resolveOffPeakCredentials` 同口径。
+    // `oauth:active_provider` 与 coding plan api key 都要从凭证库读一次。
+    const planKind = planRoute?.access?.mode ?? startRoute?.access?.mode
     const oauthAccessToken = readCredentialValue(
       credentialsPath,
       `oauth:${accountFamily}:access_token`,
@@ -1584,16 +1711,16 @@ export function apply(ctx: Context, config: Config = {}): void {
       },
     )
     return {
-      ...(planRoute === undefined ? {} : { bigmodelOrigin: bigmodelOriginFrom(planRoute.baseURL) }),
+      ...(planRoute === undefined ? {} : { bigmodelOrigin: planOrigin, bigmodelBaseURL: planRoute.baseURL }),
       ...(planRoute === undefined ? {} : { planApiKey: planRoute.apiKey }),
       ...(startRoute === undefined ? {} : { zcodeJwt: startRoute.apiKey }),
       ...(oauthAccessToken === '' ? {} : { oauthAccessToken }),
       accountFamily,
       ...(planRoute === undefined ? {} : { codingProviderId: officialProviderId({
-        route: planRoute.id ?? '', family: planRoute.family, access: planRoute.access,
+        route: diagnosticRouteId(planRoute) ?? '', family: planRoute.family, access: planRoute.access,
       }) }),
       ...(startRoute === undefined ? {} : { startProviderId: officialProviderId({
-        route: startRoute.id ?? '', family: startRoute.family, access: startRoute.access,
+        route: diagnosticRouteId(startRoute) ?? '', family: startRoute.family, access: startRoute.access,
       }) }),
       hasCodingPlanApiKey: planRoute !== undefined && planRoute.apiKey !== '',
       ...(activeProvider === undefined ? {} : { activeProvider }),
@@ -1608,6 +1735,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       endpointOrigin: config.endpointOrigin ?? ZCODE_ENDPOINT_ORIGIN,
       appVersion: config.appVersion ?? ZCODE_CLIENT_VERSION,
       timeoutMs,
+      diagnostics,
     }
   }
   type CacheEntry<T> = {
@@ -1743,18 +1871,27 @@ export function apply(ctx: Context, config: Config = {}): void {
         collectUsageSupplement,
         collectDefaultProvider,
       )
-      ctx.logger.info('zcode-provider: ZCode 权益面板 Remote 服务已就绪')
+      logInfo('remote', 'zcode-provider: ZCode 权益面板 Remote 服务已就绪')
     } catch (error) {
-      ctx.logger.warn(`zcode-provider: 权益面板 Remote 服务注册失败: ${String(error)}`)
+      logWarn('remote', `zcode-provider: 权益面板 Remote 服务注册失败: ${String(error)}`)
+    }
+    try {
+      createDiagnosticsRemoteService(
+        remoteCtx as { provide(name: string, value: unknown): unknown },
+        diagnostics,
+      )
+      logInfo('remote', 'zcode-provider: 诊断日志 Remote 服务已就绪')
+    } catch (error) {
+      logWarn('remote', `zcode-provider: 诊断日志 Remote 服务注册失败: ${String(error)}`)
     }
     try {
       createCaptchaRemoteService(
         remoteCtx as { provide(name: string, value: unknown): unknown },
         captchaBroker,
       )
-      ctx.logger.info('zcode-provider: DSH Web UI 验证码 Remote 服务已就绪')
+      logInfo('remote', 'zcode-provider: DSH Web UI 验证码 Remote 服务已就绪')
     } catch (error) {
-      ctx.logger.warn(`zcode-provider: DSH Web UI 验证码 Remote 服务注册失败: ${String(error)}`)
+      logWarn('remote', `zcode-provider: DSH Web UI 验证码 Remote 服务注册失败: ${String(error)}`)
     }
     try {
       createPromptRemoteService(

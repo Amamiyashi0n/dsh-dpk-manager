@@ -10,11 +10,16 @@
  *
  * @module zcode-provider/native-account
  */
-/** 官方存储目录(与 app-server 传输默认一致:环境覆写 > `~/.zcode/v2`)。 */
+/** 官方存储目录(与官方 credential service 一致:环境覆写 > `~/.zcode/v2`)。 */
 export declare function nativeStorageDir(): string;
 /** 官方凭证库路径。 */
 export declare function nativeCredentialPath(): string;
-/** 已发现安装自带的内置目录路径;本机无安装时为 undefined。 */
+/** 官方 ZCode 设备状态路径。 */
+export declare function nativeTelemetryStatePath(): string;
+/**
+ * 已发现安装自带的内置目录路径。优先使用显式路径和开发仓库路径，
+ * 再走安装发现；这些路径必须与官方 app-server 使用同一份目录。
+ */
 export declare function discoveredBuiltinCatalogPath(): string | undefined;
 /** 目录中一条账号端点:插件条目键 + 官方 provider 族 + 可解析的套餐模式。 */
 export interface NativeAccountEndpoint {

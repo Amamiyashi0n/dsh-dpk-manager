@@ -18,6 +18,7 @@
  *
  * @module zcode-provider/usage
  */
+import type { DiagnosticSink } from './diagnostics.js';
 import { type OffPeakAvailability, type OffPeakEligibility } from './offpeak.js';
 import { type AccountProviderSnapshot, type ProviderFamily, type UsageEntitlementSnapshot, type UsageMcpQuotaSnapshot, type UsageQuotaLimit } from './entitlements.js';
 export type { AccountProviderAccess, AccountProviderMode, AccountProviderSnapshot, AccountProviderState, AccountProviderUnavailableReason, ProviderFamily, UsageEntitlementContext, UsageEntitlementProviderInfo, UsageEntitlementRemaining, UsageEntitlementSnapshot, UsageEntitlementSubscription, UsageEntitlementSubscriptionDetail, UsageMcpQuotaScope, UsageMcpQuotaSnapshot, UsageQuotaLimit, UsageQuotaSnapshot, UsageQuotaUsageDetail, } from './entitlements.js';
@@ -176,6 +177,10 @@ export interface UsageDeps {
     fetch?: typeof fetch;
     /** 请求超时(ms)。 */
     timeoutMs?: number;
+    /** Host-local diagnostics; never receives credential values. */
+    diagnostics?: DiagnosticSink;
+    /** Original Coding Plan route URL, used only to explain origin parsing failures. */
+    bigmodelBaseURL?: string;
 }
 /**
  * 官方取数窗口:截止今天 23:59:59,起点为 `days-1` 天前的 00:00:00。

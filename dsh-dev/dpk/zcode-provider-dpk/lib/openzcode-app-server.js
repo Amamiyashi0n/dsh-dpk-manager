@@ -1,14 +1,19 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { LlmError } from '@deepseek-ai/dsh-llm';
 import { discoverZcodeInstall } from './app-server-discovery.js';
-// The app-server follows the host's normal Node runtime.  A persisted
-// profile may still provide an explicit executable, but the plugin itself
-// must not silently select a removed MSYS2 toolchain.
-const DEFAULT_NODE_PATH = process.env.DSH_NODE_PATH?.trim() || 'node';
+// The app-server follows the host's normal Node runtime. A persisted profile
+// may still provide an explicit executable, but the plugin does not silently
+// select a removed MSYS2 toolchain. Electron's executable can run as Node when
+// ELECTRON_RUN_AS_NODE is set, which keeps desktop installs self-contained.
+function defaultNodePath() {
+    return process.env.DSH_NODE_PATH?.trim()
+        || (process.versions.electron !== undefined ? process.execPath : 'node');
+}
+const DEFAULT_NODE_PATH = defaultNodePath();
 // Env vars remain explicit dev overrides; the default now comes from this
 // machine's real install (registry App Paths, PATH, installed-programs
 // entries, common directories), so a fresh machine needs no hand-set paths.
@@ -577,12 +582,23 @@ export class OpenZCodeAppServerTransport {
             return await this.startPromise;
         const nodePath = this.config.nodePath?.trim() || DEFAULT_NODE_PATH;
         const cliPath = this.config.cliPath?.trim() || DEFAULT_CLI_PATH;
+        this.log(`openzcode-app-server launch: nodePath=${nodePath},cliPath=${cliPath},electronNode=${process.versions.electron !== undefined}`);
         if (!cliPath) {
             throw new LlmError('app-server cliPath is not configured and no ZCode install was found'
                 + ' (searched the registry App Paths, PATH, installed-programs entries, and the usual install directories);'
                 + ' install ZCode on this machine, or set appServer.cliPath', 'CONFIGURATION');
         }
-        if (nodePath !== 'node' && !existsSync(nodePath)) {
+        const isElectronNode = process.versions.electron !== undefined
+            && resolve(nodePath).toLowerCase() === resolve(process.execPath).toLowerCase();
+        const isBareNode = nodePath === 'node' || nodePath === 'node.exe';
+        if (isBareNode) {
+            const probe = spawnSync(nodePath, ['--version'], { encoding: 'utf8', windowsHide: true, timeout: 4_000 });
+            if (probe.error !== undefined || probe.status !== 0) {
+                throw new LlmError(`app-server nodePath is not executable: ${nodePath}; set appServer.nodePath to a Node executable`
+                    + (probe.error === undefined ? '' : ` (${probe.error.message})`), 'CONFIGURATION');
+            }
+        }
+        else if (!existsSync(nodePath)) {
             throw new LlmError(`app-server nodePath does not exist: ${nodePath}`, 'CONFIGURATION');
         }
         if (!existsSync(cliPath))
@@ -597,6 +613,7 @@ export class OpenZCodeAppServerTransport {
                 ...(this.config.builtinProviderConfigPath?.trim()
                     ? { ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: this.config.builtinProviderConfigPath.trim() }
                     : {}),
+                ...(isElectronNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
             };
             // Older persisted profiles may predate personalProviderConfigPath. The
             // standalone CLI still needs the paired Personal catalog to merge the
@@ -871,9 +888,12 @@ export function defaultAppServerPaths() {
     const discovered = discoverZcodeInstall();
     const repo = process.env.DSH_ZCODE_REPO?.trim() || '';
     const zcodeRoot = repo ? join(repo, 're-zcode', 'zcode-unpacked', 'resources') : '';
-    const storageDir = process.env.ZCODE_STORAGE_DIR?.trim() || join(homedir(), '.zcode', 'v2');
+    const storageDir = process.env.ZCODE_STORAGE_DIR?.trim()
+        || (process.env.ZCODE_DATA_BASE_DIR?.trim()
+            ? join(process.env.ZCODE_DATA_BASE_DIR.trim(), '.zcode', 'v2')
+            : join(homedir(), '.zcode', 'v2'));
     return {
-        nodePath: process.env.DSH_NODE_PATH?.trim() || 'node',
+        nodePath: defaultNodePath(),
         cliPath: process.env.DSH_ZCODE_CLI_PATH?.trim()
             || discovered?.cliPath
             || (zcodeRoot ? join(zcodeRoot, 'glm', 'zcode.cjs') : ''),

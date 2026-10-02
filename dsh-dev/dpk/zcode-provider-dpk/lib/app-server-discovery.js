@@ -9,7 +9,8 @@
  *
  *  1. Windows App Paths registry (`zcode.exe` → install root),
  *  2. `zcode` on PATH (`where`/`which`),
- *  3. Add/Remove Programs registry (DisplayName match → InstallLocation),
+ *  3. Add/Remove Programs registry (DisplayName match → InstallLocation or
+ *     the directory containing UninstallString),
  *  4. the well-known per-user and per-machine install directories.
  *
  * Every candidate root is verified by the CLI bundle actually being there, so
@@ -21,7 +22,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, win32 as win32Path } from 'node:path';
 import { homedir } from 'node:os';
 /** Where the CLI bundle and the built-in provider catalog sit inside an install. */
 const CLI_RELATIVE = join('resources', 'glm', 'zcode.cjs');
@@ -54,55 +55,103 @@ function regValue(output, name) {
         const match = /^\s*(.+?)\s+REG_(?:SZ|EXPAND_SZ)\s+(.+?)\s*$/u.exec(line);
         if (match === null)
             continue;
-        if (wanted === undefined || match[1] === wanted || match[1].startsWith('(')) {
+        if (wanted === undefined ? match[1].startsWith('(') : match[1] === wanted) {
             return match[2];
         }
     }
     return undefined;
 }
 /** `reg query` with the classic parser quirks kept in one place. */
-function regQuery(args) {
+function runRegistryQuery(args) {
     const run = spawnSync('reg', [...args], { encoding: 'utf8', windowsHide: true, timeout: 4_000 });
-    return run.status === 0 && run.stdout.length > 0 ? run.stdout : undefined;
+    return {
+        status: run.status,
+        stdout: String(run.stdout ?? ''),
+        stderr: String(run.stderr ?? ''),
+    };
+}
+/** Pull verified-install candidates from one App Paths value block. */
+export function rootsFromAppPathsOutput(output) {
+    const roots = [];
+    const exe = regValue(output, '(default)');
+    const dir = regValue(output, 'Path');
+    if (exe !== undefined)
+        roots.push(dirname(exe));
+    if (dir !== undefined && dir.trim() !== '')
+        roots.push(dir.replace(/[\\/]+$/u, ''));
+    return roots;
+}
+/** Extract a Windows executable path from an uninstall command line. */
+export function executableFromUninstallString(value) {
+    const command = value?.trim() ?? '';
+    if (command === '')
+        return undefined;
+    if (command.startsWith('"')) {
+        const end = command.indexOf('"', 1);
+        if (end > 1)
+            return command.slice(1, end);
+    }
+    const exeEnd = command.search(/\.exe(?:\s|$)/iu);
+    if (exeEnd >= 0)
+        return command.slice(0, exeEnd + 4).trim();
+    return command.split(/\s+/u)[0] || undefined;
+}
+/** Resolve an uninstall command to its candidate installation directory. */
+export function installRootFromUninstallString(value) {
+    const executable = executableFromUninstallString(value);
+    if (executable === undefined)
+        return undefined;
+    const root = win32Path.dirname(executable);
+    return root === '.' ? undefined : root.replace(/[\\/]+$/u, '');
+}
+/** Pull an installation root from one Add/Remove Programs value block. */
+export function rootFromUninstallOutput(output) {
+    const display = regValue(output, 'DisplayName');
+    if (display === undefined || !/^zcode(\s|$)/iu.test(display))
+        return undefined;
+    const location = regValue(output, 'InstallLocation')?.trim();
+    if (location !== undefined && location !== '')
+        return location.replace(/[\\/]+$/u, '');
+    return installRootFromUninstallString(regValue(output, 'UninstallString'));
 }
 /** Candidate roots from the Windows registry: App Paths first, then uninstall. */
-function windowsRegistryRoots() {
+export function windowsRegistryRoots(run = runRegistryQuery, log = () => { }) {
     const roots = [];
+    const query = (args, label) => {
+        const result = run(args);
+        if (result.status !== 0) {
+            const detail = result.stderr.trim();
+            log(`zcode-provider: registry query failed (${label}),status=${String(result.status)}${detail ? `,error=${detail}` : ''}`);
+            return undefined;
+        }
+        return result.stdout.trim() === '' ? undefined : result.stdout;
+    };
     const appPaths = [
         ['HKCU', 'SOFTWARE', 'Microsoft', 'Windows', 'CurrentVersion', 'App Paths', 'zcode.exe'],
         ['HKLM', 'SOFTWARE', 'Microsoft', 'Windows', 'CurrentVersion', 'App Paths', 'zcode.exe'],
     ];
     for (const [hive, ...path] of appPaths) {
-        const output = regQuery([hive, 'query', path.join('\\')]);
+        const output = query(['query', `${hive}\\${path.join('\\')}`], `App Paths ${hive}`);
         if (output === undefined)
             continue;
-        // The (default) value carries the full exe path; the `Path` value is the dir.
-        const exe = regValue(output, '(default)');
-        const dir = regValue(output, 'Path');
-        for (const candidate of exe !== undefined ? [dirname(exe)] : [])
-            roots.push(candidate);
-        if (dir !== undefined)
-            roots.push(dir.replace(/[\\/]+$/u, ''));
+        roots.push(...rootsFromAppPathsOutput(output));
     }
     for (const hive of ['HKCU', 'HKLM']) {
         for (const view of ['SOFTWARE', 'SOFTWARE\\WOW6432Node']) {
             const key = `${hive}\\${view}\\Microsoft\\Windows\\CurrentVersion\\Uninstall`;
-            const listing = regQuery([hive, 'query', key]);
+            const listing = query(['query', key], `Uninstall listing ${key}`);
             if (listing === undefined)
                 continue;
             for (const sub of listing.split(/\r?\n/u)) {
                 const keyMatch = /^HKEY_\w+\\(.+)$/u.exec(sub.trim());
                 if (keyMatch === null)
                     continue;
-                const output = regQuery([hive, 'query', keyMatch[1]]);
+                const output = query(['query', `${hive}\\${keyMatch[1]}`], `Uninstall entry ${keyMatch[1]}`);
                 if (output === undefined)
                     continue;
-                const display = regValue(output, 'DisplayName');
-                if (display === undefined || !/^zcode(\s|$)/iu.test(display))
-                    continue;
-                const location = regValue(output, 'InstallLocation');
-                if (location !== undefined && location !== '')
-                    roots.push(location.replace(/[\\/]+$/u, ''));
+                const root = rootFromUninstallOutput(output);
+                if (root !== undefined)
+                    roots.push(root);
             }
         }
     }

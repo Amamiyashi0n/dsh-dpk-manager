@@ -13,8 +13,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const here = dirname(fileURLToPath(import.meta.url))
 const {
   accountEndpointsFromCatalog,
+  discoveredBuiltinCatalogPath,
   nativeAccountProviders,
   nativeCredentialPath,
+  nativeTelemetryStatePath,
+  nativeStorageDir,
 } = await import(pathToFileURL(join(here, '..', 'lib', 'native-account.js')).href)
 const { extractRoutes } = await import(pathToFileURL(join(here, '..', 'lib', 'index.js')).href)
 const { resolvePlanCredential, readCredentialValue } =
@@ -94,10 +97,38 @@ try {
 
   const loggedOut = nativeAccountProviders({ builtinPath, credentialsPath: join(dir, 'nope.json') })
   check('推导:本机无登录态时产出为空', Object.keys(loggedOut).length === 0)
-  check('推导:目录缺失时产出为空', Object.keys(nativeAccountProviders({ builtinPath: join(dir, 'nope.json'), credentialsPath: nativeCredPath })).length === 0)
+  check('推导:目录缺失时使用官方端点候选并产出已登录路由',
+    nativeAccountProviders({ builtinPath: join(dir, 'nope.json'), credentialsPath: nativeCredPath })['builtin:bigmodel-coding-plan'] !== undefined)
   check('路径:官方凭证库位于 `~/.zcode/v2` 下',
     nativeCredentialPath().toLowerCase().replaceAll('/', '\\').endsWith(join('.zcode', 'v2', 'credentials.json')),
     nativeCredentialPath())
+  check('路径:官方设备状态位于 `~/.zcode/v2` 下',
+    nativeTelemetryStatePath().toLowerCase().replaceAll('/', '\\').endsWith(join('.zcode', 'v2', 'telemetry-state.json')),
+    nativeTelemetryStatePath())
+  const previousDataBaseDir = process.env.ZCODE_DATA_BASE_DIR
+  const previousStorageDir = process.env.ZCODE_STORAGE_DIR
+  const previousBuiltinPath = process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE
+  const previousCliPath = process.env.DSH_ZCODE_CLI_PATH
+  try {
+    delete process.env.ZCODE_STORAGE_DIR
+    process.env.ZCODE_DATA_BASE_DIR = join(dir, 'official-data')
+    check('路径:ZCODE_DATA_BASE_DIR 下使用 `.zcode/v2`', nativeStorageDir() === join(dir, 'official-data', '.zcode', 'v2'))
+    process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE = join(dir, 'explicit-built-in.json')
+    check('路径:显式内置目录路径优先', discoveredBuiltinCatalogPath() === join(dir, 'explicit-built-in.json'))
+    delete process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE
+    process.env.DSH_ZCODE_CLI_PATH = join(dir, 'resources', 'glm', 'zcode.cjs')
+    check('路径:从 DSH_ZCODE_CLI_PATH 推导内置目录',
+      discoveredBuiltinCatalogPath() === join(dir, 'resources', 'config', 'provider', 'zcode-builtin.json'))
+  } finally {
+    if (previousDataBaseDir === undefined) delete process.env.ZCODE_DATA_BASE_DIR
+    else process.env.ZCODE_DATA_BASE_DIR = previousDataBaseDir
+    if (previousStorageDir === undefined) delete process.env.ZCODE_STORAGE_DIR
+    else process.env.ZCODE_STORAGE_DIR = previousStorageDir
+    if (previousBuiltinPath === undefined) delete process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE
+    else process.env.ZCODE_BUILTIN_PROVIDER_CONFIG_FILE = previousBuiltinPath
+    if (previousCliPath === undefined) delete process.env.DSH_ZCODE_CLI_PATH
+    else process.env.DSH_ZCODE_CLI_PATH = previousCliPath
+  }
 
   // ---- 3. extractRoutes:providers.json 缺失时的整体回退 ----
   const native = { builtinPath, credentialsPath: nativeCredPath }

@@ -528,9 +528,11 @@ if (process.argv.includes('--live')) {
   })
   console.log('\n--- 真机取数结果 ---')
   console.log(usage.renderUsageReport(live))
-  check('真机:取到额度条目', live.limits.length > 0, String(live.limits.length))
-  check('真机:取到生效订阅', live.subscription !== undefined, JSON.stringify(live.subscription))
-  check('真机:取到 Start Plan', live.startPlan !== undefined, JSON.stringify(live.startPlan?.planId))
+  const liveCodingPlan = live.entitlements.codingPlan
+  const liveStartPlan = live.entitlements.startPlan
+  check('真机:取到额度条目', (liveCodingPlan.quota?.limits.length ?? 0) > 0, String(liveCodingPlan.quota?.limits.length ?? 0))
+  check('真机:取到生效订阅', liveCodingPlan.subscription !== null, JSON.stringify(liveCodingPlan.subscription))
+  check('真机:取到 Start Plan', liveStartPlan.subscription !== null, JSON.stringify(liveStartPlan.subscription))
   check('真机:取到窗口用量', live.modelUsage !== undefined, JSON.stringify(live.failures))
   if (live.modelUsage !== undefined) {
     const w = live.modelUsage
@@ -566,10 +568,12 @@ if (process.argv.includes('--live')) {
     live.offPeak === undefined, JSON.stringify(live.offPeak?.eligibility))
   check('真机:默认取数没有 off-peak 失败项(说明没请求该端点)',
     !live.failures.some((f) => f.source === 'off-peak'), JSON.stringify(live.failures))
-  check('真机:Start Plan 准入通过(带 device-mid 后 billing/balance 返回 code=0)',
-    live.startPlanBalance?.ok === true, JSON.stringify(live.startPlanBalance))
-  check('真机:准入探测确认本次带了设备标识', live.startPlanBalance?.deviceIdentified === true,
-    JSON.stringify(live.startPlanBalance))
+  check('真机:Start Plan balance 返回有效快照',
+    liveStartPlan.authenticated === true && liveStartPlan.subscription !== null && liveStartPlan.quota !== null,
+    JSON.stringify(liveStartPlan))
+  check('真机:Start Plan provider 状态为 available',
+    live.accountProviders['account:bigmodel-start-plan']?.state.availability === 'available',
+    JSON.stringify(live.accountProviders['account:bigmodel-start-plan']))
 }
 
 // ---- 16. x-device-mid:zcode.z.ai 请求的身份头(少了它服务端回 3001) ----
@@ -611,6 +615,23 @@ if (process.argv.includes('--live')) {
   })
   check('device-mid:未配置时不带该头(避免送出空值)',
     calls2.every((c) => c.headers['x-device-mid'] === undefined))
+}
+
+// ---- 17. HTTP 错误响应体进入诊断,不再只有裸状态码 ----
+{
+  const events = []
+  const report = await usage.fetchEntitlementReport({
+    endpointOrigin: 'https://zcode.z.ai', appVersion: '3.14.3', zcodeJwt: 'jwt-fixture',
+    deviceMid: 'device-mid-fixture',
+    diagnostics: { record: (event) => events.push(event) },
+    fetch: async () => new Response(JSON.stringify({ code: 3001, msg: 'parameter error', request_id: 'req-fixture' }), { status: 400 }),
+  })
+  check('HTTP 错误:诊断保留服务端 code/msg/request_id',
+    report.failures.some((failure) => failure.source === 'start-plan' && failure.reason.includes('HTTP 400 code=3001 msg=parameter error request_id=req-fixture')),
+    JSON.stringify(report.failures))
+  const start = events.find((event) => event.phase === 'start-plan')
+  check('HTTP 错误:Start Plan 诊断标记 device-mid 已提供', start?.details?.hasDeviceMid === true, JSON.stringify(start))
+  check('HTTP 错误:诊断不携带凭证或设备标识原文', !JSON.stringify(events).includes('jwt-fixture') && !JSON.stringify(events).includes('device-mid-fixture'))
 }
 
 console.log(`\n${passed}/${passed + failures.length} 项通过`)

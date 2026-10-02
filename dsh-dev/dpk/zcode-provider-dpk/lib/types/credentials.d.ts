@@ -9,7 +9,8 @@
  * - 都取不到时才回落到 provider 配置里的 `apiKey`。
  *
  * 存储值可能是密文(`enc:v1:<iv>.<tag>.<ct>`,AES-256-GCM),
- * 密钥 = SHA-256(`zcode-credential-fallback:win32:<homedir>:<username>`)。
+ * 密钥 = SHA-256(`ZCODE_CREDENTIAL_SECRET` 或
+ * `zcode-credential-fallback:<platform>:<homedir>:<username>`)。
  *
  * @module zcode-provider/credentials
  */
@@ -61,7 +62,7 @@ export declare function readCredentialStore(credentialsPath: string): Record<str
  * @returns 明文;解密失败抛错(调用方决定回落)。
  */
 export declare function decryptStoreValue(value: string, key: Buffer): string;
-/** 派生凭证库密钥(官方 fallback 种子)。 */
+/** 派生凭证库密钥(官方环境 secret 优先,否则使用机器/用户绑定的 fallback 种子)。 */
 export declare function deriveCredentialKey(home: string, user: string): Buffer;
 /**
  * 读单个凭证键并解密(官方 `credentialService.load(name)`)。
