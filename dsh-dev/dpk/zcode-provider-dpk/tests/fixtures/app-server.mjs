@@ -58,6 +58,24 @@ function handle(request) {
     return
   }
   if (request.method === 'session/messages') {
+    // 失败回合场景:引擎把提供方失败原样带回 `info.error`(含 providerErrorCode),
+    // 且不写 `finish`。用于验证宿主的失败分类(额度耗尽 → QUOTA)。
+    if (process.env.ZCODE_FIXTURE_TURN_ERROR) {
+      send({
+        id: request.id,
+        result: {
+          messages: [{
+            info: {
+              role: 'assistant',
+              completed: 1,
+              semantics: { kind: 'assistant_response' },
+              error: JSON.parse(process.env.ZCODE_FIXTURE_TURN_ERROR),
+            },
+          }],
+        },
+      })
+      return
+    }
     send({
       id: request.id,
       result: {

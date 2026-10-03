@@ -2997,6 +2997,9 @@ var EMPTY_RESPONSE_CODE = "EMPTY_RESPONSE";
 var STRUCTURED_CONTEXT_OVERFLOW = new RegExp(String.raw`(?:^|[^a-z0-9])context[\s_-](?:length|window)[\s_-]` + String.raw`(?:exceed(?:ed|s)?|overflow(?:ed)?|limit[\s_-]exceeded)(?:$|[^a-z0-9])`, "i");
 var TOO_LARGE_FOR_CONTEXT = new RegExp(String.raw`\b(?:request|prompt|input|messages?)\s+(?:is\s+|are\s+)?` + String.raw`too\s+(?:large|long)\s+for\s+(?:(?:this|the)\s+)?` + String.raw`(?:model(?:'s)?\s+)?context(?:\s+window)?\b`, "i");
 var EXCEEDS_MODEL_CONTEXT = new RegExp(String.raw`\b(?:input|prompt|request|messages?)\b.{0,40}` + String.raw`\b(?:exceed(?:s|ed)?|overflows?|is\s+larger\s+than)\b.{0,40}` + String.raw`\b(?:the\s+)?(?:model(?:'s)?\s+)?context(?:\s+(?:length|window))?\b`, "i");
+function isQuotaExceededError(detail) {
+  return /\binsufficient[\s_-]+(?:quota|balance|credits?)\b/i.test(detail) || /\b(?:quota|usage[\s_-]+limit)[\s_-]+(?:exceeded|exhausted|reached)\b/i.test(detail) || /\bexceed(?:ed|s)?[\s_-]+(?:(?:your|the)[\s_-]+)?(?:current[\s_-]+)?quota\b/i.test(detail) || /\b(?:balance|credits?)[\s_-]+(?:exhausted|depleted)\b/i.test(detail) || /\bout[\s_-]+of[\s_-]+(?:credits?|budget)\b/i.test(detail);
+}
 var DEFAULT_MAX_RETRIES = 5;
 var DEFAULT_INITIAL_DELAY_MS = 500;
 var DEFAULT_MAX_DELAY_MS = 1e4;
@@ -4082,6 +4085,33 @@ function adapterFailureChunk(error, signal) {
       failure
     }
   };
+}
+
+// lib/failure.js
+var QUOTA_BUSINESS_CODES = /* @__PURE__ */ new Set(["1113"]);
+var QUOTA_WORDING = /余额不足|额度不足|无可用资源包|欠费|请充值|额度(?:已)?(?:用尽|耗尽|用完)/u;
+function failureCode(status, type, businessCode, detail) {
+  if (status === 401 || status === 403 || type === "authentication_error" || type === "permission_error")
+    return "AUTH";
+  if (status === 402 || type === "billing_error" || isQuotaExceededError(detail) || QUOTA_BUSINESS_CODES.has(businessCode) || QUOTA_WORDING.test(detail))
+    return "QUOTA";
+  if (status === 429 || type === "rate_limit_error")
+    return "RATE_LIMIT";
+  if (status === 400 || status === 413 || type === "invalid_request_error")
+    return "INVALID_REQUEST";
+  if (status !== void 0 && status >= 500 || type === "api_error" || type === "overloaded_error")
+    return "SERVER";
+  return status === void 0 ? "SERVER" : `HTTP_${status}`;
+}
+function failureFrom(status, raw, fallbackMessage) {
+  const envelope = typeof raw === "object" && raw !== null ? raw : {};
+  const nested = typeof envelope.error === "object" && envelope.error !== null ? envelope.error : {};
+  const message = String(nested.message ?? nested.msg ?? envelope.message ?? envelope.msg ?? fallbackMessage);
+  const type = typeof nested.type === "string" ? nested.type : "";
+  const rawCode = nested.code ?? envelope.code;
+  const businessCode = typeof rawCode === "string" || typeof rawCode === "number" ? String(rawCode) : "";
+  const code = failureCode(status, type, businessCode, `${type} ${businessCode} ${message}`);
+  return new LlmError(message, code, status === void 0 ? {} : { status });
 }
 
 // node_modules/.pnpm/@deepseek-ai+cosmokit@1.8.5/node_modules/@deepseek-ai/cosmokit/lib/index.js
@@ -8111,8 +8141,12 @@ var OpenZCodeAppServerTransport = class {
         continue;
       const error = info.error;
       if (error && info.finish === void 0) {
-        const providerCode = error.data?.providerErrorCode ? ` (provider ${String(error.data.providerErrorCode)})` : "";
-        throw new LlmError(`app-server session turn failed: ${String(error.message ?? "unknown error")}${providerCode}`, "SERVER");
+        const providerDetail = String(error.message ?? "unknown error");
+        const providerCode = error.data?.providerErrorCode;
+        const businessCode = typeof providerCode === "string" || typeof providerCode === "number" ? String(providerCode) : "";
+        const code = failureCode(void 0, "", businessCode, `${businessCode} ${providerDetail}`);
+        const providerNote = businessCode === "" ? "" : ` (provider ${businessCode})`;
+        throw new LlmError(`app-server session turn failed: ${providerDetail}${providerNote}`, code);
       }
       if (info.finish === void 0)
         continue;
@@ -9008,16 +9042,12 @@ function signingSessionId(sessionId) {
   return zcodeSessionId(sessionId) || randomUUID4();
 }
 function errorFrom(status, text2) {
-  let message = text2;
-  let type = "";
+  let raw;
   try {
-    const raw = JSON.parse(text2);
-    message = String(raw?.error?.message ?? raw?.msg ?? text2);
-    type = String(raw?.error?.type ?? "");
+    raw = JSON.parse(text2);
   } catch (_nonJson) {
   }
-  const code = status === 401 || status === 403 || type === "authentication_error" ? "AUTH" : status === 402 || type === "billing_error" ? "QUOTA" : status === 429 || type === "rate_limit_error" ? "RATE_LIMIT" : status === 400 || status === 413 || type === "invalid_request_error" ? "INVALID_REQUEST" : status >= 500 || type === "api_error" || type === "overloaded_error" ? "SERVER" : `HTTP_${status}`;
-  return new LlmError(message, code, { status });
+  return failureFrom(status, raw, text2);
 }
 var EFFORT_INTENSITY = {
   off: 0,
@@ -9358,6 +9388,10 @@ async function* translateZcodeEvents(events) {
   let started = false;
   let reason;
   for await (const event of events) {
+    if (event.type === "error") {
+      const raw = event.error ?? event;
+      throw failureFrom(void 0, raw, `zcode endpoint stream error: ${JSON.stringify(raw)}`);
+    }
     if (event.type === "message_start") {
       if (started)
         throw new LlmError("zcode stream duplicate message_start", "MALFORMED_RESPONSE");
@@ -9367,9 +9401,6 @@ async function* translateZcodeEvents(events) {
     }
     if (!["content_block_start", "content_block_delta", "content_block_stop", "message_delta", "message_stop"].includes(String(event.type))) {
       continue;
-    }
-    if (event.type === "error") {
-      throw new LlmError(`zcode endpoint stream error: ${JSON.stringify(event.error ?? event)}`, "SERVER");
     }
     if (!started)
       throw new LlmError("zcode stream event precedes message_start", "MALFORMED_RESPONSE");
@@ -9968,6 +9999,8 @@ export {
   OFF_PEAK_ENABLED_DEFAULT,
   apply,
   extractRoutes,
+  failureCode,
+  failureFrom,
   hasPromptPrefixGate,
   inject,
   isOffPeakRequest,
@@ -9976,5 +10009,6 @@ export {
   officialProviderId,
   officialSystemBlocks,
   runtimeProviders,
-  systemBlocksForChannel
+  systemBlocksForChannel,
+  translateZcodeEvents
 };

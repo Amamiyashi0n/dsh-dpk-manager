@@ -170,7 +170,22 @@ node ../dpk-manager/dpk.mjs install dist/zcode-provider-<version>.dpk -p web --h
 安装后**必须核实** profile 链接已更新(`~/.dsh/profiles/web/package.json` 中 `zcode-provider` 指向新 digest 的 store 目录)。dpk 工具经 `~/.dsh/node_modules/@deepseek-ai` junction 定位 DSH CLI——工作区搬移后该 junction 会悬空,install 只解包到 store 却报 `the DSH CLI was not found`,profile 停留旧版(2026-09-30 实际发生:2.5.35/2.5.36 两版"安装成功"实则未生效,线上一直是 2.5.34,靠 wire 抓包才发现)。修复:`rmdir` 旧 junction 后 `mklink /J` 重指 `dsh-dev\deepseek-harness
 ode_modules\@deepseek-ai`。
 
-当前版本 **2.6.10**。近版本要点：
+当前版本 **2.6.11**。近版本要点：
+
+- **2.6.11** 额度耗尽提醒:官方把**终态欠费**发成 HTTP 429,原因在 body 里
+  (实测 `429 {"error":{"code":"1113","message":"余额不足或无可用资源包,请充值。"}}`),
+  而插件此前只按状态码分类、还丢掉了业务码,于是欠费被降级成可重试的 `RATE_LIMIT`——
+  DSH 依据 code 路由,**只有 `QUOTA` 会触发失败行的额度文案与全局 `shell.quota-notice` 提醒**,
+  这条路径因此永远走不到,用户看不到任何额度提示。三处一起修:
+
+  - 分类器改由 `lib/failure.js` 共享(直连 wire 与 app-server 委托两条链路同源),业务码与
+    **中文措辞**(共享判定 `isQuotaExceededError` 只覆盖英文)都参与判定,额度判断排在限流之前;
+  - **流内 SSE 错误此前是死代码**:类型白名单先 `continue` 掉了 `{type:'error'}`,该分支永远到不了,
+    真正的失败原因被吞掉、只剩一条误导性的 `STREAM_CLOSED`;现在先于白名单处理并分类;
+  - app-server 委托路径(start-plan)本来就把 `providerErrorCode` 带了回来,却硬编码 `SERVER`,
+    现在走同一套分类。
+
+  消息形态同时补全为三种:`{error:{…}}`(Anthropic)、`{code,msg}`(国内端点)、`{message}`(流内事件)。
 
 - **2.6.10** 目录按 api 类型取数:`modelRules` 是与 api 无关的链,官方目录另有两层按 api 类型分键
   (`modelApiRules`/`providerSiteRules`,`apiTypeMatch` 命中本路由在用的 `anthropic-messages` 才参与),

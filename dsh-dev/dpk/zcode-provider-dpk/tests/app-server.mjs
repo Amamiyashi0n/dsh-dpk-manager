@@ -119,6 +119,46 @@ try {
   } finally {
     startPlanTransport.dispose()
   }
+
+  // 额度耗尽(委托路径):引擎把 providerErrorCode 原样带回,分类必须与直连 wire
+  // 一致成 QUOTA——否则 start-plan 的欠费只会得到一个 SERVER,DSH 的欠费提醒
+  // (失败行额度文案 + 全局 shell.quota-notice)不会出现。
+  process.env.ZCODE_FIXTURE_TURN_ERROR = JSON.stringify({
+    message: '余额不足或无可用资源包,请充值。',
+    data: { providerErrorCode: '1113' },
+  })
+  const quotaTransport = new OpenZCodeAppServerTransport({
+    enabled: true,
+    nodePath: process.execPath,
+    cliPath: fixture,
+    cwd: root,
+    storageDir: 'C:/fixture/.zcode/v2',
+  })
+  try {
+    let quotaError
+    try {
+      await collect(quotaTransport.generate({
+        provider: 'builtin:bigmodel-start-plan',
+        model: 'GLM-5.3-Flash',
+        reasoningEffort: 'low',
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'quota route' }] }],
+      }, {
+        family: 'bigmodel',
+        access: { type: 'zhipu-account', mode: 'start-plan' },
+        baseURL: 'https://zcode.z.ai/api/v1/zcode-plan/anthropic',
+        apiKey: 'fixture-jwt',
+        models: [{ id: 'GLM-5.3-Flash' }],
+      }, 'C:/workspace'))
+    } catch (error) { quotaError = error }
+    check('start-plan quota failure classifies as QUOTA', quotaError?.code === 'QUOTA')
+    check('start-plan quota failure keeps the provider message',
+      String(quotaError?.message).includes('余额不足'))
+    check('start-plan quota failure names the provider code',
+      String(quotaError?.message).includes('1113'))
+  } finally {
+    delete process.env.ZCODE_FIXTURE_TURN_ERROR
+    quotaTransport.dispose()
+  }
 } finally {
   transport.dispose()
 }

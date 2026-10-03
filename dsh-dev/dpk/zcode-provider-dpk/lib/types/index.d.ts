@@ -6,6 +6,8 @@
  * @module zcode-provider
  */
 import type { Context, Volatile } from '@deepseek-ai/cordis';
+export { failureCode, failureFrom } from './failure.js';
+import type { StreamChunk } from '@deepseek-ai/dsh-llm';
 import { type PromptOverrides, type RuntimePromptContext } from './official-prompt.js';
 import { type CredentialSource } from './credentials.js';
 import { type AppServerConfig } from './openzcode-app-server.js';
@@ -146,6 +148,7 @@ export declare function isOffPeakRoute(conn: {
  * @returns 是否错峰通道。
  */
 export declare function isOffPeakRequest(url: string): boolean;
+export declare function translateZcodeEvents(events: AsyncIterable<Record<string, unknown>>): AsyncGenerator<StreamChunk>;
 /** 插件配置。`routes` 在激活时与插件自有 provider 配置增量同步,并回写设置层。 */
 export interface Config {
     /** 插件 provider 配置路径(默认 `~/.dsh/zcode-provider/providers.json`)。 */
@@ -212,4 +215,3 @@ export declare const Config: any;
  * @param config - 该行的配置,缺省时全部取默认值。
  */
 export declare function apply(ctx: Context, config?: Config): void;
-export {};

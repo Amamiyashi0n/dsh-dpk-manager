@@ -41,6 +41,7 @@ const FILES = [
   'tests/captcha-remote.mjs',
   'tests/image-wire.mjs',
   'tests/official-wire.mjs',
+  'tests/error-classification.mjs',
   'tests/app-server.mjs',
   'tests/app-server-discovery.mjs',
   'tests/native-account.mjs',

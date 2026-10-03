@@ -10,6 +10,9 @@ import { randomUUID } from 'node:crypto';
 import { arch as nodeArch, platform as nodePlatform, release as nodeRelease } from 'node:os';
 import { join } from 'node:path';
 import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm';
+import { failureFrom } from './failure.js';
+// 测试直接从包入口取用分类器(index.ts 是插件对外唯一入口)。
+export { failureCode, failureFrom } from './failure.js';
 import z from '@deepseek-ai/schemastery';
 import { AI_SDK_USER_AGENT_SUFFIX, ANTHROPIC_BETA_MID_CONVERSATION_SYSTEM, ClientRequestSigner, ZCODE_CLIENT_VERSION, ZCODE_ENDPOINT_ORIGIN, buildSourceHeaders, readDeviceMid, refreshableSignatureRejection, requiresClientSigning, } from './official-wire.js';
 import { OFFICIAL_SYSTEM_AGENT_PROMPT, OFFICIAL_SYSTEM_IDENTITY, OFFICIAL_SYSTEM_RUNTIME_PROMPT, officialRuntimePrompt, renderRuntimePrompt, } from './official-prompt.js';
@@ -637,22 +640,12 @@ function signingSessionId(sessionId) {
     return zcodeSessionId(sessionId) || randomUUID();
 }
 function errorFrom(status, text) {
-    let message = text;
-    let type = '';
+    let raw;
     try {
-        const raw = JSON.parse(text);
-        // 国内端点常见 {code, msg} 形态(如 3007 captcha verify failed)
-        message = String(raw?.error?.message ?? raw?.msg ?? text);
-        type = String(raw?.error?.type ?? '');
+        raw = JSON.parse(text);
     }
     catch (_nonJson) { /* 原文即消息 */ }
-    const code = status === 401 || status === 403 || type === 'authentication_error' ? 'AUTH'
-        : status === 402 || type === 'billing_error' ? 'QUOTA'
-            : status === 429 || type === 'rate_limit_error' ? 'RATE_LIMIT'
-                : status === 400 || status === 413 || type === 'invalid_request_error' ? 'INVALID_REQUEST'
-                    : status >= 500 || type === 'api_error' || type === 'overloaded_error' ? 'SERVER'
-                        : `HTTP_${status}`;
-    return new LlmError(message, code, { status });
+    return failureFrom(status, raw, text);
 }
 // zcode 配置的 variants 是无序集合;展示按强度递增(off < low < medium < high < xhigh < max)
 const EFFORT_INTENSITY = {
@@ -1000,12 +993,20 @@ function startZblock(event, index) {
     }
     return { index, content, closed: false, json: '' };
 }
-async function* translateZcodeEvents(events) {
+export async function* translateZcodeEvents(events) {
     const blocks = new Map();
     const usage = { inputTokens: 0, outputTokens: 0 };
     let started = false;
     let reason;
     for await (const event of events) {
+        // 流内错误必须先于类型白名单处理:官方会在 200 的 SSE 里下发
+        // `{type:'error',error:{…}}`(额度耗尽也走这条),而原先的白名单先把它 `continue`
+        // 掉了——那个 error 分支是死代码,真正的失败原因被吞掉,只剩一条误导性的
+        // STREAM_CLOSED(「stream ended before message_stop」)。
+        if (event.type === 'error') {
+            const raw = event.error ?? event;
+            throw failureFrom(undefined, raw, `zcode endpoint stream error: ${JSON.stringify(raw)}`);
+        }
         if (event.type === 'message_start') {
             if (started)
                 throw new LlmError('zcode stream duplicate message_start', 'MALFORMED_RESPONSE');
@@ -1015,9 +1016,6 @@ async function* translateZcodeEvents(events) {
         }
         if (!['content_block_start', 'content_block_delta', 'content_block_stop', 'message_delta', 'message_stop'].includes(String(event.type))) {
             continue;
-        }
-        if (event.type === 'error') {
-            throw new LlmError(`zcode endpoint stream error: ${JSON.stringify(event.error ?? event)}`, 'SERVER');
         }
         if (!started)
             throw new LlmError('zcode stream event precedes message_start', 'MALFORMED_RESPONSE');

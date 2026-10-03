@@ -1,7 +1,7 @@
 {
   "name": "zcode-provider",
   "description": "Standalone white-box ZCode-compatible provider for DeepSeek Harness",
-  "version": "2.6.10",
+  "version": "2.6.11",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -71,6 +71,7 @@
     "lib/entitlements.js",
     "lib/usage-remote.js",
     "lib/diagnostics.js",
+    "lib/failure.js",
     "lib/captcha.js",
     "lib/captcha-remote.js",
     "lib/prompt-remote.js",
