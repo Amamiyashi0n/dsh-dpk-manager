@@ -1,6 +1,7 @@
 # 往 npm 推送 `dsh-dpk-manager` 的经验
 
-> 记录时间：2026-10-03，随 **2.1.11** 的发布一起写下来。
+> 记录时间：2026-10-03，随 **2.1.11** 的发布一起写下来；同日 **2.1.12** 补掉了当时刻意留下的
+> `repository.url` 警告（见 §5.3）。
 > 适用对象：本工作区里**唯一**会发布到 npm 的包（`dpk-manager/`）。
 > 事实来源：全部为本次实测输出，不是推测。
 
@@ -56,6 +57,19 @@ npm pack --dry-run  →  shasum: e8fd621ec2545400f03217af32f4055a2b1cf68f
 npm publish         →  + dsh-dpk-manager@2.1.11
 npm view @2.1.11    →  dist.shasum = e8fd621ec2545400f03217af32f4055a2b1cf68f   ← 与上面一致
                        dist-tags = { latest: '2.1.11' }
+```
+
+### 2.1.12 的实测记录（消掉 `repository.url` 警告）
+
+```
+npm pkg fix         →  只改 repository.url 一行(冒号→斜杠),字段集合 15 个不变
+node --test         →  108/108(升版本号会让 generator 闸门先红,见 §5.3)
+node scripts/pack-all.mjs
+                    →  dsh-dpk-manager@2.1.12  digest a8e7f724431f…
+                       (zcode-provider@2.6.10 与 dsh-reverse-skill@2.0.1 的 digest 不变 = 可复现)
+npm pack --dry-run  →  shasum: 4114d2bcc053b6140ba4df16a519820daa0adb09   21 files
+npm publish         →  + dsh-dpk-manager@2.1.12
+                       发布输出里的 shasum 与 dry-run 相同,且**不再出现 warn publish**
 ```
 
 **shasum 相等是唯一能证明"线上那份 == 本地核对过的那份"的证据。** 只要看过 `--dry-run` 的
@@ -160,14 +174,22 @@ npm error 404 No match found for version 2.1.11
 
    所以维护者指引这类文字，**放在包外**（本文件与上级 `README.md`），不要放进包里。
 
-3. 本次 `npm publish` 还有一条警告：
+3. **已于 2.1.12 修掉**：2.1.11 的 `npm publish` 报过一条警告：
 
    ```
    npm warn publish "repository.url" was normalized to "git+ssh://git@github.com/Amamiyashi0n/dsh-dpk-manager.git"
    ```
 
-   `npm pkg fix` 可以消掉它，但**故意留到下一个版本**处理——同样因为 2.1.11 已经发出去了，
-   现在改 `package.json` 会让本地这棵树不再等于线上那个 2.1.11。
+   原文写的是 `git+ssh://git@github.com:Amamiyashi0n/…`——把 scp 简写（`git@host:owner/repo`，冒号
+   分隔）塞进了 URL（`git+ssh://`，其中 `host:xxx` 的冒号表示端口）。npm 只把**注册表元数据**
+   规范化成斜杠形态：实测线上 tarball 内的 `package.json` 一字未改，因此**不影响产物 shasum**。
+
+   当时**故意留到下一个版本**处理，因为 2.1.11 已经发出去了，改 `package.json` 会让本地这棵树
+   不再等于线上那个 2.1.11。2.1.12 用 `npm pkg fix` 消掉它（只改那一行，15 个字段集合不变）。
+
+   顺带记住这个耦合：**升 `package.json` 的版本号会让 `node --test` 先红**——
+   `lib/dpk-manifest.mjs` 的 `DPK_TOOL_VERSION`（进而 `generator` 写出的 `dpk/<version>`）必须与
+   `package.json` 同版本，测试专门锁这条不变量。升版本时两处一起改（`SPEC.md` 的示例清单同理）。
 
 ---
 

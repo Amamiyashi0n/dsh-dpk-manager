@@ -82,7 +82,7 @@ const TARBALL_SPEC = /\.(?:tgz|tar\.gz)(?:#.*)?$/i
   "name": "@local/dsh-reverse-skill",
   "version": "1.0.0",
   "createdAt": "2026-09-25T12:00:00.000Z",
-  "generator": "dpk/2.1.11",
+  "generator": "dpk/2.1.12",
   "entry": "package/package.json",
   "roles": ["bundle"],
   "dsh": { "manifestVersion": 1, "bundle": { "patch": "./cordis.patch.yml" } },

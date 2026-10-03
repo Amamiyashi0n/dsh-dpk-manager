@@ -1,6 +1,6 @@
 {
   "name": "dsh-dpk-manager",
-  "version": "2.1.11",
+  "version": "2.1.12",
   "type": "module",
   "description": "DPK manager for DeepSeek Harness — pack, verify and install local DSH plugin packages (.dpk) from the Plugins-page panel and the in-session dpk tool",
   "license": "MIT",
@@ -47,7 +47,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+ssh://git@github.com:Amamiyashi0n/dsh-dpk-manager.git",
+    "url": "git+ssh://git@github.com/Amamiyashi0n/dsh-dpk-manager.git",
     "directory": "dsh-dev/dpk/dpk-manager"
   },
   "keywords": [
