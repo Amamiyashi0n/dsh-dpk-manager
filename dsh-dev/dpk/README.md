@@ -27,6 +27,15 @@ node scripts/pack-all.mjs
 脚本的 `&&` 串联又把 `tests/standalone-package.mjs`（证明归档在**没有 ZCode 的机器上**
 也能激活并发请求的离线闸门）一起挡掉了。
 
+## 发布到 npm
+
+三个包里**只有 `dsh-dpk-manager` 会发到 npm**；`zcode-provider` 与 `dsh-reverse-skill` 都是
+`private: true`，npm 直接拒发，只走 `.dpk`。两条通道内容也不同（tarball 按 `files` 收，
+`.dpk` 整棵树收），要各自出。
+
+完整流程、两个踩过的坑（镜像站导致的"假未登录"、`npm pack` 落下的 `.tgz` 会被 `.dpk` 吞进去）、
+发布后传播延迟与发布前检查清单，见 **[NPM-PUBLISH.md](NPM-PUBLISH.md)**。
+
 ## 不再出现嵌套归档——三层保障
 
 - **打包器硬规则**：包内（`dist/` 等永不打包目录之外）出现任何 `.dpk`，打包与校验直接拒绝
