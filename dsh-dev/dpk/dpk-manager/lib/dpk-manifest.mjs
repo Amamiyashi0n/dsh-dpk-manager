@@ -16,8 +16,15 @@ import { parseDataDeclaration } from './data.mjs'
 
 /** The format version this implementation writes and understands. */
 export const DPK_FORMAT_VERSION = 1
+/**
+ * The manager version this build reports. It is part of the archive's identity,
+ * not decoration: `generator` is how a reader names the packer whose semantics
+ * an archive follows when a verification fails, so it has to track the release
+ * rather than stay a constant. A test holds it equal to `package.json`.
+ */
+export const DPK_TOOL_VERSION = '2.1.11'
 /** Generator identity written into every manifest. */
-export const DPK_GENERATOR = 'dpk/1.0.0'
+export const DPK_GENERATOR = `dpk/${DPK_TOOL_VERSION}`
 /** The one path a manifest's `entry` may name. */
 export const DPK_ENTRY = 'package/package.json'
 /** Every package file lives under this prefix. */
@@ -46,6 +53,36 @@ export class DpkManifestError extends Error {
 
 function isPlainObject(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Structural equality that never depends on how a value was spelled.
+ *
+ * Object key order is formatting, not content: a declaration whose keys were
+ * reordered by an editor, a key-sorting formatter, or a differently built
+ * packer still declares exactly the same thing. Array order stays significant,
+ * because a list is a list. Every claim a manifest makes is checked with this
+ * comparison — checking serialized text instead (the behaviour up to 2.1.10)
+ * rejected archives over a whitespace choice, and reported a contradiction
+ * where the two sides agreed on every value.
+ *
+ * @param left - first JSON value.
+ * @param right - second JSON value.
+ * @returns true when both carry the same values in the same shape.
+ */
+function sameStructure(left, right) {
+  if (left === right) return true
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false
+    return left.every((item, index) => sameStructure(item, right[index]))
+  }
+  if (isPlainObject(left) && isPlainObject(right)) {
+    const keys = Object.keys(left)
+    if (keys.length !== Object.keys(right).length) return false
+    return keys.every(key =>
+      Object.prototype.hasOwnProperty.call(right, key) && sameStructure(left[key], right[key]))
+  }
+  return false
 }
 
 function requireString(object, key, subject) {
@@ -130,6 +167,16 @@ export function validateManifest(value) {
     if (MANIFEST_KEYS.has(key)) continue
     if (key === 'signatures') {
       throw new DpkManifestError('signatures are not defined by DPK v1; this archive needs a newer reader', 'DPK_VERSION')
+    }
+    if (key === 'data') {
+      // 2.1.8 and 2.1.9 wrote the volume declaration twice, once at the top
+      // level as well. Since 2.1.10 it lives only in the `dsh` copy and the
+      // whitelist refuses the old shape outright, so name the origin: without
+      // it, an archive that only needs repacking reads as a corrupt one.
+      throw new DpkManifestError(
+        'dpk.json has an unknown field: data (the top-level data key is the 2.1.8–2.1.9 volume spelling; repack this archive with the current packer)',
+        'DPK_MANIFEST_UNKNOWN_FIELD',
+      )
     }
     throw new DpkManifestError(`dpk.json has an unknown field: ${key}`, 'DPK_MANIFEST_UNKNOWN_FIELD')
   }
@@ -256,6 +303,48 @@ export function validateManifest(value) {
 }
 
 /**
+ * Volumes in a canonical order, by id.
+ *
+ * The check below asks whether two declarations make the same claims, and a
+ * claim does not depend on where in a list it was written: dpk materialises
+ * every volume independently of the others. Sorting both sides removes the
+ * last way a listing order could be mistaken for a contradiction (ids are
+ * unique, so this is a total order).
+ *
+ * @param volumes - normalized volumes, already validated.
+ * @returns a sorted copy.
+ */
+function canonicalVolumes(volumes) {
+  return [...volumes].sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
+}
+
+/**
+ * Name what actually differs between two volume declarations, by volume id.
+ *
+ * A mismatch is reported per volume instead of as two blobs of JSON, because
+ * the reader's next move is to fix one of the declarations and the ids say
+ * which one. Both sides arrive already normalized and canonically ordered.
+ *
+ * @param expected - volumes read from package.json.
+ * @param claimed - volumes read from dpk.json.
+ * @returns a parenthetical suffix for the problem line, empty when unnamed.
+ */
+function describeVolumeDifference(expected, claimed) {
+  const idOf = volume => (typeof volume?.id === 'string' ? volume.id : JSON.stringify(volume))
+  const expectedById = new Map(expected.map(volume => [idOf(volume), volume]))
+  const claimedById = new Map(claimed.map(volume => [idOf(volume), volume]))
+  const details = []
+  const omitted = [...expectedById.keys()].filter(id => !claimedById.has(id))
+  if (omitted.length > 0) details.push(`package.json declares ${omitted.join(', ')} but dpk.json omits it`)
+  const added = [...claimedById.keys()].filter(id => !expectedById.has(id))
+  if (added.length > 0) details.push(`dpk.json declares ${added.join(', ')} but package.json does not`)
+  const changed = [...expectedById.keys()].filter(id =>
+    claimedById.has(id) && !sameStructure(expectedById.get(id), claimedById.get(id)))
+  if (changed.length > 0) details.push(`${changed.join(', ')} carries different fields on each side`)
+  return details.length === 0 ? '' : ` (${details.join('; ')})`
+}
+
+/**
  * Cross-check a manifest against the package facts read from the archive.
  * @returns a list of human-readable mismatches (empty when consistent).
  */
@@ -276,18 +365,23 @@ export function compareManifestToPackage(manifest, source) {
   for (const role of roles) {
     if (!manifest.roles.includes(role)) problems.push(`roles: package.json declares ${role}, dpk.json omits it`)
   }
-  const expected = JSON.stringify(source.dsh ?? null)
-  const claimed = JSON.stringify(manifest.dsh ?? null)
-  if (expected !== claimed) problems.push('dsh: dpk.json copy differs from package.json')
-  const expectedVolumes = source.dataVolumes ?? []
-  const claimedVolumes = manifest.dsh?.data?.volumes ?? []
-  if (JSON.stringify(expectedVolumes) !== JSON.stringify(claimedVolumes)) {
-    problems.push('data: dpk.json volume declaration differs from package.json')
+  if (!sameStructure(source.dsh ?? null, manifest.dsh ?? null)) {
+    problems.push('dsh: dpk.json copy differs from package.json')
+  }
+  // Both sides read the declaration through the same normalization, in the same
+  // canonical order, so how the source spelled it — the order of a volume's
+  // keys, the order of the volumes in the list, a trailing slash on a path —
+  // decides nothing. Only a difference in the claims themselves can make this
+  // line fail, which is what the message has always said.
+  const expectedVolumes = canonicalVolumes(source.dataVolumes ?? [])
+  const claimedVolumes = canonicalVolumes(parseDataDeclaration(manifest.dsh?.data, 'dpk.json: dsh.data'))
+  if (!sameStructure(expectedVolumes, claimedVolumes)) {
+    problems.push(`data: dpk.json volume declaration differs from package.json${describeVolumeDifference(expectedVolumes, claimedVolumes)}`)
   }
   for (const [key, actual] of [['engines', source.engines], ['peerDependencies', source.peerDependencies]]) {
     const declared = manifest[key]
     if (declared === undefined && actual === undefined) continue
-    if (JSON.stringify(declared ?? {}) !== JSON.stringify(actual ?? {})) {
+    if (!sameStructure(declared ?? {}, actual ?? {})) {
       problems.push(`${key}: dpk.json copy differs from package.json`)
     }
   }

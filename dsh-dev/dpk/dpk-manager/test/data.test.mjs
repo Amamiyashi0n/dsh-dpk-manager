@@ -282,7 +282,12 @@ test('a top-level data key is rejected as an unknown field', async () => {
     data: { volumes: packed.manifest.dsh.data.volumes },
   }, undefined, 2), 'utf8')
   const legacy = writeZip(entries)
-  await assert.rejects(() => verifyArchive(legacy), /unknown field: data/)
+  await assert.rejects(() => verifyArchive(legacy), error =>
+    error.code === 'DPK_MANIFEST_UNKNOWN_FIELD'
+    && /unknown field: data/.test(error.message)
+    // The old spelling is a repack away from being valid, so say so instead of
+    // letting it read as a corrupt archive.
+    && /repack this archive/.test(error.message))
 })
 
 test('a bare-named archive verifies and the scope is still added at install time', async () => {
@@ -328,6 +333,92 @@ test('materializeVolumes refuses a seed that escapes the package, even unvalidat
   await assert.rejects(
     () => materializeVolumes(home, '@local/x', escaping, pkg, {}),
     /stay inside the package/,
+  )
+})
+
+test('a volume declaration survives the way it was spelled', async () => {
+  // One declaration in three spellings: keys written in another order, and the
+  // volumes listed in another order — what a key-sorting formatter, a
+  // hand-edit, or a differently built packer produces. A claim does not depend
+  // on where or how it was written, so all three must pack and import.
+  const declarations = {
+    canonical: [
+      { id: 'cfg', class: 'config', path: 'cfg.json', seed: 'seeds/cfg.json' },
+      { id: 'app', class: 'state', path: 'app.json' },
+    ],
+    'reordered keys': [
+      { class: 'config', seed: 'seeds/cfg.json', path: 'cfg.json', id: 'cfg' },
+      { class: 'state', path: 'app.json', id: 'app' },
+    ],
+    'reordered list': [
+      { id: 'app', class: 'state', path: 'app.json' },
+      { id: 'cfg', class: 'config', path: 'cfg.json', seed: 'seeds/cfg.json' },
+    ],
+  }
+  const expected = parseDataDeclaration({ volumes: declarations.canonical })
+  const byId = volumes => [...volumes].sort((left, right) => (left.id < right.id ? -1 : 1))
+  for (const [label, volumes] of Object.entries(declarations)) {
+    const root = await makePackage({
+      manifest: {
+        dsh: {
+          manifestVersion: 1,
+          bundle: { patch: './cordis.patch.yml' },
+          data: { volumes },
+        },
+      },
+      extraFiles: { 'seeds/cfg.json': '{}\n' },
+    })
+    const packed = await packDirectory(root)
+    const verified = await verifyArchive(packed.buffer, { deep: true })
+    assert.equal(verified.manifest.integrity.digest, packed.manifest.integrity.digest,
+      `${label}: the packer's own archive imports`)
+    assert.deepEqual(byId(verified.packageFacts.dataVolumes), byId(expected),
+      `${label}: the same declaration reads back`)
+  }
+})
+
+test('a trailing slash on a volume path is normalized on both sides', async () => {
+  const packed = await packDirectory(await makePackage({
+    manifest: {
+      dsh: {
+        manifestVersion: 1,
+        bundle: { patch: './cordis.patch.yml' },
+        data: { volumes: [{ id: 'cookies', class: 'cache', path: 'captcha/cookies/' }] },
+      },
+    },
+  }))
+  const verified = await verifyArchive(packed.buffer, { deep: true })
+  assert.equal(verified.manifest.dsh.data.volumes[0].path, 'captcha/cookies/',
+    'the archive keeps the declaration exactly as the package wrote it')
+  assert.equal(verified.packageFacts.dataVolumes[0].path, 'captcha/cookies',
+    'the fact is the normalized path the installer materialises')
+})
+
+test('a declaration that really differs is still refused, and names the volume', async () => {
+  const packed = await packDirectory(await makeManagedPackage())
+  const { readZipEntry, readZipIndex, writeZip } = await import('../lib/zip.mjs')
+  const index = readZipIndex(packed.buffer)
+  const entries = index.entries.map(entry => ({
+    path: entry.path,
+    data: readZipEntry(packed.buffer, entry),
+    mode: 0o644,
+  }))
+  const manifestEntry = entries.find(entry => entry.path === 'dpk.json')
+  const tampered = JSON.parse(manifestEntry.data.toString('utf8'))
+  // The digest covers the package files and never dpk.json itself, so this
+  // cross-check is the only thing standing between a rewritten manifest and an
+  // installer that would materialise a volume the package never declared.
+  tampered.dsh.data.volumes = [
+    ...tampered.dsh.data.volumes,
+    { id: 'smuggled', class: 'state', path: 'smuggled.json' },
+  ]
+  manifestEntry.data = Buffer.from(JSON.stringify(tampered, undefined, 2), 'utf8')
+  await assert.rejects(
+    () => verifyArchive(writeZip(entries), { deep: true }),
+    error => error.code === 'DPK_MANIFEST_MISMATCH'
+      && /data: dpk\.json volume declaration differs/.test(error.message)
+      && /smuggled/.test(error.message),
+    'the mismatch is refused and the offending volume is named',
   )
 })
 

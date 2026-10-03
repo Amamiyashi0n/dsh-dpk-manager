@@ -32,6 +32,14 @@ async function forgeFrom(packed, perturb) {
   return writeZip(entries, { timestamp: '1980-01-01T00:00:00Z' })
 }
 
+test('the generator names the exact version in package.json', async () => {
+  // `generator` is how a reader names the packer that wrote an archive when a
+  // check fails, so it has to move with the release rather than stay a
+  // constant that identifies nothing.
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(DPK_GENERATOR, `dpk/${pkg.version}`)
+})
+
 test('packs a bundle package and verifies it end to end', async () => {
   const root = await makePackage()
   const packed = await packDirectory(root)

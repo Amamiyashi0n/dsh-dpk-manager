@@ -10,7 +10,7 @@
 import { mkdtemp, mkdir, open, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { DPK_ENTRY, PACKAGE_PREFIX, validateManifest, compareManifestToPackage, DpkManifestError } from './dpk-manifest.mjs'
+import { DPK_ENTRY, PACKAGE_PREFIX, validateManifest, compareManifestToPackage, DpkManifestError, DPK_GENERATOR } from './dpk-manifest.mjs'
 import { validateDshPackage, sha256 } from './dsh-package.mjs'
 import { extractZip, readZipEntry, readZipIndex } from './zip.mjs'
 
@@ -124,7 +124,14 @@ export async function verifyArchive(buffer, options = {}) {
       packageFacts = await validateDshPackage(staging)
       const problems = compareManifestToPackage(manifest, packageFacts)
       if (problems.length > 0) {
-        throw new DpkArchiveError(`package/ contradicts dpk.json:\n  - ${problems.join('\n  - ')}`, 'DPK_MANIFEST_MISMATCH')
+        // Name both sides of the version pair: this check most often fails on a
+        // machine whose reader differs from the packer that wrote the archive,
+        // and the two versions are what the reader needs to align.
+        throw new DpkArchiveError(
+          `package/ contradicts dpk.json:\n  - ${problems.join('\n  - ')}`
+          + `\n(archive written by ${manifest.generator}; this reader is ${DPK_GENERATOR})`,
+          'DPK_MANIFEST_MISMATCH',
+        )
       }
       checks.push(`dsh: package.json passes strict conformance (${packageFacts.roles.join('+')}, ${packageFacts.files.length} files)`)
       warnings.push(...packageFacts.warnings)

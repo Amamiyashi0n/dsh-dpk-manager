@@ -82,7 +82,7 @@ const TARBALL_SPEC = /\.(?:tgz|tar\.gz)(?:#.*)?$/i
   "name": "@local/dsh-reverse-skill",
   "version": "1.0.0",
   "createdAt": "2026-09-25T12:00:00.000Z",
-  "generator": "dpk/1.0.0",
+  "generator": "dpk/2.1.11",
   "entry": "package/package.json",
   "roles": ["bundle"],
   "dsh": { "manifestVersion": 1, "bundle": { "patch": "./cordis.patch.yml" } },
@@ -104,7 +104,7 @@ const TARBALL_SPEC = /\.(?:tgz|tar\.gz)(?:#.*)?$/i
 | `name` | string | ✅ | 必须等于 `package/package.json` 的 `name`；须匹配 npm 包名文法（见 §6.1）。归档携带包的**本名**；`@local/` 作用域是**安装期标识**，由 dpk 在安装动作里加到 store 副本、patch 行、台账与数据卷根上，pack 阶段不写入任何作用域 |
 | `version` | string | ✅ | 必须等于 `package.json` 的 `version`；须为 semver |
 | `createdAt` | string | ✅ | RFC 3339 / ISO 8601 UTC，用于溯源；**不参与**完整性计算。默认取可复现时刻 `1980-01-01T00:00:00.000Z`，`--created-at now` 才写真实构建时间（见 §5 可复现性） |
-| `generator` | string | ✅ | `<tool>/<version>`，例如 `dpk/1.0.0` |
+| `generator` | string | ✅ | `<tool>/<version>`；版本部分必须等于写出该归档的 dpk 实现版本（不是常量）。校验失败时读取方据此报出"归档由谁写出、当前读取器是谁"，跨机器排错靠它对齐两端。不参与摘要（§7.3） |
 | `entry` | string | ✅ | 固定 `"package/package.json"` |
 | `roles` | string[] | ✅ | 取值 `bundle`/`client`/`plain`，由 `package.json` 派生（§6.2）；非空 |
 | `dsh` | object | ❌ | `package.json` 的 `dsh` 字段原样副本，便于不打开包就看清它是 bundle 还是纯依赖 |
@@ -233,6 +233,10 @@ digest = sha256( join("\n", files.map(f => `${f.path}\0${f.size}\0${f.sha256}`))
 
 `createdAt`、`generator`、zip 时间戳**不参与**摘要——它们是来源信息，不是内容。签名（数字签名）在 v1 中**未定义**；`dpk.json` 顶层预留字段名 `signatures`，v2 再定，v1 出现该字段即拒绝。
 
+摘要只覆盖 `files[]`，即 `package/` 下的内容，**不覆盖 `dpk.json` 自身**。因此清单被改写（例如凭空加一条数据卷声明）不会让摘要失配，拦住它的是 §8.1 第 2 步的交叉校验：清单的每一项声明都必须与 `package/package.json` 的实际事实相符。
+
+交叉校验**比较声明而不是比较文本**：对象键的顺序、数据卷在列表中的顺序、路径末尾的斜杠都只是书写形式，两侧先经同一套规范化（含按 `id` 排序）再比对——同一份声明的不同写法必须得到同一个结论。校验失败时报出具体是哪一条声明、哪个卷不一致。
+
 ---
 
 ## 8. 安装语义
@@ -282,6 +286,8 @@ $DSH_HOME/dpk/
 | `dpk` 大于实现支持 | 拒绝，提示升级 dpk 工具 |
 | 出现未知字段 | 拒绝（v1 规则） |
 | 加字段 | 升 `dpk` 到 2，并在实现中同时支持 1 与 2 |
+
+`generator` 的版本部分随实现发布递增（§4.2），它就是同一个 `dpk: 1` 之下区分语义年代的唯一线索：2.1.7–2.1.10 期间，数据卷声明的**落点**（顶层 `data` → 仅 `dsh` 副本）与 `@local` 作用域的**写入时机**（打包期 → 安装期）各改过一次。因此校验失败时先比对归档的 `generator` 与本机实现版本：两侧不同就先对齐工具版本，再判断包本身是否有问题。
 
 ---
 
@@ -380,6 +386,7 @@ $DSH_HOME/dpk/
 
 ### 13.4 校验
 
-- 声明在 `pack` 时严格校验（id/class/path 文法、唯一性、seed 存在且在包内、seed ≤ 1 MiB、卷数 ≤ 64），且**仅**随 `dpk.json` 的 `dsh` 逐字副本携带（2.1.8–2.1.9 曾另写一份顶层 `data` 副本，因白名单读取端整包拒收，已于 2.1.10 移除；顶层 `data` 现为未知字段，读到即拒）；
-- `verify` 对 `dsh.data` 副本再跑同一套校验，且与 `package/` 内声明交叉比对，不一致即拒绝；
+- 声明在 `pack` 时严格校验（id/class/path 文法、唯一性、seed 存在且在包内、seed ≤ 1 MiB、卷数 ≤ 64），且**仅**随 `dpk.json` 的 `dsh` 逐字副本携带（2.1.8–2.1.9 曾另写一份顶层 `data` 副本，因白名单读取端整包拒收，已于 2.1.10 移除；顶层 `data` 现为未知字段，读到即拒，报错会点明这是旧写法、重打包即可）；
+- `verify` 对 `dsh.data` 副本再跑同一套校验，且与 `package/` 内声明的**规范化结果**交叉比对，不一致即拒绝并点出是哪个卷；
+- `pack` 在写出归档前跑**与 `verify` 相同的**交叉校验，因此"自己打得出"蕴含"装上一定过校验"。这条不变式把"打包端与导入端规则不一致"的缺陷挡在打包时，而不是留到另一台机器上才暴露；
 - `install` 在**官方安装器成功之后**物化卷（dpkg 也是先解包再放 conffile），失败即中止且不留半装状态。

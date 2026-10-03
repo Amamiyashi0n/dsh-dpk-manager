@@ -7,7 +7,8 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import {
-  archiveFileName, buildManifest, DPK_FORMAT_VERSION, PACKAGE_PREFIX, REPRODUCIBLE_EPOCH,
+  archiveFileName, buildManifest, compareManifestToPackage, DPK_FORMAT_VERSION, DpkManifestError,
+  PACKAGE_PREFIX, REPRODUCIBLE_EPOCH,
 } from './dpk-manifest.mjs'
 import { validateDshPackage } from './dsh-package.mjs'
 import { writeZip } from './zip.mjs'
@@ -37,6 +38,19 @@ export async function packDirectory(directory, options = {}) {
     createdAt: options.createdAt ?? REPRODUCIBLE_EPOCH,
     ...options.generator === undefined ? {} : { generator: options.generator },
   })
+
+  // Pack and verify agree by construction: an archive this packer writes has
+  // already passed the very cross-check an importer runs. Without this, a
+  // formatting choice in package.json could produce an archive this same
+  // verifier refuses, and the failure would only surface on whichever machine
+  // imports it — the shape of the 2.1.8–2.1.10 volume defect.
+  const problems = compareManifestToPackage(manifest, source)
+  if (problems.length > 0) {
+    throw new DpkManifestError(
+      `refusing to write an archive that verify would reject:\n  - ${problems.join('\n  - ')}`,
+      'DPK_PACK_MISMATCH',
+    )
+  }
 
   const entries = [{
     path: 'dpk.json',

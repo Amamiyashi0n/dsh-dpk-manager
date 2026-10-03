@@ -146,10 +146,10 @@ $DSH_HOME/dpk/
 
 1. **归档永不嵌套**：包内出现任何 `.dpk` 文件都会被拒绝打包（`PACKAGE_NESTED_ARCHIVE`）——构建产物
    必须放在 `dist/`（该目录永不入包）或包外。历史归档里的嵌套杂物在导入时被自动剥离，store 只落一个干净包。
-2. **本地分发的包自动归入 `@local/` 作用域**（如 `@local/zcode-provider`、`@local/dsh-reverse-skill`）。
-   打包/安装遇到不带作用域的名字会**自动补上** `@local/`（归档清单、store 副本、patch 行名、账本一致生效；
-   源目录本身不改）。loader 行 id 与模块自身的注册 id 不在自动改写之列——带 client 半区的包请让这些 id
-   直接使用 scoped 名（`@local/zcode-provider` 是完整范例）。
+2. **本地分发的包在安装期归入 `@local/` 作用域**（如 `@local/zcode-provider`、`@local/dsh-reverse-skill`）。
+   归档携带包的**本名**，`@local/` 由 dpk 在安装动作里补到 store 副本、patch 行名、账本与数据卷根上；
+   源目录与归档清单都不写入作用域。loader 行 id 与模块自身的注册 id 不在自动改写之列——带 client
+   半区的包请让这些 id 直接使用 scoped 名（`@local/zcode-provider` 是完整范例）。
 3. **一个 DPK 只装一个包。** 套件请打成多个 DPK。多包归档（`packages/<name>`）留给 v2。
 4. **带本地 `link:` 依赖的包不能单独分发。** 归档只携带一个包，其 `dependencies` 里
    `link:../sibling` 这样的相对目标在目标机器上不存在。要分发这类包，二选一：
@@ -160,6 +160,12 @@ $DSH_HOME/dpk/
 6. **可执行位不承诺保留**：包内文件以 `0644` 写入 zip，Windows 源码树本来也没有 POSIX 权限。
 7. **Node ESM 模块缓存的既有约束**：安装/替换包后要让**新的 JS 代次**生效，仍需重启 harness——
    这是 DSH 侧行为（见 harness 文档），DPK 不绕过。
+8. **归档与读取器必须版本对齐**：`dpk.json` 的 `generator` 记录写出归档的实现版本。同一个 `dpk: 1`
+   之下语义改过不止一次（数据卷声明的落点、`@local` 的写入时机），而读取端对未知字段一律拒绝，
+   于是"在别的机器上导入失败"多数是两端版本不同，而不是包坏了。报错末行会写明
+   `archive written by …; this reader is …`：两侧不同就先对齐工具版本，再怀疑包本身。
+   打包器与校验器现在跑同一套交叉校验，所以本机 `pack` 成功即意味着导入方过校验（前提是导入方
+   也已是同一代实现）。
 
 ## 目录
 
@@ -175,7 +181,7 @@ dpk/
   README.md                    本文件
   lib/zip.mjs                  纯 Node zip 读写（store+deflate、CRC32、路径与限额校验）
   lib/dsh-package.mjs          DSH 包严格合规（逐条镜像 DSH 规则，带出处）
-  lib/dpk-manifest.mjs         dpk.json 构造/校验 + 完整性摘要
+  lib/dpk-manifest.mjs         dpk.json 构造/校验 + 声明交叉校验 + 完整性摘要
   lib/pack.mjs                 pack
   lib/verify.mjs               verify（含深度合规复检）
   lib/store.mjs                内容寻址仓库 + 账本
@@ -196,3 +202,5 @@ npm test
 覆盖 zip 往返/可复现/CRC 篡改/路径攻击/加密/zip64/未知方法/炸弹护栏、DSH 合规的每一类拒绝、
 清单严格性与摘要重算、安装的幂等、dry-run 只读、失败不留账本、无安装器拒绝、
 `--force` 重建、`--keep-archive` 留存，以及 pnpm 冷却期豁免的写入/保留/幂等。
+数据卷一侧另有两条不变式：同一份声明的不同书写形式（键序、卷的列表顺序、路径尾斜杠）必须同判，
+且打包器的产出必然通过校验器的交叉校验。
