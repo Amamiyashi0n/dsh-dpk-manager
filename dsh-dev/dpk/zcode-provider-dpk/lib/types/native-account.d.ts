@@ -37,17 +37,31 @@ export interface CatalogModelConfig {
     supportsImage?: boolean;
     supportsPdf?: boolean;
 }
+/** Wire api types the builtin catalog scopes its api-keyed rule layers by. */
+export declare const ANTHROPIC_MESSAGES_API_TYPE = "anthropic-messages";
+export declare const OPENAI_CHAT_COMPLETIONS_API_TYPE = "openai-chat-completions";
 /**
- * 把内置目录的 `config.modelConfigRules.modelRules` 应用到一个模型 id:按数组
- * 顺序逐条匹配 `modelMatch` 正则(后条覆盖前条),合并出 ZCode 权威的
- * contextWindow / maxOutputTokens / 输入模态。官方 app-server 用同一条规则链
- * 回答"这个模型多大",插件同步它而不是另猜一个数。目录里其余子键
- * (`modelApiRules` 管线格式映射、`templateModelRules`/`builtinProviderModelRules`
- * 只是 enable 开关)与上下文无关,不参与。
+ * The wire api type one provider entry speaks, in the catalog's vocabulary.
+ * @param kind - provider kind (`anthropic`, `openai`, `openai-compatible`).
+ * @returns the api type string the catalog's `apiTypeMatch` regexes are written against.
+ */
+export declare function apiTypeOfProviderKind(kind: unknown): string;
+/**
+ * 把内置目录的规则链应用到一个模型 id:逐层合并 ZCode 权威的 `contextWindow` /
+ * `maxOutputTokens` / 输入模态(后条覆盖前条)。官方 app-server 用同一条链回答
+ * "这个模型多大",插件同步它而不是另猜一个数。
+ *
+ * `modelRules` 与 api 无关,始终参与;`modelApiRules` 与 `providerSiteRules` 按 api
+ * 类型分键,故只在调用方给出 `apiType` 时参与,且只取 `apiTypeMatch` 命中该类型的
+ * 条目。它们细化上面那条与 api 无关的链:官方目录里同一模型在不同 api 上窗口不同
+ * (glm-5.1、deepseek-v4.1-flash 等),按实际在用的 api 报数才对。
+ * `templateModelRules`/`builtinProviderModelRules` 只是 enable 开关,不携带上下文事实。
+ *
  * @param catalog - 解析后的 `zcode-builtin.json`。
  * @param modelId - 待解析的模型 id(大小写不敏感匹配,与目录正则写法一致)。
+ * @param apiType - 该路由在用的线格式 api 类型;省略则只读与 api 无关的规则链。
  */
-export declare function modelConfigFromCatalog(catalog: unknown, modelId: string): CatalogModelConfig;
+export declare function modelConfigFromCatalog(catalog: unknown, modelId: string, apiType?: string): CatalogModelConfig;
 /** `providers.json` 形状的账号条目(供 extractRoutes 复用同一条处理循环)。 */
 export interface NativeProviderEntry {
     kind: 'anthropic';

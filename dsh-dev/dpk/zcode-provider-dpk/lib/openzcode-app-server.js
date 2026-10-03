@@ -5,6 +5,7 @@ import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { LlmError } from '@deepseek-ai/dsh-llm';
 import { discoverZcodeInstall } from './app-server-discovery.js';
+import { ANTHROPIC_MESSAGES_API_TYPE, OPENAI_CHAT_COMPLETIONS_API_TYPE } from './native-account.js';
 // The app-server follows the host's normal Node runtime. A persisted profile
 // may still provide an explicit executable, but the plugin does not silently
 // select a removed MSYS2 toolchain. Electron's executable can run as Node when
@@ -101,8 +102,8 @@ function materializePersonalProviderConfig(route, providerId) {
                             access: { type: 'api-key', apiKey: route.apiKey.trim() },
                             api: {
                                 type: route.kind === 'openai' || route.kind === 'openai-compatible'
-                                    ? 'openai-chat-completions'
-                                    : 'anthropic-messages',
+                                    ? OPENAI_CHAT_COMPLETIONS_API_TYPE
+                                    : ANTHROPIC_MESSAGES_API_TYPE,
                                 baseUrl: route.baseURL.trim(),
                             },
                             personalModelIds: route.models.map((model) => model.id),

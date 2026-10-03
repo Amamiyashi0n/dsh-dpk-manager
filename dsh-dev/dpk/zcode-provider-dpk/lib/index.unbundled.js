@@ -14,7 +14,7 @@ import z from '@deepseek-ai/schemastery';
 import { AI_SDK_USER_AGENT_SUFFIX, ANTHROPIC_BETA_MID_CONVERSATION_SYSTEM, ClientRequestSigner, ZCODE_CLIENT_VERSION, ZCODE_ENDPOINT_ORIGIN, buildSourceHeaders, readDeviceMid, refreshableSignatureRejection, requiresClientSigning, } from './official-wire.js';
 import { OFFICIAL_SYSTEM_AGENT_PROMPT, OFFICIAL_SYSTEM_IDENTITY, OFFICIAL_SYSTEM_RUNTIME_PROMPT, officialRuntimePrompt, renderRuntimePrompt, } from './official-prompt.js';
 import { ACTIVE_PROVIDER_KEY, defaultCredentialsPath, readCredentialValue, resolvePlanCredential, } from './credentials.js';
-import { discoveredBuiltinCatalogPath, modelConfigFromCatalog, nativeAccountProviders, nativeCredentialPath, nativeTelemetryStatePath, } from './native-account.js';
+import { apiTypeOfProviderKind, discoveredBuiltinCatalogPath, modelConfigFromCatalog, nativeAccountProviders, nativeCredentialPath, nativeTelemetryStatePath, } from './native-account.js';
 import { captchaRequestHeaders, describeCaptchaFailure, shouldRetryWithCaptcha, solveCaptcha, } from './captcha.js';
 import { WebCaptchaBroker, createCaptchaRemoteService } from './captcha-remote.js';
 import { bigmodelOriginFrom, fetchEntitlementReport, fetchUsageSupplement, mergeUsageReport, renderUsageReport, } from './usage.js';
@@ -189,7 +189,9 @@ export function extractRoutes(providerConfigPath, includeDisabled, credentialsPa
             if (pc.catalog === undefined)
                 return undefined;
             try {
-                return modelConfigFromCatalog(pc.catalog, modelId);
+                // 目录按 api 类型分键:同一模型在 anthropic-messages 与 openai 系列上窗口可能不同,
+                // 报错了会直接把请求撑爆或浪费上下文,故按本路由实际在用的 api 类型取数。
+                return modelConfigFromCatalog(pc.catalog, modelId, apiTypeOfProviderKind(kind));
             }
             catch {
                 return undefined;

@@ -51,6 +51,7 @@ import {
   type CredentialSource,
 } from './credentials.js'
 import {
+  apiTypeOfProviderKind,
   discoveredBuiltinCatalogPath,
   modelConfigFromCatalog,
   nativeAccountProviders,
@@ -335,7 +336,9 @@ export function extractRoutes(
     const catalogConfig = (modelId: string): ReturnType<typeof modelConfigFromCatalog> | undefined => {
       if (pc.catalog === undefined) return undefined
       try {
-        return modelConfigFromCatalog(pc.catalog, modelId)
+        // 目录按 api 类型分键:同一模型在 anthropic-messages 与 openai 系列上窗口可能不同,
+        // 报错了会直接把请求撑爆或浪费上下文,故按本路由实际在用的 api 类型取数。
+        return modelConfigFromCatalog(pc.catalog, modelId, apiTypeOfProviderKind(kind))
       } catch {
         return undefined
       }

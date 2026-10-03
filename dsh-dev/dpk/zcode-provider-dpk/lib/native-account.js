@@ -93,45 +93,93 @@ export function accountEndpointsFromCatalog(catalog) {
     }
     return [...endpoints.values()];
 }
+/** Wire api types the builtin catalog scopes its api-keyed rule layers by. */
+export const ANTHROPIC_MESSAGES_API_TYPE = 'anthropic-messages';
+export const OPENAI_CHAT_COMPLETIONS_API_TYPE = 'openai-chat-completions';
 /**
- * 把内置目录的 `config.modelConfigRules.modelRules` 应用到一个模型 id:按数组
- * 顺序逐条匹配 `modelMatch` 正则(后条覆盖前条),合并出 ZCode 权威的
- * contextWindow / maxOutputTokens / 输入模态。官方 app-server 用同一条规则链
- * 回答"这个模型多大",插件同步它而不是另猜一个数。目录里其余子键
- * (`modelApiRules` 管线格式映射、`templateModelRules`/`builtinProviderModelRules`
- * 只是 enable 开关)与上下文无关,不参与。
+ * The wire api type one provider entry speaks, in the catalog's vocabulary.
+ * @param kind - provider kind (`anthropic`, `openai`, `openai-compatible`).
+ * @returns the api type string the catalog's `apiTypeMatch` regexes are written against.
+ */
+export function apiTypeOfProviderKind(kind) {
+    return kind === 'openai' || kind === 'openai-compatible'
+        ? OPENAI_CHAT_COMPLETIONS_API_TYPE
+        : ANTHROPIC_MESSAGES_API_TYPE;
+}
+/**
+ * Whether one api-keyed rule applies to the api type in use.
+ *
+ * Only an explicit `apiTypeMatch` counts. The catalog's `providerSiteRules` also
+ * holds three `.*` entries that claim `supportsImage`/`supportsVideo` without
+ * naming an api type; reading those as "any type" would advertise image input on
+ * text-only models, so an untyped entry in an api-keyed layer applies to none.
+ * @param apiTypeMatch - the rule's catalog regex, when it has one.
+ * @param apiType - the wire api type of the route being described, when one is known.
+ */
+function apiScopedRuleApplies(apiTypeMatch, apiType) {
+    if (apiType === undefined || typeof apiTypeMatch !== 'string')
+        return false;
+    try {
+        return new RegExp(`^(?:${apiTypeMatch})$`, 'iu').test(apiType);
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * 把内置目录的规则链应用到一个模型 id:逐层合并 ZCode 权威的 `contextWindow` /
+ * `maxOutputTokens` / 输入模态(后条覆盖前条)。官方 app-server 用同一条链回答
+ * "这个模型多大",插件同步它而不是另猜一个数。
+ *
+ * `modelRules` 与 api 无关,始终参与;`modelApiRules` 与 `providerSiteRules` 按 api
+ * 类型分键,故只在调用方给出 `apiType` 时参与,且只取 `apiTypeMatch` 命中该类型的
+ * 条目。它们细化上面那条与 api 无关的链:官方目录里同一模型在不同 api 上窗口不同
+ * (glm-5.1、deepseek-v4.1-flash 等),按实际在用的 api 报数才对。
+ * `templateModelRules`/`builtinProviderModelRules` 只是 enable 开关,不携带上下文事实。
+ *
  * @param catalog - 解析后的 `zcode-builtin.json`。
  * @param modelId - 待解析的模型 id(大小写不敏感匹配,与目录正则写法一致)。
+ * @param apiType - 该路由在用的线格式 api 类型;省略则只读与 api 无关的规则链。
  */
-export function modelConfigFromCatalog(catalog, modelId) {
-    const rules = catalog?.config?.modelConfigRules?.modelRules;
+export function modelConfigFromCatalog(catalog, modelId, apiType) {
+    const ruleLayers = catalog?.config?.modelConfigRules;
     const result = {};
-    if (!Array.isArray(rules))
-        return result;
-    for (const rule of rules) {
-        if (typeof rule?.modelMatch !== 'string')
+    const layers = [
+        { rules: ruleLayers?.modelRules, apiScoped: false },
+    ];
+    if (apiType !== undefined) {
+        layers.push({ rules: ruleLayers?.modelApiRules, apiScoped: true }, { rules: ruleLayers?.providerSiteRules, apiScoped: true });
+    }
+    for (const { rules, apiScoped } of layers) {
+        if (!Array.isArray(rules))
             continue;
-        let pattern;
-        try {
-            pattern = new RegExp(rule.modelMatch, 'iu');
+        for (const rule of rules) {
+            if (typeof rule?.modelMatch !== 'string')
+                continue;
+            if (apiScoped && !apiScopedRuleApplies(rule.apiTypeMatch, apiType))
+                continue;
+            let pattern;
+            try {
+                pattern = new RegExp(rule.modelMatch, 'iu');
+            }
+            catch {
+                continue;
+            }
+            if (!pattern.test(modelId))
+                continue;
+            const properties = rule.config?.properties;
+            if (typeof properties?.contextWindow === 'number')
+                result.contextWindow = properties.contextWindow;
+            if (typeof properties?.inputFormat?.supportsImage === 'boolean') {
+                result.supportsImage = properties.inputFormat.supportsImage;
+            }
+            if (typeof properties?.inputFormat?.supportsPdf === 'boolean') {
+                result.supportsPdf = properties.inputFormat.supportsPdf;
+            }
+            const maxOutput = rule.config?.optionSpecs?.maxOutputTokens?.max;
+            if (typeof maxOutput === 'number')
+                result.maxOutputTokens = maxOutput;
         }
-        catch {
-            continue;
-        }
-        if (!pattern.test(modelId))
-            continue;
-        const properties = rule.config?.properties;
-        if (typeof properties?.contextWindow === 'number')
-            result.contextWindow = properties.contextWindow;
-        if (typeof properties?.inputFormat?.supportsImage === 'boolean') {
-            result.supportsImage = properties.inputFormat.supportsImage;
-        }
-        if (typeof properties?.inputFormat?.supportsPdf === 'boolean') {
-            result.supportsPdf = properties.inputFormat.supportsPdf;
-        }
-        const maxOutput = rule.config?.optionSpecs?.maxOutputTokens?.max;
-        if (typeof maxOutput === 'number')
-            result.maxOutputTokens = maxOutput;
     }
     return result;
 }

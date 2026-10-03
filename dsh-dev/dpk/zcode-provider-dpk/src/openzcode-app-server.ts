@@ -6,6 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { LlmError } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { discoverZcodeInstall } from './app-server-discovery.js'
+import { ANTHROPIC_MESSAGES_API_TYPE, OPENAI_CHAT_COMPLETIONS_API_TYPE } from './native-account.js'
 
 export interface AppServerConfig {
   /** Enable the comparison transport. The direct provider wire remains the default. */
@@ -187,8 +188,8 @@ function materializePersonalProviderConfig(route: AppServerRoute, providerId: st
             access: { type: 'api-key', apiKey: route.apiKey.trim() },
             api: {
               type: route.kind === 'openai' || route.kind === 'openai-compatible'
-                ? 'openai-chat-completions'
-                : 'anthropic-messages',
+                ? OPENAI_CHAT_COMPLETIONS_API_TYPE
+                : ANTHROPIC_MESSAGES_API_TYPE,
               baseUrl: route.baseURL.trim(),
             },
             personalModelIds: route.models.map((model) => model.id),

@@ -5769,34 +5769,58 @@ function accountEndpointsFromCatalog(catalog) {
   }
   return [...endpoints.values()];
 }
-function modelConfigFromCatalog(catalog, modelId) {
-  const rules = catalog?.config?.modelConfigRules?.modelRules;
+var ANTHROPIC_MESSAGES_API_TYPE = "anthropic-messages";
+var OPENAI_CHAT_COMPLETIONS_API_TYPE = "openai-chat-completions";
+function apiTypeOfProviderKind(kind) {
+  return kind === "openai" || kind === "openai-compatible" ? OPENAI_CHAT_COMPLETIONS_API_TYPE : ANTHROPIC_MESSAGES_API_TYPE;
+}
+function apiScopedRuleApplies(apiTypeMatch, apiType) {
+  if (apiType === void 0 || typeof apiTypeMatch !== "string")
+    return false;
+  try {
+    return new RegExp(`^(?:${apiTypeMatch})$`, "iu").test(apiType);
+  } catch {
+    return false;
+  }
+}
+function modelConfigFromCatalog(catalog, modelId, apiType) {
+  const ruleLayers = catalog?.config?.modelConfigRules;
   const result = {};
-  if (!Array.isArray(rules))
-    return result;
-  for (const rule of rules) {
-    if (typeof rule?.modelMatch !== "string")
+  const layers = [
+    { rules: ruleLayers?.modelRules, apiScoped: false }
+  ];
+  if (apiType !== void 0) {
+    layers.push({ rules: ruleLayers?.modelApiRules, apiScoped: true }, { rules: ruleLayers?.providerSiteRules, apiScoped: true });
+  }
+  for (const { rules, apiScoped } of layers) {
+    if (!Array.isArray(rules))
       continue;
-    let pattern3;
-    try {
-      pattern3 = new RegExp(rule.modelMatch, "iu");
-    } catch {
-      continue;
+    for (const rule of rules) {
+      if (typeof rule?.modelMatch !== "string")
+        continue;
+      if (apiScoped && !apiScopedRuleApplies(rule.apiTypeMatch, apiType))
+        continue;
+      let pattern3;
+      try {
+        pattern3 = new RegExp(rule.modelMatch, "iu");
+      } catch {
+        continue;
+      }
+      if (!pattern3.test(modelId))
+        continue;
+      const properties = rule.config?.properties;
+      if (typeof properties?.contextWindow === "number")
+        result.contextWindow = properties.contextWindow;
+      if (typeof properties?.inputFormat?.supportsImage === "boolean") {
+        result.supportsImage = properties.inputFormat.supportsImage;
+      }
+      if (typeof properties?.inputFormat?.supportsPdf === "boolean") {
+        result.supportsPdf = properties.inputFormat.supportsPdf;
+      }
+      const maxOutput = rule.config?.optionSpecs?.maxOutputTokens?.max;
+      if (typeof maxOutput === "number")
+        result.maxOutputTokens = maxOutput;
     }
-    if (!pattern3.test(modelId))
-      continue;
-    const properties = rule.config?.properties;
-    if (typeof properties?.contextWindow === "number")
-      result.contextWindow = properties.contextWindow;
-    if (typeof properties?.inputFormat?.supportsImage === "boolean") {
-      result.supportsImage = properties.inputFormat.supportsImage;
-    }
-    if (typeof properties?.inputFormat?.supportsPdf === "boolean") {
-      result.supportsPdf = properties.inputFormat.supportsPdf;
-    }
-    const maxOutput = rule.config?.optionSpecs?.maxOutputTokens?.max;
-    if (typeof maxOutput === "number")
-      result.maxOutputTokens = maxOutput;
   }
   return result;
 }
@@ -7698,7 +7722,7 @@ function materializePersonalProviderConfig(route, providerId) {
             group: "standard-personal",
             access: { type: "api-key", apiKey: route.apiKey.trim() },
             api: {
-              type: route.kind === "openai" || route.kind === "openai-compatible" ? "openai-chat-completions" : "anthropic-messages",
+              type: route.kind === "openai" || route.kind === "openai-compatible" ? OPENAI_CHAT_COMPLETIONS_API_TYPE : ANTHROPIC_MESSAGES_API_TYPE,
               baseUrl: route.baseURL.trim()
             },
             personalModelIds: route.models.map((model) => model.id),
@@ -8627,7 +8651,7 @@ function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, nat
       if (pc.catalog === void 0)
         return void 0;
       try {
-        return modelConfigFromCatalog(pc.catalog, modelId);
+        return modelConfigFromCatalog(pc.catalog, modelId, apiTypeOfProviderKind(kind));
       } catch {
         return void 0;
       }

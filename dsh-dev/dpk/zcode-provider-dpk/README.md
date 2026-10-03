@@ -170,7 +170,17 @@ node ../dpk-manager/dpk.mjs install dist/zcode-provider-<version>.dpk -p web --h
 安装后**必须核实** profile 链接已更新(`~/.dsh/profiles/web/package.json` 中 `zcode-provider` 指向新 digest 的 store 目录)。dpk 工具经 `~/.dsh/node_modules/@deepseek-ai` junction 定位 DSH CLI——工作区搬移后该 junction 会悬空,install 只解包到 store 却报 `the DSH CLI was not found`,profile 停留旧版(2026-09-30 实际发生:2.5.35/2.5.36 两版"安装成功"实则未生效,线上一直是 2.5.34,靠 wire 抓包才发现)。修复:`rmdir` 旧 junction 后 `mklink /J` 重指 `dsh-dev\deepseek-harness
 ode_modules\@deepseek-ai`。
 
-当前版本 **2.6.9**。近版本要点：
+当前版本 **2.6.10**。近版本要点：
+
+- **2.6.10** 目录按 api 类型取数:`modelRules` 是与 api 无关的链,官方目录另有两层按 api 类型分键
+  (`modelApiRules`/`providerSiteRules`,`apiTypeMatch` 命中本路由在用的 `anthropic-messages` 才参与),
+  插件此前整层不读——`deepseek-v4.1-flash` 这类只在分键层声明窗口的模型因此落到 `.*` 兜底 200K,
+  现在取到目录真值 1048576;层内靠后的条目覆盖靠前的,分键层覆盖与 api 无关的链。
+  分键层里**没有** `apiTypeMatch` 的条目一律不生效(官方同形的三条是"所有模型支持图片/视频"的通配声明,
+  按"任意类型"读会把纯文本模型标成多模态)。同时修掉 2.6.9 出货时的那条红测试:它的断言调用 `glm-5.3`,
+  而 fixture 规则写的是 `glm-5\.3-flash`(两者不匹配,即使实现了也不会通过);`npm test` 改为逐个文件跑完
+  再汇总,不再因前一个文件失败而跳过后面的(此前因此把 `tests/standalone-package.mjs`——证明归档在
+  **没有 ZCode 的机器上**也能激活并发请求的离线闸门——一起挡掉了)。
 
 - **2.6.9** 模型上下文同步:插件解析官方 `zcode-builtin.json` 的 `modelConfigRules.modelRules` 正则链(与官方 app-server 同源),把 ZCode 权威的 `contextWindow`/`maxOutputTokens`/输入模态读出来注册进 DSH 的模型元数据(`resolvedInfo.context`),providers.json 显式 limit 仍最优先;GLM-5.3 系列自此按真实 1M 窗口参与 DSH 的上下文预算,不再是硬编码 200K。
 

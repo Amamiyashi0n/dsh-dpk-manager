@@ -75,8 +75,16 @@ const catalog = {
           config: { properties: { contextWindow: 1000000, inputFormat: { supportsImage: true, supportsPdf: true } }, optionSpecs: { maxOutputTokens: { max: 128000 } } },
         },
       ],
-      // 其余子键(modelApiRules/providerSiteRules/…)与上下文无关,解析器不读。
+      // api 分键层:只在调用方给出 apiType、且该条 `apiTypeMatch` 命中该类型时才参与
+      // (层内后条覆盖前条)。官方目录里同一模型的窗口可能按 api 类型分别声明。
       providerSiteRules: [
+        // `.*` 是目录里"任意 api 类型"的写法(官方用它给 deepseek-v4.1-flash 定 1M),
+        // 后一条按 api 类型再细分,层内靠后者胜出。
+        { modelMatch: 'hy3', apiTypeMatch: '.*', config: { properties: { contextWindow: 256000 } } },
+        { modelMatch: 'hy3', apiTypeMatch: 'openai-chat-completions', config: { properties: { contextWindow: 131072 } } },
+        // 无 apiTypeMatch 的条目不在任何 api 上生效:官方同形的三条声称所有模型支持图片/视频,
+        // 读成"任意类型"就会把纯文本模型标成多模态。
+        { modelMatch: 'glm-5\\.3', config: { properties: { inputFormat: { supportsImage: false } } } },
         { modelMatch: 'glm-5\\.3-flash', apiTypeMatch: 'openai-chat-completions', config: { properties: { contextWindow: 512000 } } },
       ],
     },
@@ -107,13 +115,22 @@ check('映射:off-peak 不在采纳范围', !endpoints.some((e) => e.key.include
     flash.contextWindow === 1000000 && flash.supportsImage === true && flash.supportsPdf === true, JSON.stringify(flash))
   const turbo = modelConfigFromCatalog(catalog, 'GLM-5-Turbo')
   check('目录上下文:GLM-5-Turbo → 200K / 64K', turbo.contextWindow === 200000 && turbo.maxOutputTokens === 64000, JSON.stringify(turbo))
-  const openai = modelConfigFromCatalog(catalog, 'glm-5.3', 'openai-chat-completions')
+  const openai = modelConfigFromCatalog(catalog, 'glm-5.3-flash', 'openai-chat-completions')
   check('目录上下文:apiTypeMatch 过滤出 openai 专属值', openai.contextWindow === 512000, JSON.stringify(openai))
+  // 同一模型按 api 类型分别取值;层内靠后的规则覆盖靠前的。
+  check('目录上下文:同模型按 api 类型取值(anthropic)',
+    modelConfigFromCatalog(catalog, 'hy3', 'anthropic-messages').contextWindow === 256000)
+  check('目录上下文:同模型按 api 类型取值(openai,层内后者胜出)',
+    modelConfigFromCatalog(catalog, 'hy3', 'openai-chat-completions').contextWindow === 131072)
+  check('目录上下文:api 分键层里无 apiTypeMatch 的条目不生效',
+    modelConfigFromCatalog(catalog, 'glm-5.3', 'anthropic-messages').supportsImage === true)
+  check('目录上下文:省略 apiType 时只读与 api 无关的链',
+    modelConfigFromCatalog(catalog, 'glm-5.3-flash').contextWindow === 1000000)
+  check('目录上下文:仅 api 分键层声明的模型省略 apiType 时是兜底值',
+    modelConfigFromCatalog(catalog, 'hy3').contextWindow === 200000)
   const unknown = modelConfigFromCatalog(catalog, 'totally-unknown-model')
   check('目录上下文:未匹配模型仍吃到 `.*` 兜底 200K', unknown.contextWindow === 200000, JSON.stringify(unknown))
   check('目录上下文:畸形目录不抛出', Object.keys(modelConfigFromCatalog(null, 'glm-5.3')).length === 0)
-  check('目录上下文:providerSiteRules 等其余子键不参与(openai 特例不覆盖)',
-    modelConfigFromCatalog(catalog, 'glm-5.3-flash').contextWindow === 1000000)
 }
 
 // ---- 2. 本机登录态 → 账号条目 ----
