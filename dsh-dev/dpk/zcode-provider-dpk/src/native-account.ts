@@ -102,10 +102,70 @@ export function accountEndpointsFromCatalog(catalog: unknown): NativeAccountEndp
   return [...endpoints.values()]
 }
 
+/** 内置目录对单个模型声明的上下文事实(与官方 app-server 同一正则链的结论)。 */
+export interface CatalogModelConfig {
+  contextWindow?: number
+  maxOutputTokens?: number
+  supportsImage?: boolean
+  supportsPdf?: boolean
+}
+
+interface ModelConfigRule {
+  modelMatch?: unknown
+  config?: {
+    properties?: {
+      contextWindow?: unknown
+      inputFormat?: { supportsImage?: unknown; supportsPdf?: unknown }
+    }
+    optionSpecs?: { maxOutputTokens?: { max?: unknown } }
+  }
+}
+
+/**
+ * 把内置目录的 `config.modelConfigRules.modelRules` 应用到一个模型 id:按数组
+ * 顺序逐条匹配 `modelMatch` 正则(后条覆盖前条),合并出 ZCode 权威的
+ * contextWindow / maxOutputTokens / 输入模态。官方 app-server 用同一条规则链
+ * 回答"这个模型多大",插件同步它而不是另猜一个数。目录里其余子键
+ * (`modelApiRules` 管线格式映射、`templateModelRules`/`builtinProviderModelRules`
+ * 只是 enable 开关)与上下文无关,不参与。
+ * @param catalog - 解析后的 `zcode-builtin.json`。
+ * @param modelId - 待解析的模型 id(大小写不敏感匹配,与目录正则写法一致)。
+ */
+export function modelConfigFromCatalog(catalog: unknown, modelId: string): CatalogModelConfig {
+  const rules = (catalog as {
+    config?: { modelConfigRules?: { modelRules?: unknown } }
+  } | null)?.config?.modelConfigRules?.modelRules
+  const result: CatalogModelConfig = {}
+  if (!Array.isArray(rules)) return result
+  for (const rule of rules as ModelConfigRule[]) {
+    if (typeof rule?.modelMatch !== 'string') continue
+    let pattern: RegExp
+    try {
+      pattern = new RegExp(rule.modelMatch, 'iu')
+    } catch {
+      continue
+    }
+    if (!pattern.test(modelId)) continue
+    const properties = rule.config?.properties
+    if (typeof properties?.contextWindow === 'number') result.contextWindow = properties.contextWindow
+    if (typeof properties?.inputFormat?.supportsImage === 'boolean') {
+      result.supportsImage = properties.inputFormat.supportsImage
+    }
+    if (typeof properties?.inputFormat?.supportsPdf === 'boolean') {
+      result.supportsPdf = properties.inputFormat.supportsPdf
+    }
+    const maxOutput = rule.config?.optionSpecs?.maxOutputTokens?.max
+    if (typeof maxOutput === 'number') result.maxOutputTokens = maxOutput
+  }
+  return result
+}
+
 /** `providers.json` 形状的账号条目(供 extractRoutes 复用同一条处理循环)。 */
 export interface NativeProviderEntry {
   kind: 'anthropic'
   options: { baseURL: string; apiKey: string }
+  /** 已解析的官方内置目录;extractRoutes 用它取模型上下文等目录事实。 */
+  catalog?: unknown
 }
 
 /**
@@ -162,7 +222,11 @@ export function nativeAccountProviders(options: {
       options.log?.(`zcode-provider: 端点 ${endpoint.key} 未通过凭证门控`)
       continue
     }
-    entries[endpoint.key] = { kind: 'anthropic', options: { baseURL: endpoint.baseURL, apiKey: resolved.apiKey } }
+    entries[endpoint.key] = {
+      kind: 'anthropic',
+      options: { baseURL: endpoint.baseURL, apiKey: resolved.apiKey },
+      ...(catalog === undefined ? {} : { catalog }),
+    }
     options.log?.(`zcode-provider: 端点 ${endpoint.key} 已通过凭证门控,credential=${resolved.source}`)
   }
   options.log?.(`zcode-provider: 本机账号路由推导完成,产出 ${Object.keys(entries).length} 条(${Object.keys(entries).join(', ') || 'none'})`)

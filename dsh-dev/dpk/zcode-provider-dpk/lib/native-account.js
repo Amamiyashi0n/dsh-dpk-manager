@@ -94,6 +94,48 @@ export function accountEndpointsFromCatalog(catalog) {
     return [...endpoints.values()];
 }
 /**
+ * 把内置目录的 `config.modelConfigRules.modelRules` 应用到一个模型 id:按数组
+ * 顺序逐条匹配 `modelMatch` 正则(后条覆盖前条),合并出 ZCode 权威的
+ * contextWindow / maxOutputTokens / 输入模态。官方 app-server 用同一条规则链
+ * 回答"这个模型多大",插件同步它而不是另猜一个数。目录里其余子键
+ * (`modelApiRules` 管线格式映射、`templateModelRules`/`builtinProviderModelRules`
+ * 只是 enable 开关)与上下文无关,不参与。
+ * @param catalog - 解析后的 `zcode-builtin.json`。
+ * @param modelId - 待解析的模型 id(大小写不敏感匹配,与目录正则写法一致)。
+ */
+export function modelConfigFromCatalog(catalog, modelId) {
+    const rules = catalog?.config?.modelConfigRules?.modelRules;
+    const result = {};
+    if (!Array.isArray(rules))
+        return result;
+    for (const rule of rules) {
+        if (typeof rule?.modelMatch !== 'string')
+            continue;
+        let pattern;
+        try {
+            pattern = new RegExp(rule.modelMatch, 'iu');
+        }
+        catch {
+            continue;
+        }
+        if (!pattern.test(modelId))
+            continue;
+        const properties = rule.config?.properties;
+        if (typeof properties?.contextWindow === 'number')
+            result.contextWindow = properties.contextWindow;
+        if (typeof properties?.inputFormat?.supportsImage === 'boolean') {
+            result.supportsImage = properties.inputFormat.supportsImage;
+        }
+        if (typeof properties?.inputFormat?.supportsPdf === 'boolean') {
+            result.supportsPdf = properties.inputFormat.supportsPdf;
+        }
+        const maxOutput = rule.config?.optionSpecs?.maxOutputTokens?.max;
+        if (typeof maxOutput === 'number')
+            result.maxOutputTokens = maxOutput;
+    }
+    return result;
+}
+/**
  * 从本机官方 ZCode 登录态推导账号条目;目录缺失/损坏或套餐未登录时不产出该条。
  * @param options - 路径注入(测试隔离用)与日志出口。
  */
@@ -146,7 +188,11 @@ export function nativeAccountProviders(options = {}) {
             options.log?.(`zcode-provider: 端点 ${endpoint.key} 未通过凭证门控`);
             continue;
         }
-        entries[endpoint.key] = { kind: 'anthropic', options: { baseURL: endpoint.baseURL, apiKey: resolved.apiKey } };
+        entries[endpoint.key] = {
+            kind: 'anthropic',
+            options: { baseURL: endpoint.baseURL, apiKey: resolved.apiKey },
+            ...(catalog === undefined ? {} : { catalog }),
+        };
         options.log?.(`zcode-provider: 端点 ${endpoint.key} 已通过凭证门控,credential=${resolved.source}`);
     }
     options.log?.(`zcode-provider: 本机账号路由推导完成,产出 ${Object.keys(entries).length} 条(${Object.keys(entries).join(', ') || 'none'})`);

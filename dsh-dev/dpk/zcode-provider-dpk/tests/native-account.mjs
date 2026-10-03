@@ -14,6 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const {
   accountEndpointsFromCatalog,
   discoveredBuiltinCatalogPath,
+  modelConfigFromCatalog,
   nativeAccountProviders,
   nativeCredentialPath,
   nativeTelemetryStatePath,
@@ -32,29 +33,54 @@ function check(label, ok, detail = '') {
 
 const catalog = {
   schemaVersion: 1,
-  config: { providerConfigRules: { providerRules: [
-    {
-      providerId: 'account:bigmodel-individual-coding-plan',
-      config: { access: { type: 'zhipu-account', mode: 'individual-coding-plan' }, api: { type: 'anthropic-messages', baseUrl: 'https://open.bigmodel.cn/api/anthropic/' } },
+  config: {
+    providerConfigRules: { providerRules: [
+      {
+        providerId: 'account:bigmodel-individual-coding-plan',
+        config: { access: { type: 'zhipu-account', mode: 'individual-coding-plan' }, api: { type: 'anthropic-messages', baseUrl: 'https://open.bigmodel.cn/api/anthropic/' } },
+      },
+      {
+        providerId: 'account:bigmodel-team-coding-plan',
+        config: { access: { type: 'zhipu-account', mode: 'team-coding-plan' }, api: { baseUrl: 'https://open.bigmodel.cn/api/anthropic' } },
+      },
+      {
+        providerId: 'account:bigmodel-start-plan',
+        config: { access: { type: 'zhipu-account', mode: 'start-plan' }, api: { baseUrl: 'https://zcode.z.ai/api/v1/zcode-plan/anthropic' } },
+      },
+      {
+        providerId: 'account:zai-individual-coding-plan',
+        config: { access: { type: 'zhipu-account' }, api: { baseUrl: 'https://api.z.ai/api/anthropic' } },
+      },
+      {
+        providerId: 'some-custom-provider',
+        config: { access: { type: 'api-key' }, api: { baseUrl: 'https://custom.invalid/v1' } },
+      },
+      { providerId: 'account:bigmodel-offpeak-idle-plan', config: { access: { type: 'zhipu-account' }, api: {} } },
+    ] },
+    // 与官方 zcode-builtin.json 同形的模型规则片段(真实值取自 3.14.1 目录的
+    // modelConfigRules.modelRules):glm-5.3* → 1M 上下文 / 128K 输出 / 支持图片;
+    // 首条 `.*` 兜底 200K/64K;后条覆盖前条。
+    modelConfigRules: {
+      modelRules: [
+        {
+          modelMatch: '.*',
+          config: { properties: { contextWindow: 200000, inputFormat: { supportsImage: false } }, optionSpecs: { maxOutputTokens: { max: 64000 } } },
+        },
+        {
+          modelMatch: '.*GLM-5-Turbo(?:[.\\-:/\\[].*)?',
+          config: { properties: { contextWindow: 200000, inputFormat: { supportsImage: false } }, optionSpecs: { maxOutputTokens: { max: 64000 } } },
+        },
+        {
+          modelMatch: '.*glm-5\\.3(?:-flash)?(?:[.\\-:/\\[].*)?',
+          config: { properties: { contextWindow: 1000000, inputFormat: { supportsImage: true, supportsPdf: true } }, optionSpecs: { maxOutputTokens: { max: 128000 } } },
+        },
+      ],
+      // 其余子键(modelApiRules/providerSiteRules/…)与上下文无关,解析器不读。
+      providerSiteRules: [
+        { modelMatch: 'glm-5\\.3-flash', apiTypeMatch: 'openai-chat-completions', config: { properties: { contextWindow: 512000 } } },
+      ],
     },
-    {
-      providerId: 'account:bigmodel-team-coding-plan',
-      config: { access: { type: 'zhipu-account', mode: 'team-coding-plan' }, api: { baseUrl: 'https://open.bigmodel.cn/api/anthropic' } },
-    },
-    {
-      providerId: 'account:bigmodel-start-plan',
-      config: { access: { type: 'zhipu-account', mode: 'start-plan' }, api: { baseUrl: 'https://zcode.z.ai/api/v1/zcode-plan/anthropic' } },
-    },
-    {
-      providerId: 'account:zai-individual-coding-plan',
-      config: { access: { type: 'zhipu-account' }, api: { baseUrl: 'https://api.z.ai/api/anthropic' } },
-    },
-    {
-      providerId: 'some-custom-provider',
-      config: { access: { type: 'api-key' }, api: { baseUrl: 'https://custom.invalid/v1' } },
-    },
-    { providerId: 'account:bigmodel-offpeak-idle-plan', config: { access: { type: 'zhipu-account' }, api: {} } },
-  ] } },
+  },
 }
 
 // ---- 1. 目录 → 账号端点映射(纯函数) ----
@@ -70,6 +96,25 @@ check('映射:非账号规则与缺 baseUrl 规则被忽略', ![...byKey.keys()]
   && ![...byKey.keys()].some((k) => k.includes('custom')))
 check('映射:畸形目录返回空数组', accountEndpointsFromCatalog({ nope: 1 }).length === 0 && accountEndpointsFromCatalog(null).length === 0)
 check('映射:off-peak 不在采纳范围', !endpoints.some((e) => e.key.includes('offpeak')))
+
+// ---- 1b. 内置目录 → 模型上下文(纯函数,目录正则链) ----
+{
+  const glm53 = modelConfigFromCatalog(catalog, 'GLM-5.3')
+  check('目录上下文:glm-5.3 → 1M 窗口 / 128K 输出(后条覆盖前条)',
+    glm53.contextWindow === 1000000 && glm53.maxOutputTokens === 128000, JSON.stringify(glm53))
+  const flash = modelConfigFromCatalog(catalog, 'glm-5.3-flash')
+  check('目录上下文:glm-5.3-flash 大小写不敏感且支持图片',
+    flash.contextWindow === 1000000 && flash.supportsImage === true && flash.supportsPdf === true, JSON.stringify(flash))
+  const turbo = modelConfigFromCatalog(catalog, 'GLM-5-Turbo')
+  check('目录上下文:GLM-5-Turbo → 200K / 64K', turbo.contextWindow === 200000 && turbo.maxOutputTokens === 64000, JSON.stringify(turbo))
+  const openai = modelConfigFromCatalog(catalog, 'glm-5.3', 'openai-chat-completions')
+  check('目录上下文:apiTypeMatch 过滤出 openai 专属值', openai.contextWindow === 512000, JSON.stringify(openai))
+  const unknown = modelConfigFromCatalog(catalog, 'totally-unknown-model')
+  check('目录上下文:未匹配模型仍吃到 `.*` 兜底 200K', unknown.contextWindow === 200000, JSON.stringify(unknown))
+  check('目录上下文:畸形目录不抛出', Object.keys(modelConfigFromCatalog(null, 'glm-5.3')).length === 0)
+  check('目录上下文:providerSiteRules 等其余子键不参与(openai 特例不覆盖)',
+    modelConfigFromCatalog(catalog, 'glm-5.3-flash').contextWindow === 1000000)
+}
 
 // ---- 2. 本机登录态 → 账号条目 ----
 const dir = mkdtempSync(join(tmpdir(), 'zcode-native-'))
@@ -143,6 +188,17 @@ try {
     `${codingRoute?.access?.mode} / ${codingRoute?.apiKey}`)
   check('回退:凭证来源标记 credential-store', codingRoute?.credential === 'credential-store', String(codingRoute?.credential))
   check('回退:模型目录来自可审计回退表', (codingRoute?.models.length ?? 0) >= 1)
+  // 上下文同步:模型上下文来自内置目录的正则链(目录里 glm-5.3* = 1M),
+  // 不再是硬编码 200000;DSH 侧 resolvedInfo 从同一份 ZcodeModel 读值。
+  const glm53Model = codingRoute?.models.find((m) => m.id === 'GLM-5.3')
+  check('回退:模型上下文同步自内置目录(glm-5.3 → 1M)',
+    glm53Model?.contextWindow === 1000000 && glm53Model?.maxTokens === 128000,
+    JSON.stringify(glm53Model))
+  const flashModel = codingRoute?.models.find((m) => m.id === 'GLM-5.3-Flash')
+  check('回退:glm-5.3-flash 模态同步自目录(text+image)',
+    flashModel?.contextWindow === 1000000
+    && Array.isArray(flashModel?.inputModalities) && flashModel.inputModalities.includes('image'),
+    JSON.stringify(flashModel))
   const startRoute = routesFromNative.find((r) => r.route === 'builtin:bigmodel-start-plan')
   check('回退:start plan 路由同时推导', startRoute?.access?.mode === 'start-plan' && startRoute?.apiKey === 'jwt-from-native-store')
 

@@ -5769,6 +5769,37 @@ function accountEndpointsFromCatalog(catalog) {
   }
   return [...endpoints.values()];
 }
+function modelConfigFromCatalog(catalog, modelId) {
+  const rules = catalog?.config?.modelConfigRules?.modelRules;
+  const result = {};
+  if (!Array.isArray(rules))
+    return result;
+  for (const rule of rules) {
+    if (typeof rule?.modelMatch !== "string")
+      continue;
+    let pattern3;
+    try {
+      pattern3 = new RegExp(rule.modelMatch, "iu");
+    } catch {
+      continue;
+    }
+    if (!pattern3.test(modelId))
+      continue;
+    const properties = rule.config?.properties;
+    if (typeof properties?.contextWindow === "number")
+      result.contextWindow = properties.contextWindow;
+    if (typeof properties?.inputFormat?.supportsImage === "boolean") {
+      result.supportsImage = properties.inputFormat.supportsImage;
+    }
+    if (typeof properties?.inputFormat?.supportsPdf === "boolean") {
+      result.supportsPdf = properties.inputFormat.supportsPdf;
+    }
+    const maxOutput = rule.config?.optionSpecs?.maxOutputTokens?.max;
+    if (typeof maxOutput === "number")
+      result.maxOutputTokens = maxOutput;
+  }
+  return result;
+}
 function nativeAccountProviders(options = {}) {
   const builtinPath = options.builtinPath?.trim() || discoveredBuiltinCatalogPath();
   let catalog;
@@ -5815,7 +5846,11 @@ function nativeAccountProviders(options = {}) {
       options.log?.(`zcode-provider: \u7AEF\u70B9 ${endpoint.key} \u672A\u901A\u8FC7\u51ED\u8BC1\u95E8\u63A7`);
       continue;
     }
-    entries[endpoint.key] = { kind: "anthropic", options: { baseURL: endpoint.baseURL, apiKey: resolved.apiKey } };
+    entries[endpoint.key] = {
+      kind: "anthropic",
+      options: { baseURL: endpoint.baseURL, apiKey: resolved.apiKey },
+      ...catalog === void 0 ? {} : { catalog }
+    };
     options.log?.(`zcode-provider: \u7AEF\u70B9 ${endpoint.key} \u5DF2\u901A\u8FC7\u51ED\u8BC1\u95E8\u63A7,credential=${resolved.source}`);
   }
   options.log?.(`zcode-provider: \u672C\u673A\u8D26\u53F7\u8DEF\u7531\u63A8\u5BFC\u5B8C\u6210,\u4EA7\u51FA ${Object.keys(entries).length} \u6761(${Object.keys(entries).join(", ") || "none"})`);
@@ -8588,29 +8623,44 @@ function extractRoutes(providerConfigPath, includeDisabled, credentialsPath, nat
     }
     const kind = pc.kind ?? "anthropic";
     const base = o.baseURL.replace(/\/+$/, "");
+    const catalogConfig = (modelId) => {
+      if (pc.catalog === void 0)
+        return void 0;
+      try {
+        return modelConfigFromCatalog(pc.catalog, modelId);
+      } catch {
+        return void 0;
+      }
+    };
     let models = [];
     for (const [id, spec] of Object.entries(pc.models ?? {})) {
       const reasoning = spec?.reasoning;
       const variants = reasoning?.enabled === false ? [] : reasoning?.variants ?? [];
+      const fromCatalog = catalogConfig(id);
+      const declaredModalities = spec?.modalities?.input;
       models.push({
         id,
-        contextWindow: spec?.limit?.context ?? 2e5,
-        maxTokens: spec?.limit?.output ?? 128e3,
-        inputModalities: inputModalitiesOf(spec?.modalities?.input),
+        contextWindow: spec?.limit?.context ?? fromCatalog?.contextWindow ?? 2e5,
+        maxTokens: spec?.limit?.output ?? fromCatalog?.maxOutputTokens ?? 128e3,
+        inputModalities: Array.isArray(declaredModalities) ? inputModalitiesOf(declaredModalities) : fromCatalog?.supportsImage === true ? ["text", "image"] : void 0,
         ...variants.length ? { efforts: variants, defaultEffort: reasoning?.defaultVariant } : {}
       });
     }
     const runtime = runtimeProviders(pid);
     if (!models.length) {
       const ids = runtime.map((r) => PORTABLE_ACCOUNT_MODELS.get(r.id)).find((list) => list?.length) ?? [];
-      models = ids.map((id) => ({
-        id,
-        contextWindow: 2e5,
-        maxTokens: 128e3,
-        inputModalities: ["text"],
-        efforts: ["low", "max", "high"],
-        defaultEffort: "max"
-      }));
+      models = ids.map((id) => {
+        const fromCatalog = catalogConfig(id);
+        const supportsImage = fromCatalog?.supportsImage === true;
+        return {
+          id,
+          contextWindow: fromCatalog?.contextWindow ?? 2e5,
+          maxTokens: fromCatalog?.maxOutputTokens ?? 128e3,
+          inputModalities: supportsImage ? ["text", "image"] : ["text"],
+          efforts: ["low", "max", "high"],
+          defaultEffort: "max"
+        };
+      });
     }
     if (!models.length) {
       log?.(`zcode-provider: \u8DF3\u8FC7 provider ${pid},\u539F\u56E0=\u6A21\u578B\u76EE\u5F55\u4E3A\u7A7A`);

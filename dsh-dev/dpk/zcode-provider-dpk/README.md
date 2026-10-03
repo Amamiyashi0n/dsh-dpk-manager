@@ -170,7 +170,9 @@ node ../dpk-manager/dpk.mjs install dist/zcode-provider-<version>.dpk -p web --h
 安装后**必须核实** profile 链接已更新(`~/.dsh/profiles/web/package.json` 中 `zcode-provider` 指向新 digest 的 store 目录)。dpk 工具经 `~/.dsh/node_modules/@deepseek-ai` junction 定位 DSH CLI——工作区搬移后该 junction 会悬空,install 只解包到 store 却报 `the DSH CLI was not found`,profile 停留旧版(2026-09-30 实际发生:2.5.35/2.5.36 两版"安装成功"实则未生效,线上一直是 2.5.34,靠 wire 抓包才发现)。修复:`rmdir` 旧 junction 后 `mklink /J` 重指 `dsh-dev\deepseek-harness
 ode_modules\@deepseek-ai`。
 
-当前版本 **2.6.8**。近版本要点：
+当前版本 **2.6.9**。近版本要点：
+
+- **2.6.9** 模型上下文同步:插件解析官方 `zcode-builtin.json` 的 `modelConfigRules.modelRules` 正则链(与官方 app-server 同源),把 ZCode 权威的 `contextWindow`/`maxOutputTokens`/输入模态读出来注册进 DSH 的模型元数据(`resolvedInfo.context`),providers.json 显式 limit 仍最优先;GLM-5.3 系列自此按真实 1M 窗口参与 DSH 的上下文预算,不再是硬编码 200K。
 
 - **2.6.8** 打包分层修正:归档携带包**本名**(`zcode-provider`),`@local/` 作用域由 dpk **安装动作**添加(store 副本、patch 行、台账、数据卷根),pack 阶段不再预烧作用域;卷声明只随 `dsh` 逐字副本携带,不再写顶层 `data` 键(2.6.6 的归档因此被旧白名单读取端整包拒收);`tests/loader-composition.mjs` 移出默认 `npm test` 链(改 `test:integration`),归档解包环境不再出现依赖维护者 monorepo 的恒红测试。分发仅走 `.dpk`,不发布 npm。
 

@@ -52,6 +52,7 @@ import {
 } from './credentials.js'
 import {
   discoveredBuiltinCatalogPath,
+  modelConfigFromCatalog,
   nativeAccountProviders,
   nativeCredentialPath,
   nativeTelemetryStatePath,
@@ -161,6 +162,8 @@ interface ZcodeProviderEntry {
     apiKey?: string
     models?: Record<string, unknown>
   }
+  /** native fallback 携带的官方内置目录;用于解析模型上下文等目录事实。 */
+  catalog?: unknown
 }
 
 /** Auditable fallback catalog for account providers whose device entry omits models. */
@@ -325,31 +328,49 @@ export function extractRoutes(
     }
     const kind = pc.kind ?? 'anthropic'
     const base = o.baseURL.replace(/\/+$/, '')
+    // 模型上下文以 ZCode 内置目录为准:目录正则链(modelConfigRules)给出的
+    // contextWindow/maxOutputTokens 与官方 app-server 同源,读不到才退默认。
     // 模型目录优先级:provider 顶层 models(zcode 的真实目录,含 limit/reasoning)
     //  → 内置目录(按 providerId,其次 baseURL)→ 跳过(与 zcode 行为一致:无目录不展示)
+    const catalogConfig = (modelId: string): ReturnType<typeof modelConfigFromCatalog> | undefined => {
+      if (pc.catalog === undefined) return undefined
+      try {
+        return modelConfigFromCatalog(pc.catalog, modelId)
+      } catch {
+        return undefined
+      }
+    }
     let models: ZcodeModel[] = []
     for (const [id, spec] of Object.entries(pc.models ?? {})) {
       const reasoning = spec?.reasoning
       const variants = reasoning?.enabled === false ? [] : reasoning?.variants ?? []
+      const fromCatalog = catalogConfig(id)
+      const declaredModalities = spec?.modalities?.input
       models.push({
         id,
-        contextWindow: spec?.limit?.context ?? 200000,
-        maxTokens: spec?.limit?.output ?? 128000,
-        inputModalities: inputModalitiesOf(spec?.modalities?.input),
+        contextWindow: spec?.limit?.context ?? fromCatalog?.contextWindow ?? 200000,
+        maxTokens: spec?.limit?.output ?? fromCatalog?.maxOutputTokens ?? 128000,
+        inputModalities: Array.isArray(declaredModalities)
+          ? inputModalitiesOf(declaredModalities)
+          : fromCatalog?.supportsImage === true ? ['text', 'image'] : undefined,
         ...(variants.length ? { efforts: variants, defaultEffort: reasoning?.defaultVariant } : {}),
       })
     }
     const runtime = runtimeProviders(pid)
     if (!models.length) {
       const ids = runtime.map((r) => PORTABLE_ACCOUNT_MODELS.get(r.id)).find((list) => list?.length) ?? []
-      models = ids.map((id) => ({
-        id,
-        contextWindow: 200000,
-        maxTokens: 128000,
-        inputModalities: ['text'],
-        efforts: ['low', 'max', 'high'],
-        defaultEffort: 'max',
-      }))
+      models = ids.map((id) => {
+        const fromCatalog = catalogConfig(id)
+        const supportsImage = fromCatalog?.supportsImage === true
+        return {
+          id,
+          contextWindow: fromCatalog?.contextWindow ?? 200000,
+          maxTokens: fromCatalog?.maxOutputTokens ?? 128000,
+          inputModalities: supportsImage ? (['text', 'image'] as const) : (['text'] as const),
+          efforts: ['low', 'max', 'high'],
+          defaultEffort: 'max',
+        }
+      })
     }
     if (!models.length) {
       log?.(`zcode-provider: 跳过 provider ${pid},原因=模型目录为空`)

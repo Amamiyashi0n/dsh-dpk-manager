@@ -30,6 +30,24 @@ export interface NativeAccountEndpoint {
 }
 /** 从内置目录 JSON 提取账号端点;individual/team 合并为同一条 coding-plan 路由。 */
 export declare function accountEndpointsFromCatalog(catalog: unknown): NativeAccountEndpoint[];
+/** 内置目录对单个模型声明的上下文事实(与官方 app-server 同一正则链的结论)。 */
+export interface CatalogModelConfig {
+    contextWindow?: number;
+    maxOutputTokens?: number;
+    supportsImage?: boolean;
+    supportsPdf?: boolean;
+}
+/**
+ * 把内置目录的 `config.modelConfigRules.modelRules` 应用到一个模型 id:按数组
+ * 顺序逐条匹配 `modelMatch` 正则(后条覆盖前条),合并出 ZCode 权威的
+ * contextWindow / maxOutputTokens / 输入模态。官方 app-server 用同一条规则链
+ * 回答"这个模型多大",插件同步它而不是另猜一个数。目录里其余子键
+ * (`modelApiRules` 管线格式映射、`templateModelRules`/`builtinProviderModelRules`
+ * 只是 enable 开关)与上下文无关,不参与。
+ * @param catalog - 解析后的 `zcode-builtin.json`。
+ * @param modelId - 待解析的模型 id(大小写不敏感匹配,与目录正则写法一致)。
+ */
+export declare function modelConfigFromCatalog(catalog: unknown, modelId: string): CatalogModelConfig;
 /** `providers.json` 形状的账号条目(供 extractRoutes 复用同一条处理循环)。 */
 export interface NativeProviderEntry {
     kind: 'anthropic';
@@ -37,6 +55,8 @@ export interface NativeProviderEntry {
         baseURL: string;
         apiKey: string;
     };
+    /** 已解析的官方内置目录;extractRoutes 用它取模型上下文等目录事实。 */
+    catalog?: unknown;
 }
 /**
  * 从本机官方 ZCode 登录态推导账号条目;目录缺失/损坏或套餐未登录时不产出该条。
