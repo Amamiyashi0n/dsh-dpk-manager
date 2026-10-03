@@ -11,6 +11,7 @@
  *
  * 用法:node tests/error-classification.mjs(需先 npm run build)
  */
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -125,6 +126,30 @@ check('分类器:额度码集合按业务码命中',
   failureCode(429, '', '1113', '') === 'QUOTA')
 check('分类器:无状态码且无线索时退化 SERVER',
   failureCode(undefined, '', '', '') === 'SERVER')
+
+// ---- 4. 只提醒、不推销:绝不产出 ACCOUNT_QUOTA ----
+// `ACCOUNT_QUOTA` 是第一方 DeepSeek 账号路由把自己的 QUOTA 改写出来的码,客户端只认领它
+// 并弹出「去充值」Modal。ZCode 额度用尽的诉求是提醒,不是购买入口,所以本插件必须停在
+// `QUOTA`——这条断言就是那个约束本身,任何"顺手改成 ACCOUNT_QUOTA"的改动都会在这里红。
+{
+  const quotaInputs = [
+    [429, 'billing_error', '1113', '余额不足或无可用资源包,请充值。'],
+    [402, '', '1113', 'payment required'],
+    [429, '', '', '额度已用尽'],
+    [429, '', '', 'insufficient balance'],
+  ]
+  for (const [status, type, businessCode, detail] of quotaInputs) {
+    const code = failureCode(status, type, businessCode, detail)
+    check(`不推销:${detail.slice(0, 12)}… 产出 QUOTA 而非 ACCOUNT_QUOTA`,
+      code === 'QUOTA', code)
+  }
+  // 源码级守卫:任何以带引号字面量产出 ACCOUNT_QUOTA 的改动都会在这里红。
+  const offenders = readdirSync(join(here, '..', 'src'))
+    .filter((file) => file.endsWith('.ts'))
+    .filter((file) => /['"]ACCOUNT_QUOTA['"]/u.test(readFileSync(join(here, '..', 'src', file), 'utf8')))
+  check('不推销:插件从不产出 ACCOUNT_QUOTA(源码级核对)',
+    offenders.length === 0, offenders.join(','))
+}
 
 console.log(`\n${passed}/${passed + failures.length} 项通过`)
 if (failures.length) {

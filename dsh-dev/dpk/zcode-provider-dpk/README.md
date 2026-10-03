@@ -170,7 +170,14 @@ node ../dpk-manager/dpk.mjs install dist/zcode-provider-<version>.dpk -p web --h
 安装后**必须核实** profile 链接已更新(`~/.dsh/profiles/web/package.json` 中 `zcode-provider` 指向新 digest 的 store 目录)。dpk 工具经 `~/.dsh/node_modules/@deepseek-ai` junction 定位 DSH CLI——工作区搬移后该 junction 会悬空,install 只解包到 store 却报 `the DSH CLI was not found`,profile 停留旧版(2026-09-30 实际发生:2.5.35/2.5.36 两版"安装成功"实则未生效,线上一直是 2.5.34,靠 wire 抓包才发现)。修复:`rmdir` 旧 junction 后 `mklink /J` 重指 `dsh-dev\deepseek-harness
 ode_modules\@deepseek-ai`。
 
-当前版本 **2.6.11**。近版本要点：
+当前版本 **2.6.12**。近版本要点：
+
+- **2.6.12** 额度提示只提醒、不带购买入口:本插件一律产出 `QUOTA`,**绝不产出 `ACCOUNT_QUOTA`**。
+  客户端(ui-settings-account)只认领 `ACCOUNT_QUOTA` 并弹「去充值」Modal,那个码是第一方
+  DeepSeek 账号路由(`llm-deepseek-account`)把自己的 `QUOTA` 改写出来的;ZCode 额度用尽的
+  诉求是**提醒**,不是购买入口,所以这里停在 `QUOTA`:失败行显示中立额度文案 + 全局
+  `shell.quota-notice` 警告 Toast,没有充值按钮。`tests/error-classification.mjs` 用源码级
+  守卫锁住这条不变量(任何以字面量产出 `ACCOUNT_QUOTA` 的改动都会红)。
 
 - **2.6.11** 额度耗尽提醒:官方把**终态欠费**发成 HTTP 429,原因在 body 里
   (实测 `429 {"error":{"code":"1113","message":"余额不足或无可用资源包,请充值。"}}`),

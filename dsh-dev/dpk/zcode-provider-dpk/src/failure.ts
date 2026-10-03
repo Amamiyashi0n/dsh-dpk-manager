@@ -32,7 +32,12 @@ const QUOTA_WORDING = /余额不足|额度不足|无可用资源包|欠费|请�
  *
  * 额度判断必须排在限流之前:官方把可充值的终态欠费也发成 HTTP 429,先判 429 就降级成
  * `RATE_LIMIT`;而 DSH 依据 code 路由——只有 `QUOTA` 会触发失败行的额度文案与全局
- * `shell.quota-notice` 提醒(第一方账号路由还会改写为 `ACCOUNT_QUOTA` 以提供充值入口)。
+ * `shell.quota-notice` 提醒。
+ *
+ * **本插件一律产出 `QUOTA`,绝不产出 `ACCOUNT_QUOTA`**:后者是第一方 DeepSeek 账号路由
+ * (`llm-deepseek-account`)把自己的 `QUOTA` 改写出来的码,而客户端的账号条目只认领它并
+ * 弹出「去充值」Modal。ZCode 额度用尽的诉求是**提醒**,不是购买入口,所以这里停在 `QUOTA`;
+ * `tests/error-classification.mjs` 锁住这条不变量。
  * @param status - HTTP 状态码;流内错误与 app-server 委托没有状态码。
  * @param type - 提供方的错误类型字段(如 `rate_limit_error`)。
  * @param businessCode - 业务码原文(如 `1113`);app-server 传 `providerErrorCode`。
