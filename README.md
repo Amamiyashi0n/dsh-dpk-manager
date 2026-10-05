@@ -376,7 +376,7 @@ dpk/
   lib/profile-policy.mjs       profile 的 pnpm-workspace.yaml 冷却期豁免写入（仅 via: "service" 需要）
   lib/actions.mjs              动作层：工具与面板共用
   schemas/dpk-1.schema.json    dpk.json 的 JSON Schema
-  examples/hello-bundle/       自包含示例包（发布时用 `dpk build` 打包成 dist/dpk-hello-1.0.0.dpk）
+  examples/hello-bundle/       自包含示例包（发布时用 `dpk build` 打包成 dpk-dist/dpk-hello@1.0.0.dpk）
   test/                        测试（一致性清单 + 动作层 + 自洽写入 + autoremove + cache 生命周期 + schema 对齐）
 ```
 

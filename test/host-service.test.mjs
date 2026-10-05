@@ -341,7 +341,7 @@ test('the panel export is generated on demand and stores nothing', async () => {
   // On demand also means repeatable: the same store copy packs to the same bytes.
   const second = await service.exportArchive({ name: '@local/dpk-fixture' })
   assert.equal(second.base64, first.base64)
-  assert.equal(second.fileName, 'local-dpk-fixture-1.0.0.dpk')
+  assert.equal(second.fileName, 'local-dpk-fixture@1.0.0.dpk')
 
   // A version-pinned request resolves through the other branch (`matchEntries`
   // rather than `latestEntry`) — the branch that was never exercised, which is

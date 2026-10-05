@@ -36,11 +36,12 @@ const TARBALL_SPEC = /\.(?:tgz|tar\.gz)(?:#.*)?$/i
 ## 2. 文件命名
 
 ```
-[<scope>-]<name>-<version>.dpk
+[<scope>-]<name>@<version>.dpk
 ```
 
-- `<scope>` 去掉 `@`/`/`，例如 `@local/dsh-reverse-skill` → `local-dsh-reverse-skill-1.0.0.dpk`；
-- 无 scope 的包 → `example-provider-1.0.0.dpk`；
+- `@` 分隔名称与版本（与 npm 的 `name@version` 写法一致），避免连字符名称与版本边界不清；
+- `<scope>` 去掉 `@`/`/`，例如 `@local/dsh-reverse-skill` → `local-dsh-reverse-skill@1.0.0.dpk`；
+- 无 scope 的包 → `example-provider@1.0.0.dpk`；
 - `name` / `version` 必须与 `dpk.json` 及 `package/package.json` 完全一致（大小写敏感）；
 - 扩展名固定 `.dpk`，小写。文件名**不参与**校验（只作为人读线索），校验以 `dpk.json` 为准。
 

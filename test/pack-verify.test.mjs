@@ -49,7 +49,7 @@ test('packs a bundle package and verifies it end to end', async () => {
   assert.equal(packed.manifest.version, '1.0.0')
   assert.deepEqual(packed.manifest.roles, ['bundle'])
   assert.equal(packed.manifest.generator, DPK_GENERATOR)
-  assert.equal(packed.fileName, 'local-dpk-fixture-1.0.0.dpk')
+  assert.equal(packed.fileName, 'local-dpk-fixture@1.0.0.dpk')
   assert.equal(packed.manifest.files.length, 5)
 
   const verified = await verifyArchive(packed.buffer)
@@ -243,9 +243,11 @@ test('warns instead of failing when locale files are absent', async () => {
   assert.ok(facts.warnings.some(warning => warning.includes('locale')))
 })
 
-test('archive file naming strips the scope', () => {
-  assert.equal(archiveFileName('@local/dsh-reverse-skill', '1.2.3'), 'local-dsh-reverse-skill-1.2.3.dpk')
-  assert.equal(archiveFileName('example-provider', '1.0.0'), 'example-provider-1.0.0.dpk')
+test('archive file naming strips the scope and joins name and version with @', () => {
+  assert.equal(archiveFileName('@local/dsh-reverse-skill', '1.2.3'), 'local-dsh-reverse-skill@1.2.3.dpk')
+  assert.equal(archiveFileName('example-provider', '1.0.0'), 'example-provider@1.0.0.dpk')
+  // The point of the `@`: a hyphenated package name keeps its boundary.
+  assert.equal(archiveFileName('dsh-dpk-manager', '2.1.53'), 'dsh-dpk-manager@2.1.53.dpk')
 })
 
 test('rejects an unexpected top-level entry', async () => {
