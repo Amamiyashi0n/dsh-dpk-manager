@@ -1,0 +1,6 @@
+# Build artifacts and local junk: never part of the package.
+/dist/
+*.dpk
+node_modules/
+.DS_Store
+Thumbs.db

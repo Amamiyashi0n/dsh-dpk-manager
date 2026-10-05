@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DSH Package Manager",
+    "description": "Pack, verify, and install DSH plugin packages (.dpk): a validated zip carrying one standard DSH package, unpacked into a content-addressed local store and installed through the official plugin manager."
+  }
+}

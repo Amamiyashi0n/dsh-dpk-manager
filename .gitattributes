@@ -1,0 +1,4 @@
+# The bytes in this repository ARE the packaged bytes: the .dpk digest and the
+# npm tarball shasum both cover them, so no line-ending conversion may ever
+# rewrite a file behind our back on checkout or add.
+* -text

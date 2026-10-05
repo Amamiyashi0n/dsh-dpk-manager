@@ -1,0 +1,15 @@
+# Bundle layer for dsh-dpk-manager（DSH 安装包管理助手）：
+# 一行 Host 插件，注册面向 agent 的 `dpk` 工具。
+#
+# dpk 工具的动作：inspect / verify / pack / install / list / which / data / export / import / purge。
+#   - verify、pack 等只读动作不需要提权；
+#   - install / import / purge 会修改 profile 或受管数据，因此先走与官方 plugin_manager
+#     完全相同的沙箱提权判定（danger-full-access），再调用同一个 pluginManager 服务；
+#     判定器或服务不可用时一律拒绝安装并给出 plugin_manager 的等价调用。
+#
+# 可选配置：
+#   home: 本地 dpk 仓库根（默认 $DSH_HOME，即 <home>/dpk）。
+- insert:
+    - id: dsh-dpk-manager
+      name: 'dsh-dpk-manager'
+      config: {}

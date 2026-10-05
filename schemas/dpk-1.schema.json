@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.local/schemas/dpk-1.json",
+  "title": "DPK manifest (dpk.json)",
+  "description": "Format definition of the DPK container manifest, version 1. Unknown properties are refused by the validator, which is stricter than this schema's default.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dpk", "name", "version", "createdAt", "generator", "entry", "roles", "files", "integrity"],
+  "properties": {
+    "dpk": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Format version. 1 is the only version this schema defines; readers refuse higher numbers."
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 214,
+      "pattern": "^(?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*$",
+      "description": "Must equal package/package.json name."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+      "description": "Must equal package/package.json version."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Provenance only; excluded from the integrity digest."
+    },
+    "generator": {
+      "type": "string",
+      "pattern": "^[^/\\s]+/\\S+$",
+      "description": "\"<tool>/<version>\", for example dpk/1.0.0."
+    },
+    "entry": {
+      "const": "package/package.json",
+      "description": "The package manifest inside the archive."
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["bundle", "client", "plain"] },
+      "description": "Derived from package.json: dsh.bundle.patch, dsh.client, or neither."
+    },
+    "dsh": {
+      "type": "object",
+      "description": "Verbatim copy of package.json dsh, so a reader can tell what the package is without opening it. The managed data volumes are dsh.data.volumes; a *top-level* data key was the 2.1.8-2.1.9 spelling and is refused."
+    },
+    "engines": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Verbatim copy of package.json engines."
+    },
+    "peerDependencies": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Verbatim copy of package.json peerDependencies; preflight information only."
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Every file under package/, sorted by path.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "size", "sha256"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^package/",
+            "description": "Archive path; validated against the archive-path rules (no traversal, no drive letters, no backslashes)."
+          },
+          "size": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "digest"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "sha256 of files.map(f => `${f.path}\\0${f.size}\\0${f.sha256}`).join(\"\\n\")"
+        }
+      }
+    }
+  }
+}

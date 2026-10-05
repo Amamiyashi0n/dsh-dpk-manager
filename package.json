@@ -1,0 +1,63 @@
+{
+  "name": "dsh-dpk-manager",
+  "version": "2.1.51",
+  "type": "module",
+  "description": "DPK manager for DeepSeek Harness — pack, verify and install local DSH plugin packages (.dpk) from the Plugins-page panel and the in-session dpk tool",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": "*",
+    "react": "*"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./lib/*": "./lib/*",
+    "./schemas/*": "./schemas/*",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "host-service.js",
+    "lib",
+    "schemas",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml",
+    "SPEC.md",
+    "README.md"
+  ],
+  "icon": "./icon.svg",
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/Amamiyashi0n/dsh-dpk-manager.git",
+    "directory": "dsh-dev/dpk/dpk-manager"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dpk",
+    "plugin",
+    "package-manager"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "@local/dpk-hello",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DPK smoke test: registers one skill to prove a package installed from a .dpk archive is live.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale",
+    "icon.svg",
+    "README.md"
+  ],
+  "icon": "./icon.svg",
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

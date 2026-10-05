@@ -1,0 +1,5 @@
+# Bundle layer for @local/dpk-hello: one row that registers a smoke-test skill.
+- insert:
+    - id: dpk-hello
+      name: '@local/dpk-hello'
+      config: {}
