@@ -144,9 +144,10 @@ export function apply(ctx, config = {}) {
       // The profile path writes the four things the loader reads, but writing
       // them cannot make the *running* Harness read them again. The official
       // service can: `setBundleEnabled` reconciles a profile the runtime already
-      // owns — no pnpm, no registry — so an install is usable the moment it
-      // returns instead of at the next start.
-      const apply = installing ? buildApplier(ctx) : undefined
+      // owns — no pnpm, no registry — so an install is usable, and a removal is
+      // gone, the moment the action returns instead of at the next start.
+      const touchingProfile = args.action === 'install' || args.action === 'upgrade' || args.action === 'remove'
+      const apply = touchingProfile ? buildApplier(ctx) : undefined
       const result = await runDpkAction(args.action, args, {
         home,
         profile: args.profile ?? detectProfileName(home ?? defaultDshHome()),

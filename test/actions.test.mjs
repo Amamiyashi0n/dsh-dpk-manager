@@ -322,6 +322,41 @@ test('uninstalling collects only the copy that profile resolved', async () => {
   assert.equal(existsSync(unrelated), true, 'the unrelated copy survives')
 })
 
+test('uninstalling unloads the bundle from the running Harness', async () => {
+  // Install and removal are one behaviour in two directions: the profile write
+  // decides what the next start loads, and the official service is asked to
+  // reconcile the running process now. Without that, a removed package keeps
+  // running until a restart — the gap this test exists to keep closed.
+  const { home, profile } = await installedFixture()
+
+  const asked = []
+  const removed = await runDpkAction('remove', { name: 'dpk-fixture' }, {
+    home,
+    profile,
+    apply: async (name, enabled) => { asked.push([name, enabled]); return { application: 'applied', changed: true } },
+  })
+
+  assert.deepEqual(asked, [['@local/dpk-fixture', false]], 'asked the service to unload exactly this bundle')
+  assert.equal(removed.data.live, true)
+  assert.match(removed.text, /live {5}unloaded from the running Harness/)
+
+  // A service that answers restart-required (or is absent) is reported as such:
+  // dpk never claims an unload it did not get.
+  const { home: home2, profile: profile2 } = await installedFixture()
+  const pending = await runDpkAction('remove', { name: 'dpk-fixture' }, {
+    home: home2,
+    profile: profile2,
+    apply: async () => ({ application: 'restart-required', changed: true }),
+  })
+  assert.equal(pending.data.live, false)
+  assert.match(pending.text, /live {5}unloads at the next Harness start/)
+
+  const { home: home3, profile: profile3 } = await installedFixture()
+  const bare = await runDpkAction('remove', { name: 'dpk-fixture' }, { home: home3, profile: profile3 })
+  assert.equal(bare.data.live, false)
+  assert.match(bare.text, /live {5}unloads at the next Harness start/)
+})
+
 test('uninstalling what the profile does not hold fails instead of claiming success', async () => {
   const { home, profile } = await installedFixture()
 

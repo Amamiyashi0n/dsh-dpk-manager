@@ -106,12 +106,14 @@ dpk **不借** apt 的仓库面：没有远端索引、`sources.list`、优先�
 DSH 桌面版 / Web → **插件** → **添加插件** → 填 `dsh-dpk-manager` → 安装。
 更新同样走插件页。它不再提供 `dpk` 命令行，也不再把命令装进系统。
 
-> **生效条件**：bundle 的 **config** 改动会热生效；插件的 **JS 代码**改动由官方服务的
-> `setBundleEnabled` 当场 reconcile（组合了 `hmr` 的 live profile 会立刻换上新代码，
-> 回答 `application: "applied"`）。所以 dpk 写完 profile 后会请官方服务应用一次，
-> 归档里的新代码当场就在运行中的 Harness 里生效。
-> 只有两种情况仍要重启：官方服务没组合（无 `hmr`，或安装目标是别的 profile），
-> 以及**第一次**安装 `dsh-dpk-manager` 本身（那时还没有 dpk 去请求应用）。
+> **生效条件**：bundle 的 **config** 改动会热生效；插件的**启停**由官方服务的
+> `setBundleEnabled` 当场 reconcile（组合了 `hmr` 的 live profile 会立刻换上或卸下这个 bundle，
+> 回答 `application: "applied"`）。所以 dpk 写完 profile 后会请官方服务应用一次：
+> 新装当场就在运行中的 Harness 里生效，卸载当场就卸下。
+> 仍要重启的三种情况：官方服务没组合（无 `hmr`，或目标是别的 profile）；
+> **第一次**安装 `dsh-dpk-manager` 本身（那时还没有 dpk 去请求应用）；
+> 以及**升级一个已经在跑的包**（含 dpk 自己）—— 替换已加载模块的 JS 代次，
+> 官方服务自己也会答 `restart-required`。
 
 ## 快速开始
 
@@ -123,8 +125,10 @@ DSH 桌面版 / Web → **插件** → **添加插件** → 填 `dsh-dpk-manager
   当场应用，于是**装完就能用**；服务没组合时才退回"下次启动生效"。
 - **覆盖安装**：导入新版本直接换行、换链接（同一个 store 目录就报 `unchanged`，见下面的耗时表）；
   导入同一个 digest 时，dpk 先读 profile 确认四处都已指向该目录，成立即不做任何写入。
-- **卸载**：`dpk remove name=…`（面板上的卸载同理）删掉那四处并清理账本与无人引用的 store 副本；
-  同样不跑 pnpm —— 官方 `removeBundle` 对任何已启动的 bundle 都会答 `not-removable`。
+- **卸载**：`dpk remove name=…`（面板上的卸载同理）**先请官方服务 `setBundleEnabled(name, false)`
+  当场把它从运行中的 Harness 卸下**，再删掉那四处并清理账本与无人引用的 store 副本；
+  同样不跑 pnpm —— 官方 `removeBundle` 会跑卸载脚本，dpk 只做 profile 与实时状态两件事。
+  装与卸因此是同一个行为的两个方向，不存在"装即时、卸要等重启"的缺口。
 - **需要官方机制时**：`via: "service"` 会把安装交回官方安装器（它跑 pnpm、能处理 registry
   依赖与原生编译），代价就是那一次 pnpm 启动。默认路径也会在**包自己声明了 runtime
   `dependencies`** 时自动走 `service`：链接一个 store 目录只能给出包本身，给不出它期望的 registry

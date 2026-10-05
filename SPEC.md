@@ -395,7 +395,7 @@ profile `package.json` 里的 `link:` 依赖行，以及 `node_modules/<name>` �
 | `dsh plugin install <path>` | DPK 的解包产物就是它的合法入参 |
 | `plugin_manager install_bundle` | `via: "service"` 时的等价入口：官方实现跑 pnpm 并完成同样的四处写入 |
 | profile 的 `cordis.patch.yml` | DPK 不碰它；用户层的覆盖仍在 profile 里做 |
-| HMR | 安装完成后 DPK 调官方服务的 `setBundleEnabled` 请求重载（一次 reconcile，不跑 pnpm）：live profile 立刻 `applied`，否则答 `restart-required`；DPK 自己从不重启任何东西，也不把前一种答案说成后一种 |
+| HMR | 装与卸都由 DPK 调官方服务的 `setBundleEnabled` 请求实时生效（一次 reconcile，不跑 pnpm）：live profile 立刻 `applied`，否则答 `restart-required`。装与卸是同一个调用、两个方向；DPK 自己从不重启任何东西，也不把一种答案说成另一种 |
 
 ---
 
