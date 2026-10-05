@@ -127,12 +127,11 @@ DSH 桌面版 / Web → **插件** → **添加插件** → 填 `dsh-dpk-manager
   `dependencies`** 时自动走 `service`：链接一个 store 目录只能给出包本身，给不出它期望的 registry
   依赖树，那是 pnpm 唯一不可替代的地方。SPEC 要求的自包含包（含本仓库的两个）都不声明 runtime
   依赖，所以它们走的是零 pnpm 的那条路。
-- **打包**（对任意标准 DSH 包目录）：`dpk build directory=<包目录>`，或需要指定落点时
-  `output=<文件路径>`；`output` 也可以写成**目录**（已存在的目录，或以分隔符结尾的路径），
-  此时按 `<name>-<version>.dpk` 命名写进去，**目录会被自动创建**，所以
-  `dpk build directory=<包目录> output=<包目录>/dpk-dist/` 一条命令即可产出归档，
-  不需要外层脚本。不写 `output` 时落在进程当前目录。
-  归档要放进包目录里就用 `dist/` 或 `dpk-dist/` —— 这四个目录（连同 `node_modules/`、`.git/`）
+- **打包**（对任意标准 DSH 包目录）：`dpk build directory=<包目录>` —— 归档默认落在**该包目录下的
+  `dpk-dist/<name>-<version>.dpk`**（目录自动创建，与源在同一棵树里，不用管当前目录在哪）。
+  需要别的落点就写 `output=<文件路径>`；`output` 也可以写成**目录**（已存在的目录，或以分隔符结尾的路径），
+  此时同样按 `<name>-<version>.dpk` 命名写进去，目录同样会被自动创建。
+  归档留在包目录里就用 `dpk-dist/` 或 `dist/` —— 这四个目录（连同 `node_modules/`、`.git/`）
   永不入包，所以刚生成的 `.dpk` 不会被当成包内容，也不会让下一次打包撞上"包内不允许归档"。
   也可以编程调用 `dsh-dpk-manager/lib/pack.mjs` 的 `packDirectory()`（库随包发布，`exports` 已导出）。
 - **验真**：`dpk` 工具 `action=verify file=…`，不需要执行包内任何代码。

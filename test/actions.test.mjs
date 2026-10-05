@@ -78,6 +78,24 @@ test('pack writes an archive and reports its digest', async () => {
   assert.equal((await readFile(output)).length, result.data.bytes)
 })
 
+test('build without `output` writes <package>/dpk-dist/<name>-<version>.dpk', async () => {
+  // The archive belongs next to the package it came from, not in whatever
+  // directory the caller stood in — and that directory is dpk's to create.
+  const root = await makePackage()
+  const packed = await packDirectory(root)
+  const standard = archiveFileName(packed.manifest.name, packed.manifest.version)
+  const result = await runDpkAction('build', { directory: root }, {})
+  const expected = join(root, 'dpk-dist', standard)
+  assert.equal(result.data.output, expected)
+  assert.equal(existsSync(expected), true)
+  assert.deepEqual(await readFile(expected), packed.buffer)
+
+  // Packing the same tree again must not refuse itself over the archive it
+  // just wrote there: `dpk-dist/` is never-packed, like `dist/`.
+  const again = await runDpkAction('build', { directory: root }, {})
+  assert.equal(again.data.digest, result.data.digest)
+})
+
 test('build writes into a directory when `output` names one, creating it if needed', async () => {
   const root = await makePackage()
   const home = await makeHome()
