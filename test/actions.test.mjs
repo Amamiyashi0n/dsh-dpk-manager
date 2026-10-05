@@ -3,9 +3,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { existsSync } from 'node:fs'
-import { readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { join, sep } from 'node:path'
 import { DpkActionError, runDpkAction } from '../lib/actions.mjs'
+import { archiveFileName } from '../lib/dpk-manifest.mjs'
 import { packDirectory } from '../lib/pack.mjs'
 import { dpkRoot, recordInstall, storeDir } from '../lib/store.mjs'
 import { makeHome, makePackage, profileUsing, storeEntry } from './helpers.mjs'
@@ -75,6 +76,36 @@ test('pack writes an archive and reports its digest', async () => {
   assert.ok(existsSync(output))
   assert.equal(result.data.digest, (await packDirectory(root)).manifest.integrity.digest)
   assert.equal((await readFile(output)).length, result.data.bytes)
+})
+
+test('build writes into a directory when `output` names one, creating it if needed', async () => {
+  const root = await makePackage()
+  const home = await makeHome()
+  const packed = await packDirectory(root)
+  const standard = archiveFileName(packed.manifest.name, packed.manifest.version)
+
+  // A path written with a trailing separator, a path that already IS a
+  // directory, and a fresh nested directory all land the standard file name
+  // inside — and the directory is created rather than reported as ENOENT, so
+  // `build … output=<package>/dpk-dist/` needs no mkdir (and no build script).
+  const trailing = join(home, 'dpk-dist') + sep
+  const fromTrailing = await runDpkAction('build', { directory: root, output: trailing }, {})
+  assert.equal(fromTrailing.data.output, join(home, 'dpk-dist', standard))
+  assert.equal(existsSync(fromTrailing.data.output), true)
+
+  await mkdir(join(home, 'existing'), { recursive: true })
+  const fromExisting = await runDpkAction('build', { directory: root, output: join(home, 'existing') }, {})
+  assert.equal(fromExisting.data.output, join(home, 'existing', standard))
+
+  const nested = join(home, 'a', 'b', 'c.dpk')
+  const fromNested = await runDpkAction('build', { directory: root, output: nested }, {})
+  assert.equal(fromNested.data.output, nested, 'a file path is still a file path')
+  assert.equal(existsSync(nested), true, 'its parent directories are created')
+
+  // All three carried the same bytes as a plain pack of the same tree.
+  for (const file of [fromTrailing, fromExisting, fromNested]) {
+    assert.deepEqual(await readFile(file.data.output), packed.buffer, file.data.output)
+  }
 })
 
 test('pack can record real build provenance on request', async () => {

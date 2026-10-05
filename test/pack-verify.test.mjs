@@ -326,6 +326,20 @@ test('never packs the package dist build-output directory', async () => {
   assert.ok(!facts.files.some(file => file.path.startsWith('dist/')))
 })
 
+test('never packs dpk-dist, so the archive build just wrote there stays out', async () => {
+  // `dpk build … output=<package>/dpk-dist/` writes the .dpk inside the package.
+  // That directory is build output like `dist/`: the archive must not become
+  // package content, and — because an archive is never content — the next pack
+  // of the same tree must still succeed rather than refuse itself.
+  const root = await makePackage()
+  await mkdir(join(root, 'dpk-dist'), { recursive: true })
+  await writeFile(join(root, 'dpk-dist', 'pkg-1.0.0.dpk'), 'the archive just built')
+  const facts = await validateDshPackage(root)
+  assert.ok(!facts.files.some(file => file.path.startsWith('dpk-dist/')))
+  const packed = await packDirectory(root)
+  assert.ok(!packed.manifest.files.some(file => file.path.startsWith('dpk-dist/')))
+})
+
 test('refuses a package that carries a nested archive', async () => {
   const root = await makePackage({ extraFiles: { 'carried-0.9.0.dpk': 'old archive bytes' } })
   await assert.rejects(

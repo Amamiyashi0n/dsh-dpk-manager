@@ -127,9 +127,14 @@ DSH 桌面版 / Web → **插件** → **添加插件** → 填 `dsh-dpk-manager
   `dependencies`** 时自动走 `service`：链接一个 store 目录只能给出包本身，给不出它期望的 registry
   依赖树，那是 pnpm 唯一不可替代的地方。SPEC 要求的自包含包（含本仓库的两个）都不声明 runtime
   依赖，所以它们走的是零 pnpm 的那条路。
-- **打包**（对任意标准 DSH 包目录）：在 DSH 会话里让 agent 调 `dpk` 工具
-  （`action=pack directory=… output=…`），或在构建脚本里编程调用
-  `dsh-dpk-manager/lib/pack.mjs` 的 `packDirectory()`（库随包发布，`exports` 已导出）。
+- **打包**（对任意标准 DSH 包目录）：`dpk build directory=<包目录>`，或需要指定落点时
+  `output=<文件路径>`；`output` 也可以写成**目录**（已存在的目录，或以分隔符结尾的路径），
+  此时按 `<name>-<version>.dpk` 命名写进去，**目录会被自动创建**，所以
+  `dpk build directory=<包目录> output=<包目录>/dpk-dist/` 一条命令即可产出归档，
+  不需要外层脚本。不写 `output` 时落在进程当前目录。
+  归档要放进包目录里就用 `dist/` 或 `dpk-dist/` —— 这四个目录（连同 `node_modules/`、`.git/`）
+  永不入包，所以刚生成的 `.dpk` 不会被当成包内容，也不会让下一次打包撞上"包内不允许归档"。
+  也可以编程调用 `dsh-dpk-manager/lib/pack.mjs` 的 `packDirectory()`（库随包发布，`exports` 已导出）。
 - **验真**：`dpk` 工具 `action=verify file=…`，不需要执行包内任何代码。
 
 `install` 的输出会明确告诉你三件事：解到哪、谁写的、账本记在哪：
@@ -327,7 +332,7 @@ pnpm 那条路真正的问题不是慢，而是**在运行时不可用**：官�
 ## 已知边界（都是刻意的，写清楚比藏着好）
 
 1. **归档永不嵌套**：包内出现任何 `.dpk` 文件都会被拒绝打包（`PACKAGE_NESTED_ARCHIVE`）——构建产物
-   必须放在 `dist/`（该目录永不入包）或包外。历史归档里的嵌套杂物在导入时被自动剥离，store 只落一个干净包。
+   必须放在 `dist/`、`dpk-dist/`（这两个目录永不入包）或包外。历史归档里的嵌套杂物在导入时被自动剥离，store 只落一个干净包。
 2. **本地分发的包在安装期归入 `@local/` 作用域**（如 `@local/example-provider`、`@local/dsh-reverse-skill`）。
    归档携带包的**本名**，`@local/` 由 dpk 在安装动作里补到 store 副本、patch 行名、账本与数据卷根上；
    源目录与归档清单都不写入作用域。loader 行 id 与模块自身的注册 id 不在自动改写之列——带 client
@@ -372,7 +377,7 @@ dpk/
   lib/profile-policy.mjs       profile 的 pnpm-workspace.yaml 冷却期豁免写入（仅 via: "service" 需要）
   lib/actions.mjs              动作层：工具与面板共用
   schemas/dpk-1.schema.json    dpk.json 的 JSON Schema
-  examples/hello-bundle/       自包含示例包（scripts/pack-all.mjs 每次发布都会打包成 dist/dpk-hello-1.0.0.dpk）
+  examples/hello-bundle/       自包含示例包（发布时用 `dpk build` 打包成 dist/dpk-hello-1.0.0.dpk）
   test/                        测试（一致性清单 + 动作层 + 自洽写入 + autoremove + cache 生命周期 + schema 对齐）
 ```
 
