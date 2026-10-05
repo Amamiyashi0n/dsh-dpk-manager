@@ -125,8 +125,16 @@ test('managed reports a restart only while the ledger holds an install this proc
 
   // Installed just now, by this process: the running Harness cannot have it.
   await recordInstall(root, { name: 'fresh-pkg', version: '1.0.0', digest: 'a'.repeat(64), source: 'fresh.dpk' })
-  assert.equal((await service.managed()).restartRequired, true)
+  const pending = await service.managed()
+  assert.equal(pending.restartRequired, true)
+  // The reminder names what the next start brings, not just that one is owed.
+  assert.deepEqual(pending.awaitingRestart, [{ name: 'fresh-pkg', version: '1.0.0' }])
   assert.equal(existsSync(join(root, '.first-run-restart-notice')), false, 'no marker file: the ledger answers this')
+
+  // One the service already applied to this process is loaded whatever its
+  // timestamp says, so it is not named.
+  await recordInstall(root, { name: 'applied-pkg', version: '1.0.0', digest: 'c'.repeat(64), source: 'applied.dpk', live: true })
+  assert.deepEqual((await service.managed()).awaitingRestart, [{ name: 'fresh-pkg', version: '1.0.0' }])
 
   // An install from before this process started is already loaded.
   await writeIndex(root, {

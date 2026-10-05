@@ -23,7 +23,7 @@ import { basename, join } from 'node:path'
 import { defaultExportName, runDpkAction } from './lib/actions.mjs'
 import { serviceInstall } from './lib/install.mjs'
 import { packDirectory } from './lib/pack.mjs'
-import { readIndex, restartPending, storeDir, defaultDshHome, dpkRoot, matchEntries } from './lib/store.mjs'
+import { readIndex, pendingRestarts, storeDir, defaultDshHome, dpkRoot, matchEntries } from './lib/store.mjs'
 import { latestByName, latestEntry } from './lib/versions.mjs'
 import { detectProfileName } from './lib/profile-policy.mjs'
 import { referencedDigests } from './lib/profile-install.mjs'
@@ -85,9 +85,17 @@ export function createDpkRemoteService(ctx, config = {}) {
       // read from the profiles, and "does the running Harness need a restart" is
       // read from the ledger's install times against this process's start.
       const { references } = await referencedDigests({ home, root: dpkRoot(home) })
+      // The reminder names the packages, not just the fact: whichever the
+      // running Harness has not loaded is what the next start will bring.
+      const awaitingRestart = pendingRestarts(index.entries)
       return {
         store: dpkRoot(home),
-        ...(restartPending(index.entries) ? { restartRequired: true } : {}),
+        ...(awaitingRestart.length > 0
+          ? {
+              restartRequired: true,
+              awaitingRestart: awaitingRestart.map(entry => ({ name: entry.name, version: entry.version })),
+            }
+          : {}),
         entries: latestByName(index.entries).map(entry => {
           // The card shows the version that actually runs: the profile's own
           // (possibly npm-updated) install wins over the ledger's record of

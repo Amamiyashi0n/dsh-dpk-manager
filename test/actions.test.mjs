@@ -216,7 +216,9 @@ test('an install the official service applies needs no restart', async () => {
     apply: async () => ({ application: 'restart-required', changed: true }),
   })
   assert.equal(pending.data.live, false)
-  assert.match(pending.text, /loads at the next Harness start/)
+  // The reminder names the package and the moment it arrives: a restart the
+  // user cannot act on is worse than one they can.
+  assert.match(pending.text, /@local\/dpk-fixture@1\.0\.0 will be loaded at the next DeepSeek Harness start/)
   const entries2 = (await readIndex(dpkRoot(home2))).entries
   assert.equal(entries2[0].live, undefined)
   assert.equal(restartPending(entries2), true)
@@ -349,12 +351,12 @@ test('uninstalling unloads the bundle from the running Harness', async () => {
     apply: async () => ({ application: 'restart-required', changed: true }),
   })
   assert.equal(pending.data.live, false)
-  assert.match(pending.text, /live {5}unloads at the next Harness start/)
+  assert.match(pending.text, /@local\/dpk-fixture will be unloaded at the next DeepSeek Harness start/)
 
   const { home: home3, profile: profile3 } = await installedFixture()
   const bare = await runDpkAction('remove', { name: 'dpk-fixture' }, { home: home3, profile: profile3 })
   assert.equal(bare.data.live, false)
-  assert.match(bare.text, /live {5}unloads at the next Harness start/)
+  assert.match(bare.text, /@local\/dpk-fixture will be unloaded at the next DeepSeek Harness start/)
 })
 
 test('uninstalling what the profile does not hold fails instead of claiming success', async () => {

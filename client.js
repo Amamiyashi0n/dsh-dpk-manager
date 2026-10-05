@@ -49,7 +49,7 @@ window.__ModuleLoader__.load({
       storePath: '本地仓库路径',
       profileState: '当前状态',
       store: '本地 DPK 仓库',
-      restartNotice: '首次安装提示：请重启 DSH，使安装包管理助手的 Host/工具代码完全生效。此提示只显示一次。',
+      restartNotice: '以下插件包将在下一次 DeepSeek Harness 启动后生效：',
     }
     const en = {
       importTitle: 'Import a DPK package',
@@ -84,7 +84,7 @@ window.__ModuleLoader__.load({
       storePath: 'Local store path',
       profileState: 'State',
       store: 'Local DPK store',
-      restartNotice: 'First-install notice: restart DSH once so the package manager assistant\'s Host/tool code is fully active. This notice appears only once.',
+      restartNotice: 'These packages take effect at the next DeepSeek Harness start:',
     }
 
     const requestCodec = method => ({
@@ -176,7 +176,12 @@ window.__ModuleLoader__.load({
             const answer = await callDpk('managed')
             state.entries = answer.entries ?? []
             state.store = answer.store ?? ''
-            if (answer.restartRequired === true) state.notice = tr('restartNotice')
+            // A restart is only owed when something the running Harness has not
+            // loaded remains; the reminder names each package, so it says what
+            // the next start will bring instead of just asking for one.
+            state.notice = answer.restartRequired === true
+              ? `${tr('restartNotice')} ${(answer.awaitingRestart ?? []).map(item => `${item.name}@${item.version}`).join('、')}`
+              : undefined
             state.error = undefined
           } catch (error) {
             state.error = String(error?.message ?? error)
