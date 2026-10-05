@@ -199,7 +199,7 @@ test('an install the official service applies needs no restart', async () => {
   })
   assert.deepEqual(asked, [['@local/dpk-fixture', true]])
   assert.equal(live.data.live, true)
-  assert.match(live.text, /applied to the running Harness; no restart needed/)
+  assert.match(live.text, /live {5}applied to the running Harness/)
   const entries = (await readIndex(dpkRoot(home))).entries
   assert.equal(entries[0].live, true)
   assert.equal(restartPending(entries), false, 'an applied install owes no restart')

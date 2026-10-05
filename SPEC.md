@@ -281,7 +281,7 @@ digest 是内容寻址，别的 profile 可能早已装过同一份，那份必�
 
 ```
 $DSH_HOME/dpk/
-  index.json                       # 溯源账本：{ entries: [{name, version, digest, installedAt, source, live?}] }（谁在用读 profile；`live: true` = 已由官方服务应用到本进程，无需重启）
+  index.json                       # 溯源账本：{ entries: [{name, version, digest, installedAt, source, live?}] }（谁在用读 profile；`live: true` = 已由官方服务应用到本进程）
   store/<digest>/package/          # 解包后的包根（profile 的 link: 目标）
   cache/                           # 唯一的事务暂存区，见下
 ```

@@ -108,8 +108,8 @@ DSH 桌面版 / Web → **插件** → **添加插件** → 填 `dsh-dpk-manager
 
 > **生效条件**：bundle 的 **config** 改动会热生效；插件的 **JS 代码**改动由官方服务的
 > `setBundleEnabled` 当场 reconcile（组合了 `hmr` 的 live profile 会立刻换上新代码，
-> 回答 `application: "applied"`）。所以 dpk 装完即用：它写完 profile 后请官方服务应用一次，
-> 归档里的新代码从此就在运行中的 Harness 里生效，不需要重启那一圈。
+> 回答 `application: "applied"`）。所以 dpk 写完 profile 后会请官方服务应用一次，
+> 归档里的新代码当场就在运行中的 Harness 里生效。
 > 只有两种情况仍要重启：官方服务没组合（无 `hmr`，或安装目标是别的 profile），
 > 以及**第一次**安装 `dsh-dpk-manager` 本身（那时还没有 dpk 去请求应用）。
 
@@ -145,7 +145,7 @@ DSH 桌面版 / Web → **插件** → **添加插件** → 填 `dsh-dpk-manager
 package  @local/dpk-hello@1.0.0 (bundle)
 store    C:\Users\…\.dsh\dpk\store\<digest>\package
 profile  dpk-demo (written by dpk)
-live     applied to the running Harness; no restart needed
+live     applied to the running Harness
 ```
 
 ## 会话内工具 `dpk`
@@ -178,7 +178,7 @@ live     applied to the running Harness; no restart needed
 | --- | --- | --- |
 | `<home>/dpk/store/<digest>/package/` | 解包后的包本体（profile `link:` 的目标），**只有 digest 目录** | install |
 | `<home>/dpk/cache/` | 唯一的事务暂存区：store 落位、reinstall 让位、账本、profile 清单的暂存物都在这里；写入者改名成功后若它已空就删掉它 | 每次写入期间；中断留下的由 `autoremove` 回收 |
-| `<home>/dpk/index.json` | 溯源账本：`name/version/digest/installedAt/source`（外加 `live: true` = 已应用到本进程，无需重启） | install / upgrade / remove / autoremove |
+| `<home>/dpk/index.json` | 溯源账本：`name/version/digest/installedAt/source`（外加 `live: true` = 已应用到本进程） | install / upgrade / remove / autoremove |
 | `<home>/profiles/<p>/package.json` | 依赖行 `link:<store 目录>` + `dsh.profile.bundles` | install / upgrade / remove |
 | `<home>/profiles/<p>/node_modules/<name>` | 指向 store 目录的链接（引用判定的权威来源之一） | install / upgrade / remove |
 | `<home>/profiles/<p>/pnpm-lock.yaml` | `.` importer 的那一行 | install / upgrade / remove |
