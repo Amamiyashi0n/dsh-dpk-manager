@@ -141,10 +141,17 @@ export function apply(ctx, config = {}) {
       const installer = installing && args.via === 'service'
         ? createInstaller(ctx)
         : undefined
+      // The profile path writes the four things the loader reads, but writing
+      // them cannot make the *running* Harness read them again. The official
+      // service can: `setBundleEnabled` reconciles a profile the runtime already
+      // owns — no pnpm, no registry — so an install is usable the moment it
+      // returns instead of at the next start.
+      const apply = installing ? buildApplier(ctx) : undefined
       const result = await runDpkAction(args.action, args, {
         home,
         profile: args.profile ?? detectProfileName(home ?? defaultDshHome()),
         installer,
+        apply,
         installMode: args.via === 'service' ? 'service' : undefined,
         log: (message) => { ctx.logger?.info?.(`dpk: ${message.trim()}`) },
         // `update`/`upgrade` ask the npm registry what a package's newest
@@ -250,6 +257,27 @@ function buildRegistryInstaller(ctx) {
   const manager = ctx.get('pluginManager')
   if (manager === undefined || typeof manager.installBundle !== 'function') return undefined
   return (spec, meta) => manager.installBundle(spec, { isSatisfied: meta.isSatisfied })
+}
+
+/**
+ * Apply one installed bundle to the **running** Harness, through the official
+ * plugin manager's `setBundleEnabled`.
+ *
+ * That call persists the entry's enablement and reconciles the live profile:
+ * with `hmr` composed it loads or unloads the bundle immediately and answers
+ * `application: 'applied'`; on a startup profile, or for a profile this process
+ * does not own, it answers `restart-required` and costs nothing. dpk never
+ * passes the answer off as success — the action layer reports which one it got.
+ *
+ * @param ctx - Context carrying `pluginManager`.
+ * @returns an async `(name, enabled) => outcome | undefined`.
+ */
+function buildApplier(ctx) {
+  return async (name, enabled) => {
+    const manager = await Promise.resolve(ctx.get('pluginManager'))
+    if (manager === undefined || typeof manager.setBundleEnabled !== 'function') return undefined
+    return await manager.setBundleEnabled(name, enabled)
+  }
 }
 
 /**

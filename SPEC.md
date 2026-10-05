@@ -281,7 +281,7 @@ digest 是内容寻址，别的 profile 可能早已装过同一份，那份必�
 
 ```
 $DSH_HOME/dpk/
-  index.json                       # 溯源账本：{ entries: [{name, version, digest, installedAt, source}] }（谁在用读 profile）
+  index.json                       # 溯源账本：{ entries: [{name, version, digest, installedAt, source, live?}] }（谁在用读 profile；`live: true` = 本进程已由官方服务应用过，因此不欠重启）
   store/<digest>/package/          # 解包后的包根（profile 的 link: 目标）
   cache/                           # 唯一的事务暂存区，见下
 ```
@@ -395,7 +395,7 @@ profile `package.json` 里的 `link:` 依赖行，以及 `node_modules/<name>` �
 | `dsh plugin install <path>` | DPK 的解包产物就是它的合法入参 |
 | `plugin_manager install_bundle` | `via: "service"` 时的等价入口：官方实现跑 pnpm 并完成同样的四处写入 |
 | profile 的 `cordis.patch.yml` | DPK 不碰它；用户层的覆盖仍在 profile 里做 |
-| HMR | 安装完成后由官方链路触发重载；DPK 不自行重启任何东西 |
+| HMR | 安装完成后 DPK 调官方服务的 `setBundleEnabled` 请求重载（一次 reconcile，不跑 pnpm）：live profile 立刻 `applied`，否则答 `restart-required`；DPK 自己从不重启任何东西，也不把前一种答案说成后一种 |
 
 ---
 

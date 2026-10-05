@@ -8,7 +8,7 @@ import { join, sep } from 'node:path'
 import { DpkActionError, runDpkAction } from '../lib/actions.mjs'
 import { archiveFileName } from '../lib/dpk-manifest.mjs'
 import { packDirectory } from '../lib/pack.mjs'
-import { dpkRoot, recordInstall, storeDir } from '../lib/store.mjs'
+import { dpkRoot, readIndex, recordInstall, restartPending, storeDir } from '../lib/store.mjs'
 import { makeHome, makePackage, profileUsing, storeEntry } from './helpers.mjs'
 
 async function packedFixture() {
@@ -177,6 +177,55 @@ test('a failing installer leaves no ledger entry', async () => {
     /manager refused/,
   )
   assert.equal(existsSync(join(dpkRoot(home), 'index.json')), false)
+})
+
+test('an install the official service applies needs no restart', async () => {
+  // The profile write alone is only loadable, and dpk used to say so: "live at
+  // the next Harness start". With the service composed, dpk asks it to apply
+  // (`setBundleEnabled` — a reconcile, no pnpm) and reports what it got, so an
+  // install is usable the moment it returns.
+  const packed = await packedFixture()
+  const home = await makeHome()
+  const file = join(home, 'x.dpk')
+  await profileUsing(home, 'probe')
+  const { writeFile } = await import('node:fs/promises')
+  await writeFile(file, packed.buffer)
+
+  const asked = []
+  const live = await runDpkAction('install', { file }, {
+    home,
+    profile: 'probe',
+    apply: async (name, enabled) => { asked.push([name, enabled]); return { application: 'applied', changed: true } },
+  })
+  assert.deepEqual(asked, [['@local/dpk-fixture', true]])
+  assert.equal(live.data.live, true)
+  assert.match(live.text, /applied to the running Harness; no restart needed/)
+  const entries = (await readIndex(dpkRoot(home))).entries
+  assert.equal(entries[0].live, true)
+  assert.equal(restartPending(entries), false, 'an applied install owes no restart')
+
+  // A startup profile (or another profile) answers restart-required, and then
+  // the entry says so — dpk never passes one answer off as the other.
+  const home2 = await makeHome()
+  const file2 = join(home2, 'x.dpk')
+  await profileUsing(home2, 'probe')
+  await writeFile(file2, packed.buffer)
+  const pending = await runDpkAction('install', { file: file2 }, {
+    home: home2,
+    profile: 'probe',
+    apply: async () => ({ application: 'restart-required', changed: true }),
+  })
+  assert.equal(pending.data.live, false)
+  assert.match(pending.text, /loads at the next Harness start/)
+  const entries2 = (await readIndex(dpkRoot(home2))).entries
+  assert.equal(entries2[0].live, undefined)
+  assert.equal(restartPending(entries2), true)
+
+  // `live` describes that one process, not the package: a later run that does
+  // not apply must clear it, or a restart would look unnecessary forever.
+  const again = await runDpkAction('install', { file, reinstall: true }, { home, profile: 'probe' })
+  assert.equal(again.data.live, false)
+  assert.equal(restartPending((await readIndex(dpkRoot(home))).entries), true)
 })
 
 test('list on an empty store says so, and which reports a miss', async () => {
