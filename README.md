@@ -178,7 +178,7 @@ live     applied to the running Harness; no restart needed
 | --- | --- | --- |
 | `<home>/dpk/store/<digest>/package/` | 解包后的包本体（profile `link:` 的目标），**只有 digest 目录** | install |
 | `<home>/dpk/cache/` | 唯一的事务暂存区：store 落位、reinstall 让位、账本、profile 清单的暂存物都在这里；写入者改名成功后若它已空就删掉它 | 每次写入期间；中断留下的由 `autoremove` 回收 |
-| `<home>/dpk/index.json` | 溯源账本：`name/version/digest/installedAt/source`（外加 `live: true` = 本进程已应用，不欠重启） | install / upgrade / remove / autoremove |
+| `<home>/dpk/index.json` | 溯源账本：`name/version/digest/installedAt/source`（外加 `live: true` = 已应用到本进程，无需重启） | install / upgrade / remove / autoremove |
 | `<home>/profiles/<p>/package.json` | 依赖行 `link:<store 目录>` + `dsh.profile.bundles` | install / upgrade / remove |
 | `<home>/profiles/<p>/node_modules/<name>` | 指向 store 目录的链接（引用判定的权威来源之一） | install / upgrade / remove |
 | `<home>/profiles/<p>/pnpm-lock.yaml` | `.` importer 的那一行 | install / upgrade / remove |
