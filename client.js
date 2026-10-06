@@ -37,6 +37,7 @@ window.__ModuleLoader__.load({
       migrateHint: '下载这个插件的 app 卷与 data 卷（含声明的设置），等价于 dpk snap name=<包>',
       uninstall: '卸载',
       uninstalling: '卸载中…',
+      uninstallNotLive: '实时卸载未生效，本地安装保持不变',
       confirmUninstall: '卸载该插件？这会把它从当前 profile 移除；没有其它 profile 引用时，本地仓库中的副本会一并删除。',
       badge: '该插件由 dpk 管理器安装和管理',
       badgeTitle: '该插件由「DSH 安装包管理助手」以 .dpk 归档安装（内容寻址、可校验），安装、升级与卸载都经本地 DPK 面板完成。',
@@ -72,6 +73,7 @@ window.__ModuleLoader__.load({
       migrateHint: 'Download this plugin\'s app and data volumes — the same file as dpk snap name=<package>',
       uninstall: 'Uninstall',
       uninstalling: 'Uninstalling…',
+      uninstallNotLive: 'Live unload was not applied; the local installation was kept',
       confirmUninstall: 'Uninstall this plugin? It is removed from this profile; with no other profile using it, the stored copy is deleted too.',
       badge: 'Installed and managed by the dpk manager',
       badgeTitle: 'This plugin was installed from a .dpk archive by the DSH package manager assistant (content-addressed and verifiable); install, upgrade, and uninstall all go through the Local DPK panel.',
@@ -301,7 +303,8 @@ window.__ModuleLoader__.load({
               document.body.appendChild(anchor)
               anchor.click()
               anchor.remove()
-              URL.revokeObjectURL(url)
+              // Let the browser start the download before releasing its blob.
+              setTimeout(() => URL.revokeObjectURL(url), 1000)
               setStatus(`${tr(verb === 'snap' ? 'migrated' : 'exported')} ${result.fileName} (${result.bytes} B)`)
             } catch (error) {
               setStatus(`${tr('failed')}: ${String(error?.message ?? error)}`)
@@ -315,7 +318,11 @@ window.__ModuleLoader__.load({
             setBusy('remove')
             setStatus(tr('uninstalling'))
             try {
-              await callDpk('removeArchive', { name })
+              const result = await callDpk('removeArchive', { name })
+              if (result?.live !== true) {
+                setStatus(`${tr('failed')}: ${tr('uninstallNotLive')}`)
+                return
+              }
               setStatus(`${tr('uninstall')} ✓`)
               await refresh()
               refreshSettled()

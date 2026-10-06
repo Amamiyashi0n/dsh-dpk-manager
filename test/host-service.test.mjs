@@ -192,6 +192,8 @@ test('removeArchive forgets this profile and keeps a shared entry for the others
   const service = createDpkRemoteService(makeCtx({
     pluginManager: {
       setBundleEnabled: async (name, enabled) => {
+        const manifest = await readProfileManifest(profileDir(home, 'desktop'))
+        assert.equal(Object.hasOwn(manifest.dependencies ?? {}, name), true, 'live unload sees the profile before dpk removes it')
         applied.push([name, enabled])
         return { application: 'applied' }
       },
@@ -217,9 +219,14 @@ test('removeArchive deletes the store copy and the row once no profile reference
   await mkdir(packageDir, { recursive: true })
   await makeProfile(home, 'desktop', { dependencies: { 'solo-pkg': `link:${packageDir}` } })
 
-  const service = createDpkRemoteService(makeCtx({}), { home })
+  const service = createDpkRemoteService(makeCtx({
+    pluginManager: {
+      setBundleEnabled: async () => ({ application: 'applied' }),
+    },
+  }), { home })
   const outcome = await withProfile('desktop', () => service.removeArchive({ name: 'solo-pkg' }))
 
+  assert.equal(outcome.live, true, 'the panel only removes after a live unload')
   assert.deepEqual(outcome.dropped, [digest], 'nothing references the copy any more')
   const index = await readIndex(root)
   assert.equal(index.entries.length, 0, 'the ledger row is dropped')
@@ -271,6 +278,27 @@ test('importArchive writes the profile itself and applies the bundle to the runn
   assert.deepEqual(profile.dsh.profile.bundles, ['@local/dpk-fixture'])
   const index = await readIndex(dpkRoot(home))
   assert.equal(index.entries.length, 1, 'the import records in the ledger')
+})
+
+test('the panel refuses an import that only takes effect after a restart', async () => {
+  const home = await makeHome()
+  await makeProfile(home, 'desktop')
+  const packed = await packDirectory(await makePackage())
+  const manager = {
+    setBundleEnabled: async () => ({ application: 'restart-required', changed: true }),
+  }
+  const service = createDpkRemoteService(makeCtx({ pluginManager: manager }), { home })
+
+  await assert.rejects(
+    withProfile('desktop', () => service.importArchive({
+      fileName: 'fixture.dpk',
+      base64: packed.buffer.toString('base64'),
+    })),
+    /refusing a restart-only install/,
+  )
+  const profile = await readProfileManifest(profileDir(home, 'desktop'))
+  assert.deepEqual(profile.dependencies, {}, 'the failed live install leaves the profile unchanged')
+  assert.equal((await readIndex(dpkRoot(home))).entries.length, 0, 'the failed live install leaves no ledger row')
 })
 
 test('the panel can still hand an import to the official manager when configured', async () => {

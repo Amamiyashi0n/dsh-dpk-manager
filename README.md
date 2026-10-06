@@ -107,13 +107,10 @@ DSH 桌面版 / Web → **插件** → **添加插件** → 填 `dsh-dpk-manager
 更新同样走插件页。它不再提供 `dpk` 命令行，也不再把命令装进系统。
 
 > **生效条件**：bundle 的 **config** 改动会热生效；插件的**启停**由官方服务的
-> `setBundleEnabled` 当场 reconcile（组合了 `hmr` 的 live profile 会立刻换上或卸下这个 bundle，
-> 回答 `application: "applied"`）。所以 dpk 写完 profile 后会请官方服务应用一次：
-> 新装当场就在运行中的 Harness 里生效，卸载当场就卸下。
-> 仍要重启的三种情况：官方服务没组合（无 `hmr`，或目标是别的 profile）；
-> **第一次**安装 `dsh-dpk-manager` 本身（那时还没有 dpk 去请求应用）；
-> 以及**升级一个已经在跑的包**（含 dpk 自己）—— 替换已加载模块的 JS 代次，
-> 官方服务自己也会答 `restart-required`。
+> `setBundleEnabled` 当场 reconcile。DPK 的安装、覆盖升级和卸载只接受
+> `application: "applied"`（相同 digest 的幂等导入除外）；没有 live service、目标不是当前
+> profile，或官方返回 `restart-required` 时，操作失败并回滚，不留下“下次启动生效”的半成功状态。
+> 第一次安装 `dsh-dpk-manager` 本身属于官方插件页的启动流程，不由 dpk 自己管理。
 
 ## 快速开始
 
@@ -122,8 +119,9 @@ DSH 桌面版 / Web → **插件** → **添加插件** → 填 `dsh-dpk-manager
   `node_modules` 链接、`pnpm-lock.yaml` 的 importer 行 —— 这四处正是 Harness loader
   读取的全部内容。**不跑 pnpm、不依赖官方管理器**，所以它在一个 bundle 正在运行时也能装
   （官方管理器此时会以 `not-removable` 拒绝）。写完再请官方服务 `setBundleEnabled`
-  当场应用，于是**装完就能用**；服务没组合时才退回"下次启动生效"。
-- **覆盖安装**：导入新版本直接换行、换链接（同一个 store 目录就报 `unchanged`，见下面的耗时表）；
+  当场应用，于是**装完就能用**；服务无法当场应用时直接失败并回滚。
+- **覆盖安装**：自包含 DPK 包在当前 profile 里直接换行、换链接（同一个 store 目录就报 `unchanged`，见下面的耗时表）；
+  需要官方 service 的运行时依赖包只有在 service 确认 live 应用时才会替换，否则保持旧版本。
   导入同一个 digest 时，dpk 先读 profile 确认四处都已指向该目录，成立即不做任何写入。
 - **卸载**：`dpk remove name=…`（面板上的卸载同理）**先请官方服务 `setBundleEnabled(name, false)`
   当场把它从运行中的 Harness 卸下**，再删掉那四处并清理账本与无人引用的 store 副本；
@@ -174,11 +172,8 @@ live     applied to the running Harness
 进程里了；而任何一次没有应用成功的安装都会清掉这个标记，所以"不需要重启"永远只对真正生效的
 那一次成立。
 
-提示里**点名列出**是哪些包，而不是只说一句"请重启"：面板显示
-`以下插件包将在下一次 DeepSeek Harness 启动后生效：<name>@<version>…`，
-命令输出也在同一情形下写出 `<name>@<version> will be loaded at the next DeepSeek Harness start`
-（卸载方向写 will be unloaded）。这就是"实在无法即时"的那一类——升级一个已经在跑的包，
-或官方服务未组合——留给用户的唯一动作。
+历史账本或外部操作仍可能留下待处理记录，面板会点名显示对应包；DPK 自己的公共安装、升级和卸载入口
+不会创建这类记录，实时应用失败时会直接报错并回滚。
 
 ## dpk 会写哪些路径
 

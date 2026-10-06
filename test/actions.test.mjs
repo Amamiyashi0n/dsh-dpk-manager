@@ -224,6 +224,30 @@ test('an install the official service applies needs no restart', async () => {
   assert.equal(entries2[0].live, undefined)
   assert.equal(restartPending(entries2), true)
 
+  // The panel/tool strict mode refuses the same restart-only answer and rolls
+  // the new profile and store copy back instead of leaving pending state.
+  const home3 = await makeHome()
+  const file3 = join(home3, 'x.dpk')
+  await profileUsing(home3, 'probe')
+  await writeFile(file3, packed.buffer)
+  const strictApplyCalls = []
+  await assert.rejects(
+    runDpkAction('install', { file: file3 }, {
+      home: home3,
+      profile: 'probe',
+      requireLive: true,
+      apply: async (_name, enabled) => {
+        strictApplyCalls.push(enabled)
+        return { application: 'restart-required', changed: true }
+      },
+    }),
+    /refusing a restart-only install/,
+  )
+  assert.deepEqual(strictApplyCalls, [true, false], 'a restart-only install is unloaded before its profile rollback')
+  const manifest3 = JSON.parse(await readFile(join(home3, 'profiles', 'probe', 'package.json'), 'utf8'))
+  assert.deepEqual(manifest3.dependencies, {}, 'strict install restores the profile')
+  assert.equal(existsSync(join(dpkRoot(home3), 'store', packed.manifest.integrity.digest)), false, 'strict install removes its new store copy')
+
   // `live` describes that one process, not the package: a later run that does
   // not apply must clear it, or a restart would look unnecessary forever.
   const again = await runDpkAction('install', { file, reinstall: true }, { home, profile: 'probe' })
@@ -385,6 +409,29 @@ test('uninstalling unloads the bundle from the running Harness', async () => {
   const bare = await runDpkAction('remove', { name: 'dpk-fixture' }, { home: home3, profile: profile3 })
   assert.equal(bare.data.live, false)
   assert.match(bare.text, /@local\/dpk-fixture will be unloaded at the next DeepSeek Harness start/)
+
+  const strictFixture = await installedFixture()
+  const strictProfileFile = join(strictFixture.home, 'profiles', strictFixture.profile, 'package.json')
+  const strictApplyCalls = []
+  await assert.rejects(
+    runDpkAction('remove', { name: 'dpk-fixture' }, {
+      home: strictFixture.home,
+      profile: strictFixture.profile,
+      requireLive: true,
+      apply: async (_name, enabled) => {
+        strictApplyCalls.push(enabled)
+        const manifest = JSON.parse(await readFile(strictProfileFile, 'utf8'))
+        manifest.dsh.profile.bundles = enabled ? ['@local/dpk-fixture'] : []
+        await writeFile(strictProfileFile, `${JSON.stringify(manifest)}\n`)
+        return { application: 'restart-required', changed: true }
+      },
+    }),
+    /live unload .* was not applied; the local uninstall was not performed/,
+  )
+  assert.deepEqual(strictApplyCalls, [false, true], 'a restart-only unload restores the official bundle selection')
+  const strictManifest = JSON.parse(await readFile(strictProfileFile, 'utf8'))
+  assert.equal(Object.hasOwn(strictManifest.dependencies, '@local/dpk-fixture'), true, 'strict uninstall keeps the profile')
+  assert.deepEqual(strictManifest.dsh.profile.bundles, ['@local/dpk-fixture'], 'strict uninstall restores the bundle list')
 })
 
 test('uninstalling what the profile does not hold fails instead of claiming success', async () => {

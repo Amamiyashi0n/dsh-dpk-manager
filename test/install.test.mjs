@@ -116,6 +116,55 @@ test('is idempotent: the same digest is extracted once', async () => {
   assert.ok(second.notes.concat(second.checks).every(entry => !entry.startsWith('dsh: package.json passes strict conformance')))
 })
 
+test('strict live mode refuses a service replacement before changing the profile', async () => {
+  const home = await makeHome()
+  await makeProfile(home, 'test')
+  const first = await packFixture({ version: '1.0.0' })
+  const firstResult = await installArchive({ file: 'first.dpk', buffer: first.buffer, home, profile: 'test', log: () => {} })
+  const second = await packFixture({ version: '2.0.0' })
+  let called = false
+
+  await assert.rejects(
+    installArchive({
+      file: 'second.dpk',
+      buffer: second.buffer,
+      home,
+      profile: 'test',
+      installMode: 'service',
+      requireLive: true,
+      installer: async () => { called = true },
+      log: () => {},
+    }),
+    /cannot guarantee a live swap; install was refused/,
+  )
+  assert.equal(called, false, 'strict mode refuses before invoking the service installer')
+  const manifest = await readProfileManifest(profileDir(home, 'test'))
+  assert.equal(manifest.dependencies['@local/dpk-fixture'], linkSpecifier(firstResult.packageDir))
+  assert.equal(existsSync(join(dpkRoot(home), 'store', second.manifest.integrity.digest)), false)
+})
+
+test('strict live mode refuses a profile write when no live service is available', async () => {
+  const home = await makeHome()
+  await makeProfile(home, 'test')
+  const packed = await packFixture()
+
+  await assert.rejects(
+    installArchive({
+      file: 'missing-live-service.dpk',
+      buffer: packed.buffer,
+      home,
+      profile: 'test',
+      requireLive: true,
+      log: () => {},
+    }),
+    /was not applied to the running Harness/,
+  )
+  const manifest = await readProfileManifest(profileDir(home, 'test'))
+  assert.deepEqual(manifest.dependencies, {}, 'strict install restores the profile without a live service')
+  assert.equal(existsSync(join(dpkRoot(home), 'store', packed.manifest.integrity.digest)), false)
+  assert.equal((await readIndex(dpkRoot(home))).entries.length, 0)
+})
+
 test('one digest installed into two profiles is one ledger row and two profile rows', async () => {
   const home = await makeHome()
   const packed = await packFixture()

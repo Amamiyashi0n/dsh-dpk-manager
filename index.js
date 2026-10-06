@@ -41,8 +41,8 @@ const DESCRIPTION = [
   'verify checks an archive before you trust it and build packs a package directory into one.',
   'A .dpk is a validated zip carrying one standard DSH package; verify before installing.',
   'install, upgrade, remove, purge and autoremove change this profile or persistent data and require danger-full-access permission or approval for the call;',
-  'by default dpk writes the profile itself (dependency row, bundle list, node_modules link, lockfile row) with no pnpm run, and the change is live at the next Harness start;',
-  'via "service" hands the install to the official plugin manager service instead, which runs pnpm in the profile.',
+  'by default dpk writes the profile itself (dependency row, bundle list, node_modules link, lockfile row) with no pnpm run, then asks the official service to apply the change to the running Harness immediately; if it cannot, the operation is rolled back;',
+  'via "service" hands the install to the official plugin manager service instead, which runs pnpm in the profile and must apply the result immediately.',
   'import writes carried volume files back at the class the package declares now.',
   'export carries app volumes, snap carries app and data volumes; each takes one package (name=) or every recorded package (all: true).',
   'pkg reads or adjusts one data file on disk (op=list/add/remove/set): its form follows how many packages it holds, so adding a second package promotes it to the archive form and removing down to one demotes it back, extension included.',
@@ -66,7 +66,7 @@ const PARAMETERS = {
     profile: { type: 'string', description: 'For install and remove: target profile; defaults to this session profile.' },
     reinstall: { type: 'boolean', description: 'For install: place the store copy again even when the digest is already stored (apt --reinstall).' },
     deep: { type: 'boolean', description: 'For verify: false hashes the archive without extracting and re-validating the package as a DSH package (the analogue of dpkg --no-debsig). Default: true.' },
-    via: { type: 'string', enum: ['profile', 'service'], description: 'For install and upgrade: how the profile is written. "profile" writes the dependency row, bundle list, node_modules link and lockfile row directly — no pnpm, works while the app runs, effective at the next Harness start. "service" hands the package to the official plugin manager service, which runs pnpm in the profile. Default: "profile" for a self-contained package, "service" when the package declares runtime dependencies (only pnpm can install that registry tree).' },
+    via: { type: 'string', enum: ['profile', 'service'], description: 'For install and upgrade: how the profile is written. "profile" writes the dependency row, bundle list, node_modules link and lockfile row directly — no pnpm — then requires the official service to apply it to the running Harness immediately. "service" hands the package to the official plugin manager service, which runs pnpm in the profile and must apply it immediately. If live application is unavailable, the operation is refused and rolled back. Default: "profile" for a self-contained package, "service" when the package declares runtime dependencies (only pnpm can install that registry tree).' },
   },
   required: ['action'],
 }
@@ -155,6 +155,7 @@ export function apply(ctx, config = {}) {
         currentProfile: activeProfile,
         installer,
         apply,
+        requireLive: touchingProfile,
         installMode: args.via === 'service' ? 'service' : undefined,
         log: (message) => { ctx.logger?.info?.(`dpk: ${message.trim()}`) },
         // `update`/`upgrade` ask the npm registry what a package's newest

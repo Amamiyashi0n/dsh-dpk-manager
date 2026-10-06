@@ -171,6 +171,7 @@ export function createDpkRemoteService(ctx, config = {}) {
           installMode,
           profileByDefault: installMode === undefined,
           apply,
+          requireLive: true,
           log: message => { ctx.logger?.info?.(`dpk(ui): ${message.trim()}`) },
         })
         return { ...result.data, text: result.text }
@@ -243,9 +244,9 @@ export function createDpkRemoteService(ctx, config = {}) {
     }
 
     /**
-     * Remove a package through dpk: the profile row, the link and the lockfile
-     * row go away immediately, then the official service is asked to unload the
-     * bundle from the running Harness when that profile supports reconciliation.
+     * Remove a package through dpk. The official service must unload the bundle
+     * first while the profile still contains it; only then are local profile and
+     * store files removed.
      * @param request - `{ name }`.
      */
     async removeArchive(request) {
@@ -256,6 +257,7 @@ export function createDpkRemoteService(ctx, config = {}) {
         home,
         profile: profileName(),
         apply,
+        requireLive: true,
         log: message => { ctx.logger?.info?.(`dpk(ui): ${message.trim()}`) },
       })
       return { ...result.data, name, text: result.text }
