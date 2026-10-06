@@ -79,6 +79,14 @@ test('applyProfileInstall writes the dependency row, the bundle list, the link a
   assert.ok(lockfile.trimEnd().endsWith('snapshots:'), 'the rest of the file is untouched')
 })
 
+test('profileDir accepts one safe directory name and rejects traversal forms', async () => {
+  const home = await makeHome()
+  assert.equal(profileDir(home, 'desktop'), join(home, 'profiles', 'desktop'))
+  for (const profile of ['.', '..', '../escape', '..\\escape', 'nested/profile', 'C:\\escape', '/absolute']) {
+    assert.throws(() => profileDir(home, profile), error => error.code === 'DPK_PROFILE_INVALID', profile)
+  }
+})
+
 test('applyProfileInstall is idempotent: the second call changes nothing', async () => {
   const home = await makeHome()
   const packageDir = join(home, 'dpk', 'store', 'deadbeef', 'package')
@@ -113,6 +121,42 @@ test('a plain dependency is installed but never listed as a bundle', async () =>
   assert.equal(manifest.dependencies.plain, linkSpecifier(packageDir))
   assert.deepEqual(manifest.dsh.profile.bundles, [])
   assert.equal(existsSync(join(dir, 'node_modules', 'plain', 'package.json')), true)
+})
+
+test('a bundle with multiple patch files is listed in the profile bundle set', async () => {
+  const home = await makeHome()
+  const packageDir = join(home, 'dpk', 'store', 'multi-patch', 'package')
+  await mkdir(packageDir, { recursive: true })
+  await writeFile(join(packageDir, 'package.json'), `${JSON.stringify({
+    name: '@local/multi-patch',
+    version: '1.0.0',
+    dsh: { bundle: { patch: ['./one.yml', './two.yml'] } },
+  })}\n`)
+  const dir = await makeProfile(home, 'probe')
+
+  const applied = await applyProfileInstall({ home, profile: 'probe', packageName: '@local/multi-patch', packageDir })
+
+  assert.equal(applied.bundlesChanged, true)
+  assert.equal(await isBundlePackage(packageDir), true)
+  const manifest = await readProfileManifest(dir)
+  assert.deepEqual(manifest.dsh.profile.bundles, ['@local/multi-patch'])
+})
+
+test('reinstalling a bundle as a plain package removes its stale bundle entry', async () => {
+  const home = await makeHome()
+  const packageDir = join(home, 'dpk', 'store', 'switch', 'package')
+  await mkdir(packageDir, { recursive: true })
+  await writeFile(join(packageDir, 'package.json'), `${JSON.stringify({
+    name: '@local/switch', version: '1.0.0', dsh: { bundle: { patch: './p.yml' } },
+  })}\n`)
+  await makeProfile(home, 'probe')
+  await applyProfileInstall({ home, profile: 'probe', packageName: '@local/switch', packageDir })
+
+  await writeFile(join(packageDir, 'package.json'), `${JSON.stringify({ name: '@local/switch', version: '1.0.0' })}\n`)
+  const applied = await applyProfileInstall({ home, profile: 'probe', packageName: '@local/switch', packageDir })
+
+  assert.equal(applied.bundlesChanged, true)
+  assert.deepEqual((await readProfileManifest(profileDir(home, 'probe'))).dsh.profile.bundles, [])
 })
 
 test('installedState refuses a link that points somewhere else', async () => {

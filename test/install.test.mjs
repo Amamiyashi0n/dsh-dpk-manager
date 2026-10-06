@@ -7,10 +7,11 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { packDirectory } from '../lib/pack.mjs'
-import { installArchive, installOverwriting } from '../lib/install.mjs'
+import { installArchive, installOverwriting, serviceInstall } from '../lib/install.mjs'
 import { linkSpecifier, profileDir, readProfileManifest, referencedDigests } from '../lib/profile-install.mjs'
 import { disableReleaseAgeCooldown } from '../lib/profile-policy.mjs'
 import { dpkRoot, readIndex, storeDir } from '../lib/store.mjs'
+import { compareVersions } from '../lib/versions.mjs'
 import { archiveCopies, makeHome, makePackage } from './helpers.mjs'
 
 /** A profile directory with the parts every real profile has. */
@@ -81,7 +82,7 @@ test('verifies, extracts into the store, and hands the official installer an abs
   assert.equal(exec.calls[0][0], packageDir)
   assert.deepEqual(
     { ...exec.calls[0][1], isSatisfied: undefined },
-    { name: '@local/dpk-fixture', version: '1.0.0', digest: packed.manifest.integrity.digest, isSatisfied: undefined },
+     { name: '@local/dpk-fixture', version: '1.0.0', digest: packed.manifest.integrity.digest, profile: 'test', isSatisfied: undefined },
   )
   assert.equal(typeof exec.calls[0][1].isSatisfied, 'function', 'the installer can ask whether the profile already resolves this package')
   assert.equal(result.via, 'service')
@@ -157,6 +158,29 @@ test('a failing installer rolls the store copy back and records nothing', async 
   assert.equal(existsSync(join(dpkRoot(home), 'store', packed.manifest.integrity.digest)), false)
 })
 
+test('a ledger failure rolls back a successful official-manager install', async () => {
+  const home = await makeHome()
+  const packed = await packFixture()
+  const root = dpkRoot(home)
+  await mkdir(root, { recursive: true })
+  await writeFile(join(root, 'index.json'), '{ broken ledger')
+  const seen = []
+  const manager = {
+    installBundle: async () => { seen.push('install'); return { application: 'applied', changed: true } },
+    removeBundle: async name => { seen.push(`remove:${name}`); return { changed: true } },
+  }
+
+  await assert.rejects(
+    installArchive({
+      file: 'x.dpk', buffer: packed.buffer, home, profile: 'test', installMode: 'service',
+      installer: (packageDir, meta) => serviceInstall(manager, packageDir, meta), log: () => {},
+    }),
+    /index\.json is not valid JSON/,
+  )
+  assert.deepEqual(seen, ['install', 'remove:@local/dpk-fixture'])
+  assert.equal(existsSync(join(dpkRoot(home), 'store', packed.manifest.integrity.digest)), false)
+})
+
 test('without an installer the install writes the profile itself', async () => {
   const home = await makeHome()
   await makeProfile(home, 'test')
@@ -170,6 +194,31 @@ test('without an installer the install writes the profile itself', async () => {
   assert.equal(manifest.dependencies['@local/dpk-fixture'], `link:${result.packageDir}`.replace(/\\/g, '/'))
   assert.ok(existsSync(join(home, 'profiles', 'test', 'node_modules', '@local', 'dpk-fixture', 'package.json')))
   assert.equal(existsSync(join(dpkRoot(home), 'index.json')), true)
+})
+
+test('an unscoped multi-patch bundle localizes every patch file', async () => {
+  const root = await makePackage({
+    manifest: {
+      name: 'multi-patch',
+      dsh: { manifestVersion: 1, bundle: { patch: ['./cordis.patch.yml', './second.yml'] } },
+    },
+  })
+  await writeFile(join(root, 'cordis.patch.yml'), "- insert:\n    - id: first\n      name: 'multi-patch'\n")
+  await writeFile(join(root, 'second.yml'), "- insert:\n    - id: second\n      name: 'multi-patch'\n")
+  const packed = await packDirectory(root)
+  const home = await makeHome()
+  await makeProfile(home, 'test')
+
+  const result = await installArchive({ file: 'multi.dpk', buffer: packed.buffer, home, profile: 'test', log: () => {} })
+  const stored = await readFile(join(result.packageDir, 'package.json'), 'utf8')
+  const firstPatch = await readFile(join(result.packageDir, 'cordis.patch.yml'), 'utf8')
+  const secondPatch = await readFile(join(result.packageDir, 'second.yml'), 'utf8')
+  const profile = await readProfileManifest(profileDir(home, 'test'))
+
+  assert.match(stored, /"name": "@local\/multi-patch"/)
+  assert.match(firstPatch, /name: '@local\/multi-patch'/)
+  assert.match(secondPatch, /name: '@local\/multi-patch'/)
+  assert.deepEqual(profile.dsh.profile.bundles, ['@local/multi-patch'])
 })
 
 test('a corrupt archive never reaches the installer', async () => {
@@ -370,6 +419,24 @@ test('an unscoped source installs under the @local scope in store, ledger, and p
 
   const index = await readIndex(dpkRoot(home))
   assert.equal(index.entries[0].name, '@local/plain-tool', 'the ledger records the scoped name')
+})
+
+test('unscoped patch localization also handles an inline YAML comment', async () => {
+  const home = await makeHome()
+  const dir = await makePackage({
+    manifest: { name: 'commented-tool' },
+    extraFiles: { 'cordis.patch.yml': '- insert:\n    - id: commented-tool\n      name: commented-tool # keep this note' },
+  })
+  const packed = await packDirectory(dir)
+  const result = await installArchive({ file: 'commented.dpk', buffer: packed.buffer, home, profile: 'test', installer: recorder().installer, log: () => {} })
+  const patch = await readFile(join(result.packageDir, 'cordis.patch.yml'), 'utf8')
+  assert.equal(patch, '- insert:\n    - id: commented-tool\n      name: @local/commented-tool # keep this note')
+})
+
+test('version comparison follows SemVer prerelease and build rules', () => {
+  assert.equal(compareVersions('1.0.1+build.1', '1.0.1+build.2'), 0)
+  assert.equal(compareVersions('1.0.0-alpha.10', '1.0.0-alpha.2') > 0, true)
+  assert.equal(compareVersions('1.0.0', '1.0.0-rc.1') > 0, true)
 })
 
 test('writeIndex leaves no temp file behind and reads back identically', async () => {

@@ -138,8 +138,9 @@ export function apply(ctx, config = {}) {
       // `upgrade` installs the same way, once per profile that resolves an older
       // package, so it needs the same installer.
       const installing = args.action === 'install' || args.action === 'upgrade'
+      const activeProfile = runningProfile(home ?? defaultDshHome())
       const installer = installing && args.via === 'service'
-        ? createInstaller(ctx)
+        ? createInstaller(ctx, activeProfile)
         : undefined
       // The profile path writes the four things the loader reads, but writing
       // them cannot make the *running* Harness read them again. The official
@@ -147,10 +148,11 @@ export function apply(ctx, config = {}) {
       // owns — no pnpm, no registry — so an install is usable, and a removal is
       // gone, the moment the action returns instead of at the next start.
       const touchingProfile = args.action === 'install' || args.action === 'upgrade' || args.action === 'remove'
-      const apply = touchingProfile ? buildApplier(ctx) : undefined
+      const apply = touchingProfile ? buildApplier(ctx, activeProfile) : undefined
       const result = await runDpkAction(args.action, args, {
         home,
         profile: args.profile ?? detectProfileName(home ?? defaultDshHome()),
+        currentProfile: activeProfile,
         installer,
         apply,
         installMode: args.via === 'service' ? 'service' : undefined,
@@ -161,15 +163,18 @@ export function apply(ctx, config = {}) {
         // profile, so the profile's registry, proxy and authentication apply.
         // Absent (a Host without the manager), `update` simply answers from
         // local .dpk directories and says the registry was unavailable.
-        view: buildRegistryView(ctx),
+        view: buildRegistryView(ctx, activeProfile),
         // A registry upgrade is a real pnpm install run by the official
         // service, so it earns the same gate as an install before it starts.
-        registryInstaller: buildRegistryInstaller(ctx),
-        beforeRegistryUpgrade: profile => judgeEscalation(ctx, exec, {
-          requestedMode: 'danger-full-access',
-          subject: 'registry package upgrade',
-          justification: `dpk upgrade. Upgrading ${profile} to the newest npm version of a registry package runs pnpm and changes this profile for every session.`,
-        }),
+        registryInstaller: buildRegistryInstaller(ctx, activeProfile),
+        beforeRegistryUpgrade: profile => {
+          assertManagerProfile(profile, activeProfile, 'upgrade')
+          return judgeEscalation(ctx, exec, {
+            requestedMode: 'danger-full-access',
+            subject: 'registry package upgrade',
+            justification: `dpk upgrade. Upgrading ${profile} to the newest npm version of a registry package runs pnpm and changes this profile for every session.`,
+          })
+        },
       })
       return { action: result.action, text: result.text }
     },
@@ -233,10 +238,11 @@ const WIDER_MODES = {
  * @param ctx - Context carrying `pluginManager`.
  * @returns an async `(profile, name) => { version } | null`, or `undefined`.
  */
-function buildRegistryView(ctx) {
+function buildRegistryView(ctx, currentProfile) {
   const manager = ctx.get('pluginManager')
   if (manager === undefined || typeof manager.inspect !== 'function') return undefined
   return async (profile, name) => {
+    assertManagerProfile(profile, currentProfile, 'inspect')
     const inspection = await manager.inspect(name)
     return inspection?.status === 'accepted' && typeof inspection.version === 'string'
       ? { version: inspection.version }
@@ -254,10 +260,13 @@ function buildRegistryView(ctx) {
  * @param ctx - Context carrying `pluginManager`.
  * @returns an async `(spec, meta) => outcome`, or `undefined` when absent.
  */
-function buildRegistryInstaller(ctx) {
+function buildRegistryInstaller(ctx, currentProfile) {
   const manager = ctx.get('pluginManager')
   if (manager === undefined || typeof manager.installBundle !== 'function') return undefined
-  return (spec, meta) => manager.installBundle(spec, { isSatisfied: meta.isSatisfied })
+  return async (spec, meta) => {
+    assertManagerProfile(meta.profile, currentProfile, 'install')
+    return manager.installBundle(spec, { isSatisfied: meta.isSatisfied })
+  }
 }
 
 /**
@@ -273,8 +282,11 @@ function buildRegistryInstaller(ctx) {
  * @param ctx - Context carrying `pluginManager`.
  * @returns an async `(name, enabled) => outcome | undefined`.
  */
-function buildApplier(ctx) {
-  return async (name, enabled) => {
+function buildApplier(ctx, currentProfile) {
+  return async (name, enabled, profile) => {
+    if (profile !== currentProfile) {
+      return { application: 'restart-required', changed: false, profile }
+    }
     const manager = await Promise.resolve(ctx.get('pluginManager'))
     if (manager === undefined || typeof manager.setBundleEnabled !== 'function') return undefined
     return await manager.setBundleEnabled(name, enabled)
@@ -326,8 +338,27 @@ async function judgeEscalation(ctx, exec, request) {
  * gate has already fired at the tool level; this just carries the store
  * directory to the official management service with the shared overwrite rules.
  */
-function createInstaller(ctx) {
-  return async (packageDir, meta) => serviceInstall(await Promise.resolve(ctx.get('pluginManager')), packageDir, meta, {
-    reason: `the plugin manager could not install ${packageDir}`,
-  })
+function createInstaller(ctx, currentProfile) {
+  return async (packageDir, meta) => {
+    assertManagerProfile(meta.profile, currentProfile, 'install')
+    return serviceInstall(await Promise.resolve(ctx.get('pluginManager')), packageDir, meta, {
+      reason: `the plugin manager could not install ${packageDir}`,
+      currentProfile,
+    })
+  }
+}
+
+/** The profile whose plugin manager service is attached to this running Host. */
+function runningProfile(home) {
+  return process.env.DSH_PROFILE ?? detectProfileName(home)
+}
+
+/** Refuse to route a target-profile operation through the current manager. */
+function assertManagerProfile(profile, currentProfile, operation) {
+  if (typeof currentProfile !== 'string' || currentProfile === '') {
+    throw new Error(`dpk: cannot determine the running profile for manager ${operation}; target profile ${profile} was not touched`)
+  }
+  if (profile !== currentProfile) {
+    throw new Error(`dpk: manager ${operation} targets profile ${profile}, but the running service owns profile ${currentProfile}`)
+  }
 }

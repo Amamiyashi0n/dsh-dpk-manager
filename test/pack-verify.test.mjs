@@ -117,6 +117,8 @@ test('rejects unknown manifest fields and reserved future fields', () => {
   assert.throws(() => validateManifest({ ...skeleton(), signatures: [] }), error => error.code === 'DPK_VERSION')
   assert.throws(() => validateManifest({ ...skeleton(), dpk: 2 }), error => error.code === 'DPK_VERSION')
   assert.throws(() => validateManifest({ ...skeleton(), roles: ['mystery'] }), error => error.code === 'DPK_MANIFEST_FIELD')
+  assert.throws(() => validateManifest({ ...skeleton(), roles: ['plain', 'plain'] }), error => error.code === 'DPK_MANIFEST_FIELD')
+  assert.throws(() => validateManifest({ ...skeleton(), createdAt: '2026-10-06T12:00:00+08:00' }), error => error.code === 'DPK_MANIFEST_FIELD')
   assert.throws(() => validateManifest({ ...skeleton(), entry: 'package/x.json' }), error => error.code === 'DPK_MANIFEST_FIELD')
   assert.throws(() => validateManifest({ ...skeleton(), generator: 'nope' }), error => error.code === 'DPK_MANIFEST_FIELD')
 })

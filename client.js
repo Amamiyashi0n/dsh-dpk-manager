@@ -201,9 +201,22 @@ window.__ModuleLoader__.load({
 
         const entryFor = name => state.entries.find(entry => entry.name === name)
         const useManaged = () => {
-          const [snapshot, setSnapshot] = React.useState(state.entries.length)
+          const currentSnapshot = () => JSON.stringify({
+            store: state.store,
+            error: state.error,
+            notice: state.notice,
+            entries: state.entries.map(entry => ({
+              name: entry.name,
+              version: entry.version,
+              digest: entry.digest,
+              installed: entry.installed,
+              enabled: entry.enabled,
+              profileState: entry.profileState,
+            })),
+          })
+          const [snapshot, setSnapshot] = React.useState(currentSnapshot)
           React.useEffect(() => {
-            const listener = () => setSnapshot(state.entries.length + state.entries.map(entry => entry.digest).join('').length + (state.notice?.length ?? 0))
+            const listener = () => setSnapshot(currentSnapshot())
             state.listeners.add(listener)
             if (state.entries.length === 0) void refresh()
             return () => { state.listeners.delete(listener) }

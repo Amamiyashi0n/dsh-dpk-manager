@@ -211,6 +211,49 @@ test('import restores every package the dpks-data file carries', async () => {
   )
 })
 
+test('a failed package in a multi-package import rolls back earlier packages', async () => {
+  const { home, root } = await twoPackages()
+  const out = join(home, 'all.dpks')
+  await runDpkAction('snap', { all: true, output: out }, { home })
+  await rm(dataRoot(home, '@local/one'), { recursive: true, force: true })
+  await rm(dataRoot(home, '@local/two'), { recursive: true, force: true })
+
+  // The archive is valid, but the second installed package has an invalid
+  // declaration. `one` is processed first by name; its write must be undone
+  // when `two` fails so migration never leaves a half-restored machine.
+  await writeFile(
+    join(storeDir(root, 'd'.repeat(64)), 'package', 'package.json'),
+    JSON.stringify({ name: '@local/two', version: '1.0.0', dsh: { data: { volumes: [{ id: 'settings', class: 'config', path: 'settings.json' }] } } }),
+  )
+
+  await assert.rejects(
+    () => runDpkAction('import', { file: out }, { home }),
+    /class must be one of data, app/,
+  )
+  assert.equal(existsSync(join(dataRoot(home, '@local/one'), 'app', 'sessions.json')), false, 'the earlier package was rolled back')
+  assert.equal(existsSync(join(dataRoot(home, '@local/two'), 'data', 'settings.json')), false, 'the failing package wrote nothing')
+})
+
+test('a dpks archive with unlisted content is refused', async () => {
+  const home = await makeHome()
+  const manifest = {
+    format: 'dpks-data/1',
+    packages: [{ package: '@local/one', files: [{ path: 'app/session.json' }] }],
+  }
+  const archive = writeZip([
+    { path: 'dpks.json', data: Buffer.from(JSON.stringify(manifest)), mode: 0o644 },
+    { path: 'data/@local/one/app/session.json', data: Buffer.from('ok\n'), mode: 0o644 },
+    { path: 'data/@local/one/app/forgotten.json', data: Buffer.from('silent loss\n'), mode: 0o644 },
+  ], { compress: true })
+  const file = join(home, 'extra.dpks')
+  await writeFile(file, archive)
+
+  await assert.rejects(
+    () => runDpkAction('import', { file }, { home }),
+    /carries unlisted content: data\/@local\/one\/app\/forgotten\.json/,
+  )
+})
+
 test('import of a dpks bundle skips packages this machine does not record', async () => {
   const { home } = await twoPackages()
   const out = join(home, 'all.dpks')

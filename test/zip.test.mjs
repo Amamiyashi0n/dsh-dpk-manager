@@ -139,6 +139,14 @@ test('refuses an encrypted entry', () => {
   assert.throws(() => readZipIndex(encrypted), error => error.code === 'ZIP_ENCRYPTED')
 })
 
+test('refuses an archive without the UTF-8 filename flag', () => {
+  const buffer = writeZip([file('a.txt', 'text')])
+  const centralOffset = buffer.readUInt32LE(buffer.length - 22 + 16)
+  const patched = Buffer.from(buffer)
+  patched.writeUInt16LE(patched.readUInt16LE(centralOffset + 8) & ~0x0800, centralOffset + 8)
+  assert.throws(() => readZipIndex(patched), error => error.code === 'ZIP_NON_UTF8')
+})
+
 test('refuses an unknown compression method', () => {
   const buffer = writeZip([file('a.txt', 'secret')])
   const centralOffset = buffer.readUInt32LE(buffer.length - 22 + 16)

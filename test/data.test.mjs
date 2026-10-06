@@ -479,6 +479,47 @@ test('export/import actions round-trip app volumes through the tool layer', asyn
   }
 })
 
+test('a failed service install restores the previous seed before the manager can retry', async () => {
+  const home = await makeHome()
+  const v1 = await packDirectory(await makeManagedPackage({ version: '1.0.0' }))
+  await installArchive({
+    file: 'v1.dpk', buffer: v1.buffer, home, profile: 'test', installMode: 'service',
+    installer: async () => ({ application: 'applied', changed: true }), log: () => {},
+  })
+  const providers = join(dataRoot(home, '@local/dpk-fixture'), 'app', 'providers.json')
+  assert.equal(await readFile(providers, 'utf8'), '{"provider":{}}\n')
+
+  const v2 = await packDirectory(await makeManagedPackage({
+    version: '2.0.0',
+    extraFiles: { 'seeds/providers.json': '{"provider":{"v2":true}}\n' },
+  }))
+  await assert.rejects(
+    installArchive({
+      file: 'v2.dpk', buffer: v2.buffer, home, profile: 'test', installMode: 'service',
+      installer: async () => { throw new Error('manager refused') }, log: () => {},
+    }),
+    /manager refused/,
+  )
+  assert.equal(await readFile(providers, 'utf8'), '{"provider":{}}\n', 'the failed service attempt did not poison the old seed')
+  assert.equal(existsSync(`${providers}.dpk-new`), false)
+})
+
+test('import validates every carried volume before writing any of them', async () => {
+  const home = await makeHome()
+  const volumes = VOLUMES([
+    { id: 'first', class: 'data', path: 'first.json' },
+    { id: 'second', class: 'data', path: 'second.json' },
+  ])
+  await assert.rejects(
+    importDataVolumes(home, '@local/import-check', volumes, [
+      { path: 'data/first.json', bytes: Buffer.from('first\n') },
+      { path: 'data/not-declared.json', bytes: Buffer.from('bad\n') },
+    ]),
+    error => error.code === 'DPK_DATA_IMPORT_UNDECLARED',
+  )
+  assert.equal(existsSync(join(dataRoot(home, '@local/import-check'), 'data', 'first.json')), false)
+})
+
 test('a class outside data/app is refused with the two words that exist', async () => {
   // Invalid input must fail at the declaration, loudly: a silent no-volume
   // would surface much later as "the plugin cannot find its file". The names

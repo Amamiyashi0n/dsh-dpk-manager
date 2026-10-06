@@ -9,6 +9,7 @@ import { DpkActionError, runDpkAction } from '../lib/actions.mjs'
 import { archiveFileName } from '../lib/dpk-manifest.mjs'
 import { packDirectory } from '../lib/pack.mjs'
 import { dpkRoot, readIndex, recordInstall, restartPending, storeDir } from '../lib/store.mjs'
+import { dataRoot, volumePath } from '../lib/data.mjs'
 import { makeHome, makePackage, profileUsing, storeEntry } from './helpers.mjs'
 
 async function packedFixture() {
@@ -324,6 +325,33 @@ test('uninstalling collects only the copy that profile resolved', async () => {
   assert.equal(existsSync(unrelated), true, 'the unrelated copy survives')
 })
 
+test('remove keeps managed data and purge deletes it explicitly', async () => {
+  const home = await makeHome()
+  const packed = await packDirectory(await makePackage({
+    manifest: {
+      dsh: {
+        manifestVersion: 1,
+        bundle: { patch: './cordis.patch.yml' },
+        data: { volumes: [{ id: 'session', class: 'app', path: 'session.json' }] },
+      },
+    },
+  }))
+  const file = join(home, 'fixture.dpk')
+  await writeFile(file, packed.buffer)
+  const profile = 'probe'
+  await profileUsing(home, profile)
+  await runDpkAction('install', { file }, { home, profile })
+  const data = volumePath(home, '@local/dpk-fixture', { id: 'session', class: 'app', path: 'session.json' })
+  await mkdir(join(data, '..'), { recursive: true })
+  await writeFile(data, '{"keep":true}\n')
+
+  await runDpkAction('remove', { name: 'dpk-fixture' }, { home, profile })
+  assert.equal(await readFile(data, 'utf8'), '{"keep":true}\n', 'remove leaves the data volume in place')
+
+  await runDpkAction('purge', { name: 'dpk-fixture' }, { home })
+  assert.equal(existsSync(dataRoot(home, '@local/dpk-fixture')), false, 'purge removes the complete data root')
+})
+
 test('uninstalling unloads the bundle from the running Harness', async () => {
   // Install and removal are one behaviour in two directions: the profile write
   // decides what the next start loads, and the official service is asked to
@@ -368,6 +396,27 @@ test('uninstalling what the profile does not hold fails instead of claiming succ
       && /does not hold @local\/something-else; nothing was removed/.test(error.message)
       && /it holds @local\/dpk-fixture/.test(error.message),
   )
+})
+
+test('remove name@version refuses to remove a different version held by the profile', async () => {
+  const home = await makeHome()
+  const profile = 'probe'
+  await profileUsing(home, profile)
+  const v1 = await packDirectory(await makePackage({ manifest: { version: '1.0.0' } }))
+  const v2 = await packDirectory(await makePackage({ manifest: { version: '2.0.0' } }))
+  const first = join(home, 'one.dpk')
+  const second = join(home, 'two.dpk')
+  await writeFile(first, v1.buffer)
+  await writeFile(second, v2.buffer)
+  await runDpkAction('install', { file: first }, { home, profile })
+  await runDpkAction('install', { file: second }, { home, profile })
+
+  await assert.rejects(
+    runDpkAction('remove', { name: 'dpk-fixture@1.0.0' }, { home, profile }),
+    error => error instanceof DpkActionError && /does not hold @local\/dpk-fixture@1\.0\.0/.test(error.message),
+  )
+  const manifest = JSON.parse(await readFile(join(home, 'profiles', profile, 'package.json'), 'utf8'))
+  assert.match(manifest.dependencies['@local/dpk-fixture'], new RegExp(v2.manifest.integrity.digest))
 })
 
 test('unknown actions and missing arguments are caller mistakes', async () => {

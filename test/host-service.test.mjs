@@ -89,6 +89,23 @@ test('managed ranks versions numerically, not by ledger order', async () => {
   assert.equal(listed.entries[0].digest, 'b')
 })
 
+test('managed keeps both versions when different profiles resolve different digests', async () => {
+  const home = await makeHome()
+  const root = dpkRoot(home)
+  const oldDir = await storeEntry(root, 'a'.repeat(64), { name: '@local/shared-pkg' })
+  const newDir = await storeEntry(root, 'b'.repeat(64), { name: '@local/shared-pkg' })
+  await recordInstall(root, { name: '@local/shared-pkg', version: '1.0.0', digest: 'a'.repeat(64), source: 'old.dpk' })
+  await recordInstall(root, { name: '@local/shared-pkg', version: '2.0.0', digest: 'b'.repeat(64), source: 'new.dpk' })
+  await makeProfile(home, 'old', { dependencies: { '@local/shared-pkg': `link:${oldDir}` } })
+  await makeProfile(home, 'new', { dependencies: { '@local/shared-pkg': `link:${newDir}` } })
+
+  const service = createDpkRemoteService(makeCtx({}), { home })
+  const entries = await service.managed()
+
+  assert.deepEqual(entries.entries.map(entry => entry.version).sort(), ['1.0.0', '2.0.0'])
+  assert.deepEqual(entries.entries.map(entry => entry.profiles).sort((left, right) => left[0].localeCompare(right[0])), [['new'], ['old']])
+})
+
 test('managed reports the installed version over the ledger record when they differ', async () => {
   const home = await mkdtemp(join(tmpdir(), 'dpk-home-'))
   const root = join(home, 'dpk')
@@ -171,9 +188,19 @@ test('removeArchive forgets this profile and keeps a shared entry for the others
   await makeProfile(home, 'web', { dependencies: { 'shared-pkg': `link:${packageDir}` } })
   await makeProfile(home, 'desktop', { dependencies: { 'shared-pkg': `link:${packageDir}` } })
 
-  const service = createDpkRemoteService(makeCtx({}), { home })
+  const applied = []
+  const service = createDpkRemoteService(makeCtx({
+    pluginManager: {
+      setBundleEnabled: async (name, enabled) => {
+        applied.push([name, enabled])
+        return { application: 'applied' }
+      },
+    },
+  }), { home })
   const outcome = await withProfile('desktop', () => service.removeArchive({ name: 'shared-pkg' }))
 
+  assert.deepEqual(applied, [['shared-pkg', false]], 'the running bundle is unloaded through the official service')
+  assert.equal(outcome.live, true)
   assert.deepEqual(outcome.dropped, [], 'another profile still references the store copy')
   const index = await readIndex(root)
   assert.equal(index.entries.length, 1, 'the ledger row stays while a profile uses the digest')
@@ -215,7 +242,7 @@ test('detectProfileName finds the profile whose node_modules holds this package'
   }
 })
 
-test('importArchive writes the profile itself and never calls the official manager', async () => {
+test('importArchive writes the profile itself and applies the bundle to the running Harness', async () => {
   const home = await makeHome()
   await makeProfile(home, 'desktop')
   const packed = await packDirectory(await makePackage())
@@ -223,6 +250,10 @@ test('importArchive writes the profile itself and never calls the official manag
   const manager = {
     installBundle: async () => { seen.push('install'); return { application: 'applied', changed: true } },
     removeBundle: async name => { seen.push(`remove:${name}`); return { changed: true } },
+    setBundleEnabled: async (name, enabled) => {
+      seen.push(`apply:${name}:${enabled}`)
+      return { application: 'applied', changed: true }
+    },
   }
   const service = createDpkRemoteService(makeCtx({ pluginManager: manager }), { home })
 
@@ -231,9 +262,10 @@ test('importArchive writes the profile itself and never calls the official manag
     base64: packed.buffer.toString('base64'),
   }))
 
-  assert.deepEqual(seen, [], 'no pnpm run, no manager call')
+  assert.deepEqual(seen, ['apply:@local/dpk-fixture:true'], 'profile mode skips pnpm but applies the live bundle')
   assert.equal(result.name, '@local/dpk-fixture')
   assert.equal(result.via, 'profile')
+  assert.equal(result.live, true)
   const profile = await readProfileManifest(profileDir(home, 'desktop'))
   assert.equal(profile.dependencies['@local/dpk-fixture'], linkSpecifier(result.storePath))
   assert.deepEqual(profile.dsh.profile.bundles, ['@local/dpk-fixture'])

@@ -65,10 +65,19 @@ function markRemote(prototype, methodName) {
  */
 export function createDpkRemoteService(ctx, config = {}) {
   const home = config.home ?? defaultDshHome()
-  /** `profile` writes the profile directly; `service` runs the official installer (pnpm). */
-  const installMode = config.installMode === 'service' ? 'service' : 'profile'
+  /** An omitted mode lets installArchive choose pnpm only when dependencies require it. */
+  const installMode = config.installMode === 'service' || config.installMode === 'profile'
+    ? config.installMode
+    : undefined
   /** This service serves the profile whose node_modules physically holds this package. */
   const profileName = () => process.env.DSH_PROFILE ?? detectProfileName(home) ?? 'default'
+  /** Apply direct profile changes to the running Harness when the service supports it. */
+  const apply = async (name, enabled, profile) => {
+    if (profile !== profileName()) return { application: 'restart-required', changed: false, profile }
+    const manager = await Promise.resolve(ctx.get('pluginManager'))
+    if (manager === undefined || typeof manager.setBundleEnabled !== 'function') return undefined
+    return manager.setBundleEnabled(name, enabled)
+  }
 
   class DpkRemoteService {
     /** Packages this assistant installed locally, joined with what the profile really holds. */
@@ -88,6 +97,11 @@ export function createDpkRemoteService(ctx, config = {}) {
       // The reminder names the packages, not just the fact: whichever the
       // running Harness has not loaded is what the next start will bring.
       const awaitingRestart = pendingRestarts(index.entries)
+      const referenced = new Set([...references.keys()])
+      const visible = index.entries.filter(entry => referenced.has(entry.digest))
+      const visibleNames = new Set(visible.map(entry => entry.name))
+      const unreferencedLatest = latestByName(index.entries).filter(entry => !visibleNames.has(entry.name))
+      const managedEntries = [...visible, ...unreferencedLatest]
       return {
         store: dpkRoot(home),
         ...(awaitingRestart.length > 0
@@ -96,12 +110,13 @@ export function createDpkRemoteService(ctx, config = {}) {
               awaitingRestart: awaitingRestart.map(entry => ({ name: entry.name, version: entry.version })),
             }
           : {}),
-        entries: latestByName(index.entries).map(entry => {
+        entries: managedEntries.map(entry => {
           // The card shows the version that actually runs: the profile's own
           // (possibly npm-updated) install wins over the ledger's record of
           // which .dpk generation was imported.
           const bundle = byName.get(entry.name)
           const installedVersion = bundle?.version
+          const profiles = references.get(entry.digest) ?? []
           return {
             name: entry.name,
             version: installedVersion ?? entry.version,
@@ -111,7 +126,8 @@ export function createDpkRemoteService(ctx, config = {}) {
             digest: entry.digest,
             installedAt: entry.installedAt,
             source: entry.source,
-            profiles: references.get(entry.digest) ?? [],
+            profiles,
+            profileState: profiles.length === 0 ? 'unreferenced' : `used by ${profiles.join(', ')}`,
             installed: bundle?.installed === true,
             enabled: bundle?.enabled === true,
           }
@@ -141,14 +157,20 @@ export function createDpkRemoteService(ctx, config = {}) {
         // Self-contained by default: the panel writes the profile through dpk,
         // so an import costs no pnpm run and works while a bundle is live. The
         // official service stays available for callers that need it.
-        const installer = installMode === 'service'
-          ? (packageDir, meta) => serviceInstall(manager, packageDir, meta, { reason: 'install' })
+        const installer = installMode === 'service' || installMode === undefined
+          ? (packageDir, meta) => serviceInstall(manager, packageDir, meta, {
+              reason: 'install',
+              currentProfile: profileName(),
+            })
           : undefined
         const result = await runDpkAction('install', { file: path }, {
           home,
           profile: profileName(),
+          currentProfile: profileName(),
           installer,
           installMode,
+          profileByDefault: installMode === undefined,
+          apply,
           log: message => { ctx.logger?.info?.(`dpk(ui): ${message.trim()}`) },
         })
         return { ...result.data, text: result.text }
@@ -222,9 +244,8 @@ export function createDpkRemoteService(ctx, config = {}) {
 
     /**
      * Remove a package through dpk: the profile row, the link and the lockfile
-     * row go away immediately, the bundle's rows unload at the next start. The
-     * official manager refuses this for any started bundle (`not-removable`),
-     * so the panel does not use it here.
+     * row go away immediately, then the official service is asked to unload the
+     * bundle from the running Harness when that profile supports reconciliation.
      * @param request - `{ name }`.
      */
     async removeArchive(request) {
@@ -234,6 +255,7 @@ export function createDpkRemoteService(ctx, config = {}) {
       const result = await runDpkAction('remove', { name }, {
         home,
         profile: profileName(),
+        apply,
         log: message => { ctx.logger?.info?.(`dpk(ui): ${message.trim()}`) },
       })
       return { ...result.data, name, text: result.text }
