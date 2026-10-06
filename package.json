@@ -44,7 +44,8 @@
     }
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "postpublish": "node scripts/deprecate-previous.mjs"
   },
   "repository": {
     "type": "git",

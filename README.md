@@ -393,6 +393,7 @@ dpk/
   lib/actions.mjs              动作层：工具与面板共用
   schemas/dpk-1.schema.json    dpk.json 的 JSON Schema
   examples/hello-bundle/       自包含示例包（发布时用 `dpk build` 打包成 dpk-dist/dpk-hello@1.0.0.dpk）
+  scripts/deprecate-previous.mjs  npm 发布后自动废弃旧版本
   test/                        测试（一致性清单 + 动作层 + 自洽写入 + autoremove + cache 生命周期 + schema 对齐）
 ```
 
@@ -401,6 +402,14 @@ dpk/
 ```powershell
 npm test
 ```
+
+## npm 发布规则
+
+仓库使用 npm 的 `postpublish` 生命周期自动收敛版本：每次 `npm publish` 成功后，
+`scripts/deprecate-previous.mjs` 会执行 `npm deprecate name@<current-version`，
+将所有低于当前版本的旧版本标记为废弃，并提示用户升级到刚发布的版本。当前版本及未来版本不会被匹配。
+脚本沿用 `publishConfig.registry`，因此发布和废弃操作使用同一个 registry；若废弃操作失败，发布命令会报告失败，
+便于立即补处理。发布时不要使用 `--ignore-scripts`。
 
 覆盖 zip 往返/可复现/CRC 篡改/路径攻击/加密/zip64/未知方法/炸弹护栏、DSH 合规的每一类拒绝、
 清单严格性与摘要重算、安装的幂等、失败不留账本、
