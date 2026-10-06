@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/u
@@ -32,9 +33,17 @@ export function deprecationPlan(manifest) {
 
 /** Run npm with inherited output so a publish log shows the deprecation step. */
 export function runNpm(args, options = {}) {
-  const command = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+  // Calling npm.cmd through a shell makes the `<version` range an accidental
+  // redirection on Windows. Execute npm's CLI with Node when its path is known.
+  const configuredCli = process.env.npm_execpath
+  const bundledCli = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js')
+  const cli = configuredCli !== undefined && existsSync(configuredCli)
+    ? configuredCli
+    : existsSync(bundledCli) ? bundledCli : undefined
+  const command = cli === undefined ? 'npm' : process.execPath
+  const commandArgs = cli === undefined ? args : [cli, ...args]
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: 'inherit', ...options })
+    const child = spawn(command, commandArgs, { stdio: 'inherit', ...options })
     child.once('error', reject)
     child.once('exit', code => {
       if (code === 0) resolve()
