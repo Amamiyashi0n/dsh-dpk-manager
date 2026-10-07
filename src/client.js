@@ -37,7 +37,6 @@ window.__ModuleLoader__.load({
       migrateHint: '下载这个插件的 app 卷与 data 卷（含声明的设置），等价于 dpk snap name=<包>',
       uninstall: '卸载',
       uninstalling: '卸载中…',
-      uninstallNotLive: '实时卸载未生效，本地安装保持不变',
       confirmUninstall: '卸载该插件？这会把它从当前 profile 移除；没有其它 profile 引用时，本地仓库中的副本会一并删除。',
       badge: '该插件由 dpk 管理器安装和管理',
       badgeTitle: '该插件由「DSH 安装包管理助手」以 .dpk 归档安装（内容寻址、可校验），安装、升级与卸载都经本地 DPK 面板完成。',
@@ -73,7 +72,6 @@ window.__ModuleLoader__.load({
       migrateHint: 'Download this plugin\'s app and data volumes — the same file as dpk snap name=<package>',
       uninstall: 'Uninstall',
       uninstalling: 'Uninstalling…',
-      uninstallNotLive: 'Live unload was not applied; the local installation was kept',
       confirmUninstall: 'Uninstall this plugin? It is removed from this profile; with no other profile using it, the stored copy is deleted too.',
       badge: 'Installed and managed by the dpk manager',
       badgeTitle: 'This plugin was installed from a .dpk archive by the DSH package manager assistant (content-addressed and verifiable); install, upgrade, and uninstall all go through the Local DPK panel.',
@@ -286,7 +284,9 @@ window.__ModuleLoader__.load({
           const subject = props.subject
           if (!subject || subject.kind !== 'bundle') return null
           const name = subject.pkg.name
-          if (entryFor(name) === undefined) return null
+          const managed = entryFor(name)
+          if (managed === undefined) return null
+          const canUninstall = managed.installed === true || (managed.profiles?.length ?? 0) > 0
 
           // Both buttons hand the browser a data file the Host built with the dpk
           // verb of the same name: `export` carries this package's app volumes,
@@ -318,11 +318,9 @@ window.__ModuleLoader__.load({
             setBusy('remove')
             setStatus(tr('uninstalling'))
             try {
-              const result = await callDpk('removeArchive', { name })
-              if (result?.live !== true) {
-                setStatus(`${tr('failed')}: ${tr('uninstallNotLive')}`)
-                return
-              }
+              await callDpk('removeArchive', { name })
+              // A stale profile link has no active bundle to unload. The Host
+              // still removed the local profile/store state successfully.
               setStatus(`${tr('uninstall')} ✓`)
               await refresh()
               refreshSettled()
@@ -342,7 +340,9 @@ window.__ModuleLoader__.load({
               key: 'migrate', type: 'button', disabled: busy !== undefined, style: buttonStyle,
               title: tr('migrateHint'), onClick: () => { void onExportVolumes('snap') },
             }, tr('migrate')),
-            h('button', { key: 'remove', type: 'button', disabled: busy !== undefined, style: buttonStyle, onClick: () => { void onUninstall() } }, tr('uninstall')),
+            canUninstall
+              ? h('button', { key: 'remove', type: 'button', disabled: busy !== undefined, style: buttonStyle, onClick: () => { void onUninstall() } }, tr('uninstall'))
+              : null,
             status === undefined ? null : h('span', { key: 'status', style: mutedStyle }, status),
           ])
         }
@@ -367,7 +367,7 @@ window.__ModuleLoader__.load({
             [tr('digest'), entry.digest],
             [tr('installedAt'), formatStamp(entry.installedAt), entry.installedAt],
             [tr('storePath'), `${state.store}\\store\\${entry.digest}\\package`],
-            [tr('profileState'), `${entry.profileState ?? ''}${entry.installed ? 'installed' : 'not-a-dependency'}${entry.enabled ? ' · enabled' : ' · disabled'}`],
+            [tr('profileState'), `${entry.profileState ?? ''} · ${entry.installed ? 'installed' : 'not-a-dependency'} · ${entry.enabled ? 'enabled' : 'disabled'}`],
           ]
           return h('article', {
             style: { display: 'grid', gap: 10, padding: '18px 0', borderTop: '1px solid color-mix(in srgb, currentColor 16%, transparent)' },

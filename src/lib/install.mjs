@@ -228,7 +228,9 @@ function declaredDependencies(bytes, index) {
  *
  * @param options - `file`, `profile`, `home`, `reinstall`, `requireLive`,
  * `installMode`, `installer` (async `(packageDir, meta) => outcome`), `log`.
- * @returns a structured result describing every step.
+ * @returns a structured result describing every step. `displaced` contains the
+ * DPK store digests the target profile resolved for this package before the
+ * install; the caller reclaims them only after this operation commits.
  */
 export async function installArchive(options) {
   const log = options.log ?? (() => {})
@@ -312,6 +314,15 @@ export async function installArchive(options) {
   // official machinery, e.g. to build native addons or resolve registry peers.
   const profileDir = resolveProfileDir(home, profile)
   const packageName = localizeName(manifest.name)
+  // Capture the target package's current DPK links before anything can repoint
+  // the profile. The last successful install wins; version ordering is not
+  // involved. Other profiles remain protected by reclaimDisplaced's reference
+  // scan after the new profile state is committed.
+  const before = await referencedDigests({ home, root })
+  const displaced = [...new Set(before.rows
+    .filter(row => row.profile === profile && row.name === packageName)
+    .map(row => row.digest)
+    .filter(previousDigest => previousDigest !== digest))]
 
   // Managed data volumes (SPEC §13): the declaration is re-read from the
   // stored package.json (the single authoritative copy; the manifest's `dsh`
@@ -488,6 +499,7 @@ export async function installArchive(options) {
   return {
     ...verified, ...placed, profile, via: mode, command: null,
     created: placed.created,
+    displaced,
     volumes: volumeOutcomes,
     installOutcome: installOutcome ?? null,
     unchanged: installOutcome?.unchanged === true,

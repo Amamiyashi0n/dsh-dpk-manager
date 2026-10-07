@@ -144,7 +144,10 @@ async function linkedPackages(profileDir, storePrefix) {
       try {
         scoped = await readdir(join(modules, entry.name), { withFileTypes: true })
       } catch (error) {
-        scopeError = error
+        // A broken scope link cannot resolve a package, just like a broken
+        // unscoped link below. It must not block reclaiming an old DPK digest
+        // from an otherwise readable profile.
+        if (error?.code !== 'ENOENT' && error?.code !== 'ENOTDIR') scopeError = error
         continue
       }
       for (const inner of scoped) await consider(join(modules, entry.name, inner.name), `${entry.name}/${inner.name}`)

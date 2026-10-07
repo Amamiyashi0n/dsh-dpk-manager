@@ -214,6 +214,8 @@ test('a re-install that changes nothing is not recorded as a new install', async
 
   assert.equal(again.data.unchanged, true)
   assert.equal(again.data.created, false)
+  assert.deepEqual(again.data.reclaimed, [], 'reinstalling the same digest does not create a displaced copy')
+  assert.doesNotMatch(again.text, /displaced digest/, 'the no-op install does not report a kept old digest')
   const after = (await readIndex(dpkRoot(home))).entries[0].installedAt
   // The panel reads "installed after this process started" as "restart to load
   // it", so a run that changed nothing must not move the timestamp: read as a

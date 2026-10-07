@@ -77,7 +77,7 @@ dpk 是本地文件安装器，命令形状照抄 **apt**——高层动词、�
 | --- | --- | --- |
 | `update` | `apt update` | 上游按包分两类：`.dpk` 文件包看来源目录；**npm 包问 registry**（经官方管理器的 `inspect` = profile 内的 `pnpm view`，registry/代理/认证全部沿用官方插件页的配置）。不缓存、不落状态，只报告 |
 | `upgrade` | `apt upgrade` | 把已装的包升到可用最新版。**npm 包逐个经官方 `installBundle(name@version)` 走 pnpm**（registry 树只有 pnpm 装得了），`.dpk` 包由 dpk 自己装；每个引用了旧版的 profile 各装一次，并顺手回收被替换的 store 副本 |
-| `install <文件>` | `apt install ./x.deb` | 同一形状：装一个本地文件 |
+| `install <文件>` | `apt install ./x.deb` | 同一形状：装一个本地文件；成功覆盖同一 profile 的同名 DPK 包后，按最后一次成功安装回收被替换的 store digest（其他 profile 仍引用时保留） |
 | `remove` / `purge` | `apt remove` / `apt purge` | 卸下 / 连受管数据一起删 |
 | `autoremove` | `apt autoremove` | 删掉不再被任何 profile 引用的东西 |
 | `list` | `apt list --installed` | 已装清单（含 `broken` 诊断，见下） |
@@ -221,7 +221,8 @@ dpk 只管理自己的路径：dpk 目录或 profile 里出现别人的文件，
 这些是 pnpm 写的，不算 dpk 的写入面（那也正是默认路径不跑 pnpm 的原因之一）。
 
 **store 只保留 profile 真正引用的 digest**：判据永远是 profile 的依赖行，不是账本。
-`remove` 与 `upgrade` 各自只回收**自己替换掉的那一个** digest（只读得到全部 profile 时才动手，读不到就保留并说明）；
+`install`、`remove` 与 `upgrade` 各自只回收**自己替换掉的 digest**（只读得到全部 profile 时才动手，读不到就保留并说明）。DPK 的覆盖安装不比较
+SemVer：安装成功的最后一次结果就是当前结果；旧 digest 只有在没有任何 profile 引用时才回收。
 把 store 收敛到"只剩被引用的"是 `dpk autoremove` 的事——它的整个语义就是回收，所以只有它会做全量清扫。
 
 ## 与 apt/dpkg 的对照

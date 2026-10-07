@@ -251,13 +251,26 @@ export function createDpkRemoteService(ctx, config = {}) {
      */
     async removeArchive(request) {
       const name = String(request?.name ?? '')
-      // Reaching the next line means the profile really held the package: the
-      // action throws otherwise, so no "removed: true" field is needed to say so.
+      // A stale store link can still be visible to dpk after the official
+      // manager no longer lists the package. Such a package has no running
+      // bundle to unload; requiring a live result would stop cleanup before
+      // the profile link and ledger row are removed. Active bundles stay strict:
+      // a failed live unload must never leave code running after this action.
+      let requireLive = true
+      try {
+        const manager = await Promise.resolve(ctx.get('pluginManager'))
+        if (manager !== undefined && typeof manager.listBundles === 'function') {
+          const bundle = (await manager.listBundles()).find(item => item.name === name)
+          requireLive = bundle?.installed === true && bundle?.enabled === true
+        }
+      } catch {
+        // Keep the strict default when the manager cannot describe its state.
+      }
       const result = await runDpkAction('remove', { name }, {
         home,
         profile: profileName(),
-        apply,
-        requireLive: true,
+        apply: requireLive ? apply : undefined,
+        requireLive,
         log: message => { ctx.logger?.info?.(`dpk(ui): ${message.trim()}`) },
       })
       return { ...result.data, name, text: result.text }

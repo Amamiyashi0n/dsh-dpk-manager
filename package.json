@@ -1,6 +1,6 @@
 {
   "name": "dsh-dpk-manager",
-  "version": "2.1.63",
+  "version": "2.1.65",
   "type": "module",
   "main": "./src/index.js",
   "bin": {
@@ -11,14 +11,16 @@
   "engines": {
     "node": ">=20"
   },
-  "peerDependencies": {
-    "@deepseek-ai/dsh-client-ui-primitives": "*",
-    "react": "*"
-  },
   "exports": {
-    ".": "./src/index.js",
-    "./cli": "./src/cli.mjs",
-    "./client": "./src/client.js",
+    ".": {
+      "default": "./src/index.js"
+    },
+    "./cli": {
+      "default": "./src/cli.mjs"
+    },
+    "./client": {
+      "default": "./src/client.js"
+    },
     "./src/*": "./src/*",
     "./lib/*": "./src/lib/*",
     "./schemas/*": "./schemas/*",

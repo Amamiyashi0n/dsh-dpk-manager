@@ -279,11 +279,11 @@ async function directoryBytes(dir) {
  * that cannot be examined at all may still resolve a store copy, so collection
  * is deferred until that profile can be read again and the condition is reported.
  *
- * `upgrade` and `remove` deliberately do **not** call this: each of them
+ * `install`, `upgrade` and `remove` deliberately do **not** call this: each of them
  * orphans one digest it knows by name, and collecting that one is
  * `reclaimDisplaced`'s job. A whole-store collection belongs to the verb whose
- * entire meaning is "collect", so that installing a package can never delete
- * copies of packages the user never mentioned.
+ * entire meaning is "collect", so these operations can never delete copies of
+ * packages the user never mentioned.
  *
  * @param options - `{ home, root }`.
  * @returns `{ digests, bytes, referenced, profiles, unreadable, cache, cacheRemoved, stagings, stagingBytes }`.
@@ -392,7 +392,7 @@ async function sweepUnreferenced(options) {
 /**
  * Reclaim exactly the digests one operation displaced.
  *
- * `upgrade` and `remove` each orphan a known, named set of store directories:
+ * `install`, `upgrade` and `remove` each orphan a known, named set of store directories:
  * the digest a profile resolved before the operation repointed it. Only those
  * are candidates here — a store-wide sweep inside them would delete copies
  * belonging to packages the user never mentioned (measured: an `upgrade` of one
@@ -401,7 +401,7 @@ async function sweepUnreferenced(options) {
  *
  * Deletion is conservative: a profile directory that cannot be examined at all
  * may be the one resolving a candidate digest, so nothing is collected and the
- * report names it. These two verbs are not the collector, so deferring is free —
+ * report names it. These verbs are not the collector, so deferring is free —
  * the copy is `autoremove`'s to collect once the profile can be read again.
  * Leaving a directory behind is recoverable; deleting the copy a profile loads
  * is not.
@@ -578,6 +578,7 @@ export async function runDpkAction(action, args = {}, context = {}) {
     }
     case 'install': {
       const { path, buffer } = await readArchive(args)
+      const root = dpkRoot(home)
       const result = await installArchive({
         file: path,
         buffer,
@@ -592,6 +593,10 @@ export async function runDpkAction(action, args = {}, context = {}) {
          requireLive: context.requireLive === true,
         log: context.log,
       })
+      // A DPK install replaces the target profile's previous DPK copy. Reclaim
+      // only those displaced digests after the new ledger/profile commit; the
+      // shared reference scan keeps copies used by another profile.
+      const reclaimed = await reclaimDisplaced({ home, root, digests: result.displaced })
       const lines = [
         `package  ${describeManifest(result.manifest)}`,
         `store    ${result.packageDir}`,
@@ -615,6 +620,8 @@ export async function runDpkAction(action, args = {}, context = {}) {
         if (volume.action === 'kept-local') lines.push(`data     ${volume.path}: kept the local copy; new seed staged as .dpk-new`)
         if (volume.action === 'adopted') lines.push(`data     ${volume.path}: adopted a pre-existing file`)
       }
+      const reclaimReport = reclaimLine(reclaimed)
+      if (reclaimReport !== '') lines.push(reclaimReport)
       return {
         action,
         text: lines.join('\n'),
@@ -628,6 +635,7 @@ export async function runDpkAction(action, args = {}, context = {}) {
           created: result.created,
           unchanged: result.unchanged === true,
           live: result.live === true,
+          reclaimed: reclaimed.digests.map(item => item.digest),
           volumes: result.volumes ?? [],
         },
       }

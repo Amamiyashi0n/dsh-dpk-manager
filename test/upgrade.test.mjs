@@ -94,6 +94,29 @@ test('upgrade installs the newer version into every profile that had the old one
   assert.equal((await runDpkAction('update', {}, { home })).data.upgradable, 0)
 })
 
+test('install reclaims the previous DPK digest by install order, not version order', async () => {
+  const home = await makeHome()
+  const root = dpkRoot(home)
+  const { built } = await sourceWith(home, ['2.0.0', '1.0.0'])
+  await profileUsing(home, 'probe')
+  await profileUsing(home, 'web')
+  await runDpkAction('install', { file: built[0].file }, { home, profile: 'probe' })
+  await runDpkAction('install', { file: built[0].file }, { home, profile: 'web' })
+
+  const first = await runDpkAction('install', { file: built[1].file }, { home, profile: 'probe' })
+  assert.deepEqual(first.data.reclaimed, [], 'the other profile still references the previous digest')
+  assert.equal(existsSync(storeDir(root, built[0].digest)), true)
+  assert.match(first.text, /kept {5}1 displaced digest\(s\)/)
+
+  const second = await runDpkAction('install', { file: built[1].file }, { home, profile: 'web' })
+  assert.deepEqual(second.data.reclaimed, [built[0].digest])
+  assert.equal(existsSync(storeDir(root, built[0].digest)), false, 'the previous install is collected after its last holder moves')
+  assert.equal(existsSync(storeDir(root, built[1].digest)), true)
+  assert.match(second.text, /reclaimed 1 displaced digest\(s\)/)
+  const manifest = await readProfileManifest(profileDir(home, 'probe'))
+  assert.equal(manifest.dependencies['@local/dpk-fixture'], linkSpecifier(join(storeDir(root, built[1].digest), 'package')))
+})
+
 test('update scans a directory the caller names, and tolerates junk in it', async () => {
   const home = await makeHome()
   const { built } = await sourceWith(home, ['1.0.0'])
@@ -198,6 +221,26 @@ test('an unparseable manifest no longer blocks collecting what nothing links to'
   assert.equal(existsSync(storeDir(root, built[0].digest)), false, 'the displaced copy is collected')
   assert.deepEqual(result.data.reclaimed, [built[0].digest])
   assert.equal(existsSync(unrelated), true, 'the unrelated copy is still autoremove\'s business')
+})
+
+test('a broken scoped link does not block reclaiming the displaced digest', async () => {
+  const home = await makeHome()
+  const root = dpkRoot(home)
+  const { built } = await sourceWith(home, ['1.0.0', '1.1.0'])
+  await installVersion(home, built[0].file)
+
+  // An unrelated stale scope link used to make the whole profile unreadable,
+  // so upgrade left the old DPK copy behind until a manual autoremove.
+  const headless = await profileUsing(home, 'headless')
+  const modules = join(headless, 'node_modules')
+  await mkdir(modules, { recursive: true })
+  await symlink(join(home, 'missing-deepseek'), join(modules, '@deepseek-ai'), 'junction')
+
+  const result = await runDpkAction('upgrade', {}, { home })
+
+  assert.deepEqual(result.data.reclaimed, [built[0].digest])
+  assert.equal(existsSync(storeDir(root, built[0].digest)), false)
+  assert.match(result.text, /reclaimed 1 displaced digest\(s\)/)
 })
 
 test('upgrading every profile that held the old version leaves no copy behind', async () => {

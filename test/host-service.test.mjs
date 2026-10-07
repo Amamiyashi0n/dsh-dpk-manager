@@ -233,6 +233,34 @@ test('removeArchive deletes the store copy and the row once no profile reference
   assert.equal(existsSync(storeDir(root, digest)), false, 'the store copy is deleted')
 })
 
+test('removeArchive cleans a stale profile link without requiring a live bundle', async () => {
+  const home = await makeHome()
+  const root = dpkRoot(home)
+  const digest = 'c'.repeat(64)
+  const packageDir = await storeEntry(root, digest, { name: '@local/stale-pkg' })
+  await recordInstall(root, { name: '@local/stale-pkg', version: '1.0.0', digest, source: 'stale.dpk' })
+  await makeProfile(home, 'desktop', {
+    dependencies: { '@local/stale-pkg': linkSpecifier(packageDir) },
+  })
+
+  const asked = []
+  const service = createDpkRemoteService(makeCtx({
+    pluginManager: {
+      // This is the screenshot state: the profile link remains, but the
+      // official manager no longer has an installed active bundle.
+      listBundles: async () => [],
+      setBundleEnabled: async (...args) => { asked.push(args); return { application: 'failed' } },
+    },
+  }), { home })
+  const outcome = await withProfile('desktop', () => service.removeArchive({ name: '@local/stale-pkg' }))
+
+  assert.equal(outcome.live, false, 'there was no active bundle to unload')
+  assert.deepEqual(asked, [], 'stale cleanup does not ask the manager to unload an unknown bundle')
+  assert.equal((await readIndex(root)).entries.length, 0)
+  assert.equal(existsSync(storeDir(root, digest)), false)
+  assert.deepEqual((await readProfileManifest(profileDir(home, 'desktop'))).dependencies, {})
+})
+
 test('detectProfileName finds the profile whose node_modules holds this package', async () => {
   const home = await makeHome()
   const previous = process.env.DSH_PROFILE

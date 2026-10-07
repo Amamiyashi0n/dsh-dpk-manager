@@ -107,9 +107,42 @@ test('client mounts its local Remote contribution before reading the namespace',
 test('the two buttons ask the Host for the app scope and the app+data scope', async () => {
   let registration
   const window = { __ModuleLoader__: { load(value) { registration = value } } }
-  vm.runInNewContext(source, { window })
 
   const calls = []
+  const downloads = []
+  const revoked = []
+  const blobs = []
+  class TestBlob {
+    constructor(parts, options) {
+      this.bytes = [...parts[0]]
+      this.type = options.type
+      blobs.push(this)
+    }
+  }
+  const document = {
+    body: {
+      appendChild(anchor) { downloads.push(anchor) },
+    },
+    createElement(tag) {
+      assert.equal(tag, 'a')
+      return {
+        click() { this.clicked = true },
+        remove() { this.removed = true },
+      }
+    },
+  }
+  const URL = {
+    createObjectURL(blob) { return `blob:${blobs.indexOf(blob)}` },
+    revokeObjectURL(url) { revoked.push(url) },
+  }
+  vm.runInNewContext(source, {
+    window,
+    URL,
+    Blob: TestBlob,
+    document,
+    atob: () => '{}',
+    setTimeout: callback => { callback(); return 0 },
+  })
   const effects = []
   const react = {
     // Enough of createElement to keep the children: the panel builds its buttons
@@ -148,7 +181,10 @@ test('the two buttons ask the Host for the app scope and the app+data scope', as
           }),
           // The Host builds the file; the browser only downloads it. Recording
           // the request is what proves which verb each button asks for.
-          exportVolumes: async request => { calls.push(request); return { ok: true, value: { fileName: 'x.json', base64: '', bytes: 0 } } },
+          exportVolumes: async request => {
+            calls.push(request)
+            return { ok: true, value: { fileName: `${request.verb}.json`, base64: 'e30=', bytes: 2 } }
+          },
           removeArchive: async () => ({ ok: true, value: {} }),
         }
         return async () => { delete this.dpk }
@@ -209,6 +245,15 @@ test('the two buttons ask the Host for the app scope and the app+data scope', as
   byLabel('迁移插件（app+data）').props.onClick()
   await new Promise(resolve => setImmediate(resolve))
   assert.deepEqual(calls.map(call => [call.name, call.verb]), [['@local/known', 'export'], ['@local/known', 'snap']])
+  assert.deepEqual(downloads.map(anchor => ({ name: anchor.download, href: anchor.href, clicked: anchor.clicked, removed: anchor.removed })), [
+    { name: 'export.json', href: 'blob:0', clicked: true, removed: true },
+    { name: 'snap.json', href: 'blob:1', clicked: true, removed: true },
+  ])
+  assert.deepEqual(blobs.map(blob => ({ bytes: blob.bytes, type: blob.type })), [
+    { bytes: [123, 125], type: 'application/json' },
+    { bytes: [123, 125], type: 'application/json' },
+  ])
+  assert.deepEqual(revoked, ['blob:0', 'blob:1'])
 })
 
 test('the plugins-page badge tags only bundles this manager installed', async () => {

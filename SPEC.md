@@ -325,7 +325,7 @@ profile `package.json` 里的 `link:` 依赖行，以及 `node_modules/<name>` �
 | 动词 | 回收范围 |
 | --- | --- |
 | `remove` | 只回收该 profile 刚放手的那**一个** digest（`store` 行显示 `kept`/`dropped`） |
-| `upgrade` | 只回收本次升级替换掉的**一个** digest（每行一个） |
+| `install` / `upgrade` | 只回收本次成功操作替换掉的 digest；覆盖安装按最后一次成功安装判定，不比较 SemVer |
 | `autoremove` | 全量回收：无人引用的 digest（含只有目录、账本里没有记录的孤儿）、被中断写入的暂存物 |
 
 全量清扫只属于 `autoremove`——它的整个语义就是回收。安装/卸载一个包时顺手做全量清扫会删掉用户从未提及的包
