@@ -7,7 +7,7 @@
 
 | 形态 | 入口 | 用法 |
 | --- | --- | --- |
-| 插件页面板 | `src/client.js` → 「本地 DPK」侧栏 | 导入 `.dpk`、导出插件（仅 app）/ 迁移插件（app+data）、卸载，人点按钮即可 |
+| 插件页面板 | `src/client.js` → 「本地 DPK」侧栏 | 导入/导出 `.dpk`、迁移插件运行期数据（app+data）、卸载，人点按钮即可 |
 | 官方插件页徽章 | `src/client.js` → `plugins.detail.badge` | 由本管理器装好的包，在官方插件页标题旁显示「该插件由 dpk 管理器安装和管理」 |
 | npm CLI | `src/cli.mjs` → `dpk` | `npm install -g dsh-dpk-manager` 后执行 `dpk build ./my-plugin` |
 | 会话内工具 | `src/index.js` → 注册 `dpk` 工具 | 装进 profile 后，agent 可直接 `dpk action=verify/install/…` |

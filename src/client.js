@@ -27,13 +27,13 @@ window.__ModuleLoader__.load({
       importing: '校验并安装中…',
       imported: '已安装',
       failed: '失败',
-      export: '导出插件（仅 app）',
+      export: '导出插件（.dpk）',
       exporting: '导出中…',
       exported: '已导出',
       migrate: '迁移插件（app+data）',
       migrating: '迁移中…',
       migrated: '已迁移',
-      exportHint: '下载这个插件的 app 卷（运行期写下的数据），等价于 dpk export name=<包>',
+      exportHint: '下载这个插件的 .dpk 安装包，可直接重新导入',
       migrateHint: '下载这个插件的 app 卷与 data 卷（含声明的设置），等价于 dpk snap name=<包>',
       uninstall: '卸载',
       uninstalling: '卸载中…',
@@ -62,13 +62,13 @@ window.__ModuleLoader__.load({
       importing: 'Verifying and installing…',
       imported: 'Installed',
       failed: 'Failed',
-      export: 'Export plugin (app)',
+      export: 'Export plugin (.dpk)',
       exporting: 'Exporting…',
       exported: 'Exported',
       migrate: 'Migrate plugin (app + data)',
       migrating: 'Migrating…',
       migrated: 'Migrated',
-      exportHint: 'Download this plugin\'s app volumes — the same file as dpk export name=<package>',
+      exportHint: 'Download this plugin as a .dpk package for re-import',
       migrateHint: 'Download this plugin\'s app and data volumes — the same file as dpk snap name=<package>',
       uninstall: 'Uninstall',
       uninstalling: 'Uninstalling…',
@@ -279,7 +279,7 @@ window.__ModuleLoader__.load({
         // --- detail actions ---------------------------------------------------
         function DpkActions(props) {
           const [status, setStatus] = React.useState(undefined)
-          const [busy, setBusy] = React.useState(false)
+          const [busy, setBusy] = React.useState(undefined)
           useManaged()
           const subject = props.subject
           if (!subject || subject.kind !== 'bundle') return null
@@ -288,23 +288,40 @@ window.__ModuleLoader__.load({
           if (managed === undefined) return null
           const canUninstall = managed.installed === true || (managed.profiles?.length ?? 0) > 0
 
-          // Both buttons hand the browser a data file the Host built with the dpk
-          // verb of the same name: `export` carries this package's app volumes,
-          // `snap` carries app and data volumes.
+          function downloadResult(result, type) {
+            const url = URL.createObjectURL(new Blob([toBytes(result.base64)], { type }))
+            const anchor = document.createElement('a')
+            anchor.href = url
+            anchor.download = result.fileName
+            document.body.appendChild(anchor)
+            anchor.click()
+            anchor.remove()
+            // Let the browser start the download before releasing its blob.
+            setTimeout(() => URL.revokeObjectURL(url), 1000)
+          }
+
+          async function onExportArchive() {
+            setBusy('archive')
+            setStatus(tr('exporting'))
+            try {
+              const result = await callDpk('exportArchive', { name })
+              downloadResult(result, 'application/octet-stream')
+              setStatus(`${tr('exported')} ${result.fileName} (${result.bytes} B)`)
+            } catch (error) {
+              setStatus(`${tr('failed')}: ${String(error?.message ?? error)}`)
+            } finally {
+              setBusy(undefined)
+            }
+          }
+
+          // The migration action carries runtime data volumes, which are not
+          // part of the standard .dpk package format.
           async function onExportVolumes(verb) {
             setBusy(verb)
             setStatus(tr(verb === 'snap' ? 'migrating' : 'exporting'))
             try {
               const result = await callDpk('exportVolumes', { name, verb })
-              const url = URL.createObjectURL(new Blob([toBytes(result.base64)], { type: 'application/json' }))
-              const anchor = document.createElement('a')
-              anchor.href = url
-              anchor.download = result.fileName
-              document.body.appendChild(anchor)
-              anchor.click()
-              anchor.remove()
-              // Let the browser start the download before releasing its blob.
-              setTimeout(() => URL.revokeObjectURL(url), 1000)
+              downloadResult(result, 'application/json')
               setStatus(`${tr(verb === 'snap' ? 'migrated' : 'exported')} ${result.fileName} (${result.bytes} B)`)
             } catch (error) {
               setStatus(`${tr('failed')}: ${String(error?.message ?? error)}`)
@@ -334,7 +351,7 @@ window.__ModuleLoader__.load({
           return h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } }, [
             h('button', {
               key: 'export', type: 'button', disabled: busy !== undefined, style: buttonStyle,
-              title: tr('exportHint'), onClick: () => { void onExportVolumes('export') },
+              title: tr('exportHint'), onClick: () => { void onExportArchive() },
             }, tr('export')),
             h('button', {
               key: 'migrate', type: 'button', disabled: busy !== undefined, style: buttonStyle,

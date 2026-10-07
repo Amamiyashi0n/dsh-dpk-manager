@@ -104,11 +104,12 @@ test('client mounts its local Remote contribution before reading the namespace',
   )
 })
 
-test('the two buttons ask the Host for the app scope and the app+data scope', async () => {
+test('export downloads a dpk and migration downloads app plus data', async () => {
   let registration
   const window = { __ModuleLoader__: { load(value) { registration = value } } }
 
   const calls = []
+  const archiveCalls = []
   const downloads = []
   const revoked = []
   const blobs = []
@@ -156,7 +157,7 @@ test('the two buttons ask the Host for the app scope and the app+data scope', as
   }
   let page
   const dictionary = {
-    export: '导出插件（仅 app）',
+    export: '导出插件（.dpk）',
     migrate: '迁移插件（app+data）',
     exporting: '导出中…',
     migrating: '迁移中…',
@@ -184,6 +185,10 @@ test('the two buttons ask the Host for the app scope and the app+data scope', as
           exportVolumes: async request => {
             calls.push(request)
             return { ok: true, value: { fileName: `${request.verb}.json`, base64: 'e30=', bytes: 2 } }
+          },
+          exportArchive: async request => {
+            archiveCalls.push(request)
+            return { ok: true, value: { fileName: 'known@1.0.0.dpk', base64: 'e30=', bytes: 2 } }
           },
           removeArchive: async () => ({ ok: true, value: {} }),
         }
@@ -235,22 +240,29 @@ test('the two buttons ask the Host for the app scope and the app+data scope', as
 
   assert.deepEqual(
     buttons.map(button => button.props.children),
-    ['选择 .dpk 文件', '导出插件（仅 app）', '迁移插件（app+data）', '卸载'],
+    ['选择 .dpk 文件', '导出插件（.dpk）', '迁移插件（app+data）', '卸载'],
   )
-  // The old `导出 DPK` button re-packed the package; these two carry volumes.
-  // Clicking runs the download, which needs a browser: the verb is recorded
-  // before the Blob is built, so what the button asked for is still observable.
+  // A disabled button swallows the click and still looks alive: `busy` idles
+  // at `undefined`, so `disabled: busy !== undefined` must start out false.
+  // A `false` initialiser would weld these buttons shut from the first render.
+  assert.deepEqual(
+    buttons.slice(1).map(button => button.props.disabled),
+    [false, false, false],
+  )
+  // Export re-packs the installed store copy into a real `.dpk`; migration
+  // remains a data-volume snapshot because runtime data is not package content.
   const byLabel = label => buttons.find(button => button.props.children === label)
-  byLabel('导出插件（仅 app）').props.onClick()
+  byLabel('导出插件（.dpk）').props.onClick()
   byLabel('迁移插件（app+data）').props.onClick()
   await new Promise(resolve => setImmediate(resolve))
-  assert.deepEqual(calls.map(call => [call.name, call.verb]), [['@local/known', 'export'], ['@local/known', 'snap']])
+  assert.deepEqual(archiveCalls.map(call => call.name), ['@local/known'])
+  assert.deepEqual(calls.map(call => [call.name, call.verb]), [['@local/known', 'snap']])
   assert.deepEqual(downloads.map(anchor => ({ name: anchor.download, href: anchor.href, clicked: anchor.clicked, removed: anchor.removed })), [
-    { name: 'export.json', href: 'blob:0', clicked: true, removed: true },
+    { name: 'known@1.0.0.dpk', href: 'blob:0', clicked: true, removed: true },
     { name: 'snap.json', href: 'blob:1', clicked: true, removed: true },
   ])
   assert.deepEqual(blobs.map(blob => ({ bytes: blob.bytes, type: blob.type })), [
-    { bytes: [123, 125], type: 'application/json' },
+    { bytes: [123, 125], type: 'application/octet-stream' },
     { bytes: [123, 125], type: 'application/json' },
   ])
   assert.deepEqual(revoked, ['blob:0', 'blob:1'])
