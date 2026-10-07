@@ -24,6 +24,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { PACKAGE_PREFIX, validateManifest, compareManifestToPackage, DpkManifestError, DPK_GENERATOR } from './dpk-manifest.mjs'
 import { validateDshPackage, sha256 } from './dsh-package.mjs'
+import { parseDataDeclaration } from './data.mjs'
+import { DPK_DATA_ENTRY, readDpkData } from './dpk-data.mjs'
 import { readZipEntry, readZipIndex } from './zip.mjs'
 
 /** The manifest file at the archive root (`DPK_ENTRY` is the *package* entry, not this). */
@@ -62,9 +64,8 @@ export function inspectArchive(buffer) {
 
   const filePaths = index.entries.filter(entry => !entry.path.endsWith('/')).map(entry => entry.path)
   for (const path of filePaths) {
-    if (path !== MANIFEST_ENTRY && !path.startsWith(PACKAGE_PREFIX)) {
-      throw new DpkArchiveError(`unexpected top-level entry: ${path} (only ${MANIFEST_ENTRY} and ${PACKAGE_PREFIX} are allowed)`, 'DPK_LAYOUT')
-    }
+    if (path === MANIFEST_ENTRY || path === DPK_DATA_ENTRY || path.startsWith(PACKAGE_PREFIX) || path.startsWith('data/')) continue
+    throw new DpkArchiveError(`unexpected top-level entry: ${path} (only ${MANIFEST_ENTRY}, ${DPK_DATA_ENTRY}, ${PACKAGE_PREFIX} and data/ are allowed)`, 'DPK_LAYOUT')
   }
   if (!filePaths.includes(MANIFEST_ENTRY)) throw new DpkArchiveError(`archive has no ${MANIFEST_ENTRY}`, 'DPK_LAYOUT')
   if (filePaths.filter(path => path === MANIFEST_ENTRY).length !== 1) {
@@ -80,18 +81,31 @@ export function inspectArchive(buffer) {
     throw new DpkManifestError(`${MANIFEST_ENTRY} is not valid JSON: ${String(error)}`, 'DPK_MANIFEST_INVALID')
   }
   const manifest = validateManifest(parsed)
+  const data = readDpkData(buffer, { index, package: manifest.name })
+  if (data !== undefined) {
+    const declared = parseDataDeclaration(manifest.dsh?.data, `${MANIFEST_ENTRY}: dsh.data`)
+    const declaredPaths = new Set(declared.map(volume => `${volume.class}/${volume.path}`))
+    for (const file of data.files) {
+      if (!declaredPaths.has(file.path)) {
+        throw new DpkArchiveError(
+          `${DPK_DATA_ENTRY} carries ${file.path}, which the package does not declare`,
+          'DPK_DATA_UNDECLARED',
+        )
+      }
+    }
+  }
   checks.push(`manifest: ${manifest.name}@${manifest.version}, format ${manifest.dpk}, roles ${manifest.roles.join('+')}`)
   checks.push(`integrity: digest ${manifest.integrity.digest} matches the declared file list`)
 
   // The archive must contain exactly the manifest's files.
   const manifestPaths = new Set(manifest.files.map(file => file.path))
   for (const path of filePaths) {
-    if (path === MANIFEST_ENTRY) continue
+    if (path === MANIFEST_ENTRY || path === DPK_DATA_ENTRY || path.startsWith('data/')) continue
     if (!manifestPaths.has(path)) {
       throw new DpkArchiveError(`archive contains ${path}, which ${MANIFEST_ENTRY} does not list`, 'DPK_UNLISTED_FILE')
     }
   }
-  return { index, manifest, checks, filePaths }
+  return { index, manifest, data, checks, filePaths }
 }
 
 /**
@@ -205,7 +219,7 @@ async function deepFacts(directory, manifest) {
 export async function verifyArchive(buffer, options = {}) {
   const warnings = []
   const notes = []
-  const { index, manifest, checks } = options.inspected ?? inspectArchive(buffer)
+  const { index, manifest, data, checks } = options.inspected ?? inspectArchive(buffer)
 
   let packageFacts
   if (options.deep !== false) {
@@ -226,7 +240,7 @@ export async function verifyArchive(buffer, options = {}) {
     warnings.push('deep check skipped: DSH conformance of package/ was not re-validated')
   }
 
-  return { manifest, files: manifest.files, warnings, notes, checks, packageFacts }
+  return { manifest, data, files: manifest.files, warnings, notes, checks, packageFacts }
 }
 
 /** Small helper for callers that only need identity. */

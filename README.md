@@ -24,13 +24,13 @@ dpk list                   列出 dpk 装过什么、谁在用、能不能被 lo
 dpk show <文件.dpk|包名>   一个动词回答"这是什么"：清单，或版本/digest/store 路径/谁在用/数据卷
 dpk verify <文件.dpk>      结构 + 完整性 + DSH 合规（装之前先用）
 dpk build <目录>           校验 DSH 合规 → 写出 .dpk（同输入逐字节可复现）
-dpk export name=<包>       导出该包的 **app 卷** → 单包 JSON；不带 data 卷
+dpk export name=<包>       导出该包的 `.dpk`（插件 + **app 卷**）；不带 data 卷
 dpk export all             全部 dpk 安装插件的 **app 卷** → `.dpks` 归档
-dpk snap name=<包>         **快照**该包的 **app + data 卷** → 单包 JSON
+dpk snap name=<包>         **快照**该包的 `.dpk`（插件 + **app + data 卷**）
 dpk snap all               **整机快照**：全部插件的 **app + data 卷** → `.dpks` 归档
                            （归档 zip：`dpks.json` 清单只列路径，内容各在 `data/<包>/<卷路径>` 条目里一次）
-                           默认名按动词分：`<包>-data.json` / `<包>-snap.json`、`dpks.dpks` / `snap.dpks`
-dpk import <文件>          写回数据卷。按**内容**认两种文件：单包 JSON 与 `.dpks` 归档——改名也认、
+                           默认名按动词分：`<包>-data.dpk` / `<包>-snap.dpk`、`dpks.dpks` / `snap.dpks`
+dpk import <文件>          写回数据卷。按**内容**认 `.dpk` 数据区、旧版单包 JSON 与 `.dpks` 归档——改名也认、
                            也不问它出自 export 还是 snap；落位按包**当前声明**的类，未装的包跳过并提示
 dpk pkg op=list            读一个数据文件里带了哪些包、每个包哪些卷（只读）
 dpk pkg op=add name=<包>   把一个**已装**包并入该文件（已存在就刷新那条条目；默认 app+data，
@@ -39,7 +39,7 @@ dpk pkg op=remove name=<包>  从该文件里删掉一个包的条目
 dpk pkg op=set name=<包> to=<新名>
                            **改包名**：把文件里那条记录改成新名字，卷的字节一动不动（归档里
                            承载卷的 `data/<包>/…` 条目随之改名）；新名本机没装也可以
-                           —— 形态随内容：1 个包 = 单包 JSON，≥2 个包 = `.dpks` 归档；
+                           —— 形态随内容：1 个包的迁移使用 `.dpk`，≥2 个包 = `.dpks` 归档；
                            增到第二个包升为 `.dpks`，删回一个降回 `.json`，旧名一并移除
 ```
 
@@ -53,13 +53,13 @@ dpk pkg op=set name=<包> to=<新名>
 
 | | 一个包（`name=<包>`） | 全部包（`all: true`） |
 | --- | --- | --- |
-| **`export`**（仅 app） | 单包 JSON，`dpk-config-data/1` | `.dpks` 归档，`dpks-data/1` |
-| **`snap`**（app + data） | 单包 JSON，`dpk-config-data/1` | `.dpks` 归档，`dpks-data/1` |
+| **`export`**（仅 app） | `.dpk`，含 `dpk.json` + `dpk-data.json` + `data/app/…` | `.dpks` 归档，`dpks-data/1` |
+| **`snap`**（app + data） | `.dpk`，另外携带 `data/data/…` | `.dpks` 归档，`dpks-data/1` |
 
-容器不区分动词：`import` 认两种文件、也不问它出自哪个动词，区分只在携带的类。默认文件名相同，同名导入不会
-混淆，因为单包 JSON 里写着 `package`、归档里写着清单。
+单包 `.dpk` 的 `dpk-data.json` 与插件包共用一个归档；`import` 不问它出自 `export` 还是 `snap`，区分只在携带的类。默认文件名相同，同名导入不会
+混淆，因为 `.dpk` 的 `dpk.json`/`dpk-data.json` 与归档清单都携带包名。
 
-**形态由内容决定。** 一个包 = 单包 JSON，两个及以上 = `.dpks` 归档；`dpk pkg` 增删包时文件就在这两个形态
+**形态由内容决定。** 一个包的迁移使用 `.dpk`，两个及以上仍使用 `.dpks` 归档；`dpk pkg` 处理旧版数据文件时仍可在这两个形态
 之间迁移，扩展名跟着改（`.json` ↔ `.dpks`），旧名随即删除。所以读取端从不只信文件名或清单里的 `format`：
 一份手写的、写着单包却列了多个包条目的文件照样能读（条目自带 `package` 时以条目为准，见
 [data-file.mjs](src/lib/data-file.mjs)）——拒绝一份完全可读的数据没有道理。
@@ -149,10 +149,11 @@ CLI 是 `src/cli.mjs` 的薄入口，实际动作仍由 `src/lib/cli.mjs` 统一
   `dependencies`** 时自动走 `service`：链接一个 store 目录只能给出包本身，给不出它期望的 registry
   依赖树，那是 pnpm 唯一不可替代的地方。SPEC 要求的自包含包（含本仓库的两个）都不声明 runtime
   依赖，所以它们走的是零 pnpm 的那条路。
-- **DPK 调试模式**：面板默认关闭。点击「开启 DPK 调试模式」时，manager 复用当前 Desktop
-  或 `dsh web` 已经监听的官方 `webServer` 端口，并用 `connection.authenticatedUrl()` 打开
-  DSH Web；Electron 内嵌界面继续运行。点击关闭会立即撤销 manager 的调试状态，并关闭由普通
-  浏览器面板打开且仍可控的窗口；共享 Web 服务本身不被插件停止，因为 Electron 仍依赖它。
+- **`dsh web` 调试模式**：Desktop 内置 Web Host 默认运行在 `19387`，面板始终显示这个
+  端口。点击「开启 dsh web 调试模式」时，manager 使用 DSH 官方运行时额外启动独立的
+  `dsh web --no-open --port 3080`，并用它输出的认证 URL 打开浏览器；开启后面板同时显示
+  `19387` 与 `3080`。Electron 内嵌界面和 Desktop Host 不受影响。点击关闭只停止本次 manager
+  启动的独立 `dsh web` 子进程，不会停止 Desktop Host 或用户此前启动的 Web 服务。
 - **打包**（对任意标准 DSH 包目录）：`dpk build directory=<包目录>` —— 归档默认落在**该包目录下的
   `dpk-dist/<name>-<version>.dpk`**（目录自动创建，与源在同一棵树里，不用管当前目录在哪）。
   需要别的落点就写 `output=<文件路径>`；`output` 也可以写成**目录**（已存在的目录，或以分隔符结尾的路径），
@@ -301,6 +302,9 @@ dpk 是这条链里 **dpkg 那一半**（装一个本地文件、记清楚自己
 ```
 <name>-<version>.dpk          （zip；store + deflate，UTF-8 名，无 zip64，无加密）
 ├── dpk.json                  格式版本、身份、每个文件的 size+sha256、整体摘要
+├── dpk-data.json             可选：迁移数据清单
+├── data/app/…                可选：app 卷
+├── data/data/…               可选：data 卷
 └── package/                  一个标准 DSH 包目录，逐字节原样
     ├── package.json          （必需）
     ├── cordis.patch.yml      bundle 角色的加载器补丁

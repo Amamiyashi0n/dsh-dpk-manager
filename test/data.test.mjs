@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { packDirectory } from '../src/lib/pack.mjs'
 import { installArchive } from '../src/lib/install.mjs'
 import { verifyArchive } from '../src/lib/verify.mjs'
+import { readDataFile } from '../src/lib/data-file.mjs'
 import {
   parseDataDeclaration, dataRoot, volumePath, materializeVolumes,
   describeVolumes, purgeVolumes, exportVolumes, importDataVolumes,
@@ -456,11 +457,10 @@ test('export/import actions round-trip app volumes through the tool layer', asyn
     const exported = await runDpkAction('export', { name: '@local/dpk-fixture', output: join(outDir, 'data.json') }, { home, log: () => {} })
     assert.match(exported.text, /2 app volume/, 'both app volumes exported')
     assert.deepEqual(await snapshot(home), before, 'the export wrote nothing into the DSH home')
-    const carried = JSON.parse(await readFile(join(outDir, 'data.json'), 'utf8'))
-    assert.equal(carried.format, 'dpk-config-data/1')
+    const carried = readDataFile(await readFile(join(outDir, 'data.json')))[0]
     assert.equal(carried.package, '@local/dpk-fixture')
     assert.equal(carried.files.length, 2)
-    assert.equal(carried.files[0].path, 'app/providers.json')
+    assert.equal(carried.files.find(file => file.path === 'app/providers.json')?.path, 'app/providers.json')
     // reset the volume, then import the carried copy back
     await writeFile(join(root, 'app', 'providers.json'), '{}\n', 'utf8')
     const imported = await runDpkAction('import', { name: '@local/dpk-fixture', file: join(outDir, 'data.json') }, { home, log: () => {} })

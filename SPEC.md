@@ -51,7 +51,10 @@ const TARBALL_SPEC = /\.(?:tgz|tar\.gz)(?:#.*)?$/i
 
 ```
 <name>-<version>.dpk
-├── dpk.json                  # DPK 清单（唯一顶层元数据文件）
+├── dpk.json                  # DPK 清单
+├── dpk-data.json             # 可选：一个包的迁移数据清单
+├── data/app/…                # 可选：运行期 app 卷
+├── data/data/…               # 可选：声明的 data 卷
 └── package/                  # DSH 包根目录，逐字节原样
     ├── package.json          # 必须存在
     ├── cordis.patch.yml      # bundle 角色的加载器补丁（若 dsh.bundle 声明）
@@ -62,7 +65,7 @@ const TARBALL_SPEC = /\.(?:tgz|tar\.gz)(?:#.*)?$/i
 
 | 规则 | 说明 |
 | --- | --- |
-| 顶层只允许两项 | `dpk.json` 与 `package/`；出现任何其他顶层条目即拒绝 |
+| 顶层只允许四类 | `dpk.json`、可选的 `dpk-data.json`、`data/` 与 `package/`；其他顶层条目拒绝 |
 | `package/` 必须存在 | 且其中必须有 `package.json` |
 | 归档内**恰好一个**包 | 一个 DPK 只装一个包；套件用多个 DPK |
 | 目录条目可省略 | 解包器按文件路径隐式创建目录；出现目录条目时必须以 `/` 结尾且通过路径校验 |
@@ -450,9 +453,29 @@ profile `package.json` 里的 `link:` 依赖行，以及 `node_modules/<name>` �
 
 旧类名**声明报错**，旧类名目录（`config/…`、`state/…`、`cache/…`）**不读、不搬迁**：那些目录属于本版本
 不服务的世代，其中的文件原样留在磁盘上，既不进新卷也不被删除。要保留它们的内容，由使用者自己搬进
-当前声明的类目录——dpk 不做这条迁移。
+`dpk-data.json` 与 `data/` 只在导出/迁移包中出现。它们不改变插件包的
+`integrity.digest`，安装时 `package/` 仍按普通 DPK 解包，数据区按当前
+`dsh.data.volumes` 声明写回。
 
-### 13.2 多包数据文件（dpks）
+### 13.2 单包 DPK 数据区
+
+单包 `.dpk` 可选地携带一个 `dpk-data.json`：
+
+```json
+{
+  "format": "dpk-data/1",
+  "package": "@local/example",
+  "files": [{ "path": "app/sessions.json", "size": 12, "sha256": "…" }]
+}
+```
+
+每个清单项的内容必须位于同名的 `data/<path>` 条目中，`path` 只能以
+`app/` 或 `data/` 开头；包名必须等于 `dpk.json.name`，路径必须由包当前
+声明的卷提供。`export name=` 只写 `app/`，`snap name=` 同时写 `app/`
+和 `data/`。数据项逐项校验大小与 SHA-256，普通安装器只解包 `package/`，
+面板导入再把数据项按声明写回。
+
+### 13.3 多包数据文件（dpks）
 
 `dpk export all` 打包出 **`.dpks` 归档**（zip，与 `.dpk` 同规则；默认写到工作目录的 `dpks.dpks`，`snap all` 则为 `snap.dpks`）。归档内容：
 
@@ -467,7 +490,7 @@ data/<package>/<class>/<file>          # 每个包携带的卷,按原路径平�
 
 `dpk import` 逐包写回——本机未记录的包**跳过并提示**（先安装再重新导入），`name=` 可从归档里挑一个包导入。单包文件（`dpk-config-data/1`）继续可用。
 
-### 13.3 布局与所有权
+### 13.4 布局与所有权
 
 ```
 <home>/data/<scope>/<name>/<class>/<path>     # 卷内容(插件读写)
@@ -480,20 +503,21 @@ data/<package>/<class>/<file>          # 每个包携带的卷,按原路径平�
 
 | | `name=<包>` | `all: true` |
 | --- | --- | --- |
-| `export`（仅 `app`） | 单包 JSON（`dpk-config-data/1`） | `.dpks` 归档（`dpks-data/1`） |
-| `snap`（`app` + `data`） | 单包 JSON | `.dpks` 归档 |
+| `export`（仅 `app`） | `.dpk` 数据区（`dpk-data/1`） | `.dpks` 归档（`dpks-data/1`） |
+| `snap`（`app` + `data`） | `.dpk` 数据区 | `.dpks` 归档 |
 
-容器不区分动词：读取端认两种文件、也不问它出自哪个动词，区分只在携带的类。
+单包 DPK 的数据区与插件包共用一个 `.dpk`；读取端不问它出自 `export`
+还是 `snap`，区分只在携带的类。旧版单包 JSON 仍作为兼容输入读取。
 
-**形态随内容。** 一个包 = 单包 JSON（`dpk`），两个及以上 = `.dpks` 归档；`dpk pkg` 的增/删会让文件在这
-两个形态之间迁移，扩展名跟着改（`.json` ↔ `.dpks`），旧名删除。因此读取端（`lib/data-file.mjs`）不只看
+**形态随内容。** 一个包的导出使用 `.dpk`，两个及以上仍使用 `.dpks` 归档；旧版 `dpk pkg` 的增/删会让文件在这
+两个旧形态之间迁移，扩展名跟着改（`.json` ↔ `.dpks`），旧名删除。因此读取端（`lib/data-file.mjs`）不只看
 文件名或清单里的 `format`：带 `packages` 数组的文档按多包读，单包文档里带了 `package` 字段的条目以条目为准
 ——手写文件写着单包却列了多个包，也照样读。
 
 条目一律带 `<class>/` 前缀。同一相对路径**允许**同时声明在两类下（两类目录各自成根），所以导入先按
 "类 + 路径"精确匹配，认不出时才退到按路径匹配（覆盖包在版本之间把某个卷换了类的情况）。
 
-### 13.4 生命周期（逐条对齐 dpkg）
+### 13.5 生命周期（逐条对齐 dpkg）
 
 | 事件 | 行为 |
 | --- | --- |
@@ -505,7 +529,7 @@ data/<package>/<class>/<file>          # 每个包携带的卷,按原路径平�
 | 导出/导入 | `export` 只携带 **app 卷**（`name=` 一个包 / `all` 全部包）；`snap` 携带 **app + data**（同样两种作用域）；导入按包**当前声明**落位（类前缀只是导出记录）；落地为**用户数据**（不留种子标记，永不静默覆盖）；携带未声明的文件 → 拒绝 |
 | `pkg` | 对一个数据文件做增删改查：`op=list` 只读列出；`add` 把一个**已装**包并入（已在文件里则刷新该条目）；`remove` 删掉一个包；`set`（改）把文件记录的那个**包名**改成 `to=`（卷字节不动，归档条目路径随之改名），新名本机没装也可以。`remove`/`set` 的 `name` 匹配**文件里的**包名（可带/不带 scope），因此别的机器做的文件也能整理；`add` 才读账本。写入先写同名 `.tmp-<pid>-1` 再改名，形态变了连扩展名一起改并删掉旧名 |
 
-### 13.5 校验
+### 13.6 校验
 
 - 声明在 `pack` 时严格校验（id/class/path 文法、唯一性、seed 存在且在包内、seed ≤ 1 MiB、卷数 ≤ 64），且**仅**随 `dpk.json` 的 `dsh` 逐字副本携带（2.1.8–2.1.9 曾另写一份顶层 `data` 副本，因白名单读取端整包拒收，已于 2.1.10 移除；顶层 `data` 现为未知字段，读到即拒，报错会点明这是旧写法、重打包即可）；
 - `verify` 对 `dsh.data` 副本再跑同一套校验，且与 `package/` 内声明的**规范化结果**交叉比对，不一致即拒绝并点出是哪个卷；

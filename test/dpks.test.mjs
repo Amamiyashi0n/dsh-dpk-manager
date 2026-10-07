@@ -18,6 +18,7 @@ import { packDirectory } from '../src/lib/pack.mjs'
 import { dpkRoot, readIndex, recordInstall, storeDir } from '../src/lib/store.mjs'
 import { dataRoot, volumePath } from '../src/lib/data.mjs'
 import { readZipEntry, readZipIndex, writeZip } from '../src/lib/zip.mjs'
+import { readDataFile } from '../src/lib/data-file.mjs'
 import { makeHome, makePackage, profileUsing, storeEntry } from './helpers.mjs'
 
 /**
@@ -294,8 +295,7 @@ test('the single-package format keeps working beside the bundle format', async (
   const { home } = await twoPackages()
   const single = join(home, 'two-data.json')
   await runDpkAction('export', { name: '@local/two', output: single }, { home })
-  const carried = JSON.parse(await readFile(single, 'utf8'))
-  assert.equal(carried.format, 'dpk-config-data/1')
+  const carried = readDataFile(await readFile(single))[0]
   assert.equal(carried.package, '@local/two')
   // The single-package scope is the plugin's runtime state: `@local/two` also
   // declares a `data` volume, and it stays behind — `export all` is the snapshot
@@ -329,10 +329,10 @@ test('snap carries app and data for one package, export carries app only', async
 
   assert.match(exportedResult.text, /exported 1 app volume\(s\)/)
   assert.match(exportedResult.text, /carries app volumes only/)
-  assert.deepEqual(JSON.parse(await readFile(exported, 'utf8')).files.map(file => file.path), ['app/sessions.json'])
+  assert.deepEqual(readDataFile(await readFile(exported))[0].files.map(file => file.path), ['app/sessions.json'])
 
   assert.match(snapResult.text, /snapshotted 2 volume\(s\) \(data: 1, app: 1\)/)
-  assert.deepEqual(JSON.parse(await readFile(snapshotted, 'utf8')).files.map(file => file.path).sort(), ['app/sessions.json', 'data/settings.json'])
+  assert.deepEqual(readDataFile(await readFile(snapshotted))[0].files.map(file => file.path).sort(), ['app/sessions.json', 'data/settings.json'])
 })
 
 test('snap all carries app and data for every recorded package', async () => {
@@ -376,11 +376,11 @@ test('the two verbs never default to the same output file', async () => {
     // were `<package>-data.json` / `dpks.dpks` and the second silently won.
     assert.notEqual(exported.data.output, snapshotted.data.output)
     assert.notEqual(exportedAll.data.output, snapshottedAll.data.output)
-    assert.deepEqual((await readdir(scratch)).sort(), ['dpks.dpks', 'snap.dpks', 'two-data.json', 'two-snap.json'])
+    assert.deepEqual((await readdir(scratch)).sort(), ['dpks.dpks', 'snap.dpks', 'two-data.dpk', 'two-snap.dpk'])
     // Each file still holds what its own verb carries.
-    assert.deepEqual(JSON.parse(await readFile(exported.data.output, 'utf8')).files.map(file => file.path), ['app/sessions.json'])
+    assert.deepEqual(readDataFile(await readFile(exported.data.output))[0].files.map(file => file.path), ['app/sessions.json'])
     assert.deepEqual(
-      JSON.parse(await readFile(snapshotted.data.output, 'utf8')).files.map(file => file.path).sort(),
+      readDataFile(await readFile(snapshotted.data.output))[0].files.map(file => file.path).sort(),
       ['app/sessions.json', 'data/settings.json'],
     )
   } finally {

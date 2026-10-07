@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { EventEmitter } from 'node:events'
 import { existsSync, realpathSync, symlinkSync } from 'node:fs'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -10,7 +11,8 @@ import { detectProfileName } from '../src/lib/profile-policy.mjs'
 import { dataRoot } from '../src/lib/data.mjs'
 import { linkSpecifier, profileDir, readProfileManifest } from '../src/lib/profile-install.mjs'
 import { packDirectory } from '../src/lib/pack.mjs'
-import { readArchiveManifest } from '../src/lib/verify.mjs'
+import { readDpkData } from '../src/lib/dpk-data.mjs'
+import { inspectArchive, readArchiveManifest } from '../src/lib/verify.mjs'
 import { dpkRoot, readIndex, recordInstall, storeDir, writeIndex } from '../src/lib/store.mjs'
 import { makeHome, makePackage, snapshot, storeEntry } from './helpers.mjs'
 
@@ -64,8 +66,24 @@ test('host service registers the structural Typert source-mode contract', () => 
   assert.equal(Object.isFrozen(descriptor.methods), true)
 })
 
-test('debug mode is off by default and reuses the official DSH Web endpoint', () => {
+test('debug mode keeps Desktop 19387 and starts official dsh web on 3080', async () => {
   const calls = []
+  const spawned = []
+  const spawnProcess = (_command, args, options) => {
+    const child = new EventEmitter()
+    child.stdout = new EventEmitter()
+    child.stderr = new EventEmitter()
+    child.exitCode = null
+    child.signalCode = null
+    child.kill = () => {
+      child.exitCode = 0
+      queueMicrotask(() => child.emit('close', 0))
+      return true
+    }
+    spawned.push({ child, args, options })
+    queueMicrotask(() => child.stdout.emit('data', 'dsh web: http://127.0.0.1:3080/?token=debug-token\n'))
+    return child
+  }
   const service = createDpkRemoteService({
     provide() {},
     get(name) {
@@ -78,24 +96,31 @@ test('debug mode is off by default and reuses the official DSH Web endpoint', ()
       }
       return undefined
     },
-  }, { home: 'unused-by-debug-test' })
+  }, { home: 'unused-by-debug-test', spawnProcess })
 
   assert.deepEqual(service.debugStatus(), { enabled: false, available: true, port: 19387 })
-  const enabled = service.setDebugMode(true)
+  const enabled = await service.setDebugMode(true)
   assert.deepEqual(enabled, {
     enabled: true,
     available: true,
     port: 19387,
-    url: 'http://127.0.0.1:19387/?token=fixture-token',
+    dshWebPort: 3080,
+    url: 'http://127.0.0.1:3080/?token=debug-token',
   })
   assert.deepEqual(service.debugStatus(), {
     enabled: true,
     available: true,
     port: 19387,
-    url: 'http://127.0.0.1:19387/?token=fixture-token',
+    dshWebPort: 3080,
+    url: 'http://127.0.0.1:3080/?token=debug-token',
   })
-  assert.deepEqual(service.setDebugMode(false), { enabled: false, available: true })
+  assert.equal(spawned.length, 1)
+  assert.deepEqual(spawned[0].args.slice(-3), ['--no-open', '--port', '3080'])
+  assert.equal(spawned[0].options.env.DSH_HOME, 'unused-by-debug-test')
+  const disabled = await service.setDebugMode(false)
+  assert.deepEqual(disabled, { enabled: false, available: true, port: 19387 })
   assert.deepEqual(service.debugStatus(), { enabled: false, available: true, port: 19387 })
+  assert.equal(spawned[0].child.exitCode, 0)
   assert.deepEqual(calls, [
     'http://127.0.0.1:19387',
     'http://127.0.0.1:19387',
@@ -105,14 +130,14 @@ test('debug mode is off by default and reuses the official DSH Web endpoint', ()
   ])
 })
 
-test('debug mode reports an unavailable Web service without changing state', () => {
+test('debug mode reports an unavailable Web service without changing state', async () => {
   const service = createDpkRemoteService({ provide() {}, get() { return undefined } }, { home: 'unused-by-debug-test' })
 
   const status = service.debugStatus()
   assert.equal(status.enabled, false)
   assert.equal(status.available, false)
   assert.match(status.error, /Web service is unavailable/)
-  assert.throws(() => service.setDebugMode(true), /Web service is unavailable/)
+  await assert.rejects(() => service.setDebugMode(true), /Web service is unavailable/)
   assert.equal(service.debugStatus().enabled, false)
 })
 
@@ -433,14 +458,19 @@ test('the panel hands the browser the app scope or the app+data scope', async ()
   const service = createDpkRemoteService(makeCtx({}), { home })
 
   const exported = await service.exportVolumes({ name: '@local/dpk-fixture', verb: 'export' })
-  assert.equal(exported.fileName, 'dpk-fixture-data.json')
+  assert.equal(exported.fileName, 'local-dpk-fixture@1.0.0.dpk')
   assert.equal(exported.verb, 'export')
   assert.deepEqual(carriedPaths(exported), ['app/sessions.json'], 'app volumes only')
+  assert.deepEqual(inspectArchive(Buffer.from(exported.base64, 'base64')).data.files.map(file => file.path), ['app/sessions.json'])
 
   const snapshotted = await service.exportVolumes({ name: '@local/dpk-fixture', verb: 'snap' })
   assert.equal(snapshotted.name, '@local/dpk-fixture')
-  assert.equal(snapshotted.fileName, 'dpk-fixture-snap.json')
+  assert.equal(snapshotted.fileName, 'local-dpk-fixture@1.0.0.dpk')
   assert.deepEqual(carriedPaths(snapshotted), ['app/sessions.json', 'data/settings.json'])
+  assert.deepEqual(
+    inspectArchive(Buffer.from(snapshotted.base64, 'base64')).data.files.map(file => file.path),
+    ['app/sessions.json', 'data/settings.json'],
+  )
 
   // The file is built in a scratch directory that does not survive the call:
   // the panel is transport, not a second place dpk writes data.
@@ -455,7 +485,7 @@ test('the panel hands the browser the app scope or the app+data scope', async ()
 
 /** The volume paths a `exportVolumes` answer carries, decoded from its bytes. */
 function carriedPaths(answer) {
-  const payload = JSON.parse(Buffer.from(answer.base64, 'base64').toString('utf8'))
+  const payload = readDpkData(Buffer.from(answer.base64, 'base64'))
   return payload.files.map(file => file.path)
 }
 

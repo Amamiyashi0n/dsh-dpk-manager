@@ -1,10 +1,12 @@
 /**
- * The two data containers — one package or several — read and written by
- * content, not by file name.
+ * Legacy data containers — one package or several — read and written by
+ * content, not by file name. New single-package exports use the DPK archive
+ * data section (`dpk-data.json`); these JSON/DPKS forms remain compatible for
+ * old files and for multi-package `pkg` editing.
  *
  * A data file holds **packages**, each carrying its volumes:
  *
- *   one package      `dpk-config-data/1`  JSON, bytes base64 in the document
+ *   one package      `dpk-config-data/1`  legacy JSON, bytes base64 in the document
  *   several packages `dpks-data/1`        zip, bytes as `data/<pkg>/<…>` entries
  *
  * Which form a file has is a consequence of how many packages it holds, not a
@@ -19,6 +21,7 @@
  */
 
 import { looksLikeZip, readZipEntry, readZipIndex, writeZip } from './zip.mjs'
+import { DPK_DATA_ENTRY, readDpkData } from './dpk-data.mjs'
 
 /** Format string of a one-package document. */
 export const DATA_FORMAT_SINGLE = 'dpk-config-data/1'
@@ -182,7 +185,15 @@ function readArchive(buffer, where) {
  */
 export function readDataFile(buffer, options = {}) {
   const where = options.where ?? 'the data file'
-  if (looksLikeZip(buffer)) return readArchive(buffer, where)
+  if (looksLikeZip(buffer)) {
+    const index = readZipIndex(buffer)
+    if (index.entries.some(entry => entry.path === DPK_DATA_ENTRY)) {
+      const carried = readDpkData(buffer, { index })
+      if (carried === undefined) throw malformed(`the DPK data payload is empty: ${where}`)
+      return [{ package: carried.package, files: carried.files }]
+    }
+    return readArchive(buffer, where)
+  }
   let payload
   try {
     payload = JSON.parse(buffer.toString('utf8'))

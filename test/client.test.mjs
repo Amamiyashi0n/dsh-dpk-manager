@@ -159,14 +159,16 @@ test('export downloads a dpk and migration downloads app plus data', async () =>
   }
   let page
   const dictionary = {
-    debugTitle: 'DPK 调试模式',
-    debugEnable: '开启 DPK 调试模式',
-    debugDisable: '关闭 DPK 调试模式',
-    debugEnabling: '打开 DSH Web 中…',
-    debugEnabled: 'DSH Web 已打开',
-    debugDisabled: 'DPK 调试模式已关闭',
+    debugTitle: 'dsh web 调试模式',
+    debugEnable: '开启 dsh web 调试模式',
+    debugDisable: '关闭 dsh web 调试模式',
+    debugEnabling: '启动 dsh web 中…',
+    debugEnabled: 'dsh web 已开启',
+    debugDisabled: 'dsh web 调试模式已关闭',
     debugBlocked: '浏览器阻止了新窗口，请允许后重试',
-    debugHint: '使用 DSH 官方 Web 端口打开调试界面；Electron 主界面继续运行。',
+    debugHint: 'Desktop 内置 Web Host 默认使用 19387；开启后额外启动独立 dsh web（3080）。',
+    desktopPort: 'Desktop Web Host',
+    dshWebPort: 'dsh web',
     export: '导出插件（.dpk）',
     migrate: '迁移插件（app+data）',
     exporting: '导出中…',
@@ -194,14 +196,14 @@ test('export downloads a dpk and migration downloads app plus data', async () =>
           setDebugMode: async enabled => ({
             ok: true,
             value: enabled
-              ? { enabled: true, available: true, port: 19387, url: 'http://127.0.0.1:19387/?token=fixture' }
-              : { enabled: false, available: true },
+              ? { enabled: true, available: true, port: 19387, dshWebPort: 3080, url: 'http://127.0.0.1:3080/?token=fixture' }
+              : { enabled: false, available: true, port: 19387 },
           }),
           // The Host builds the file; the browser only downloads it. Recording
           // the request is what proves which verb each button asks for.
           exportVolumes: async request => {
             calls.push(request)
-            return { ok: true, value: { fileName: `${request.verb}.json`, base64: 'e30=', bytes: 2 } }
+            return { ok: true, value: { fileName: `${request.verb}.dpk`, base64: 'e30=', bytes: 2 } }
           },
           exportArchive: async request => {
             archiveCalls.push(request)
@@ -248,7 +250,7 @@ test('export downloads a dpk and migration downloads app plus data', async () =>
   // First render: no ledger yet, so the rows are absent — this is what registers
   // the effect that fetches it.
   walk(page())
-  assert.deepEqual(buttons.map(button => button.props.children), ['开启 DPK 调试模式', '选择 .dpk 文件'])
+  assert.deepEqual(buttons.map(button => button.props.children), ['开启 dsh web 调试模式', '选择 .dpk 文件'])
   for (const fn of effects) await fn()
   await new Promise(resolve => setImmediate(resolve))
 
@@ -257,7 +259,7 @@ test('export downloads a dpk and migration downloads app plus data', async () =>
 
   assert.deepEqual(
     buttons.map(button => button.props.children),
-    ['开启 DPK 调试模式', '选择 .dpk 文件', '导出插件（.dpk）', '迁移插件（app+data）', '卸载'],
+    ['开启 dsh web 调试模式', '选择 .dpk 文件', '导出插件（.dpk）', '迁移插件（app+data）', '卸载'],
   )
   // A disabled button swallows the click and still looks alive: `busy` idles
   // at `undefined`, so `disabled: busy !== undefined` must start out false.
@@ -266,8 +268,8 @@ test('export downloads a dpk and migration downloads app plus data', async () =>
     buttons.slice(2).map(button => button.props.disabled),
     [false, false, false],
   )
-  // Export re-packs the installed store copy into a real `.dpk`; migration
-  // remains a data-volume snapshot because runtime data is not package content.
+  // Export and migration both download real `.dpk` archives; migration adds
+  // the optional app+data section.
   const byLabel = label => buttons.find(button => button.props.children === label)
   byLabel('导出插件（.dpk）').props.onClick()
   byLabel('迁移插件（app+data）').props.onClick()
@@ -276,11 +278,11 @@ test('export downloads a dpk and migration downloads app plus data', async () =>
   assert.deepEqual(calls.map(call => [call.name, call.verb]), [['@local/known', 'snap']])
   assert.deepEqual(downloads.map(anchor => ({ name: anchor.download, href: anchor.href, clicked: anchor.clicked, removed: anchor.removed })), [
     { name: 'known@1.0.0.dpk', href: 'blob:0', clicked: true, removed: true },
-    { name: 'snap.json', href: 'blob:1', clicked: true, removed: true },
+    { name: 'snap.dpk', href: 'blob:1', clicked: true, removed: true },
   ])
   assert.deepEqual(blobs.map(blob => ({ bytes: blob.bytes, type: blob.type })), [
     { bytes: [123, 125], type: 'application/octet-stream' },
-    { bytes: [123, 125], type: 'application/json' },
+    { bytes: [123, 125], type: 'application/octet-stream' },
   ])
   assert.deepEqual(revoked, ['blob:0', 'blob:1'])
 })
@@ -394,12 +396,12 @@ test('debug mode reserves a browser popup before the Remote call and navigates i
     $mount: async () => {
       remote.dpk = {
         managed: async () => ({ ok: true, value: { entries: [], store: '' } }),
-        debugStatus: async () => ({ ok: true, value: { enabled: false, available: true } }),
+        debugStatus: async () => ({ ok: true, value: { enabled: false, available: true, port: 19387 } }),
         setDebugMode: async enabled => {
           order.push(['remote', enabled])
           return { ok: true, value: enabled
-            ? { enabled: true, available: true, url: 'http://127.0.0.1:19387/?token=fixture' }
-            : { enabled: false, available: true } }
+            ? { enabled: true, available: true, port: 19387, dshWebPort: 3080, url: 'http://127.0.0.1:3080/?token=fixture' }
+            : { enabled: false, available: true, port: 19387 } }
         },
       }
       return async () => {}
@@ -438,5 +440,8 @@ test('debug mode reserves a browser popup before the Remote call and navigates i
   debug.props.onClick()
   assert.deepEqual(order, [['open', 'about:blank', 'dsh-dpk-debug'], ['remote', true]])
   await new Promise(resolve => setImmediate(resolve))
-  assert.equal(popup.location.href, 'http://127.0.0.1:19387/?token=fixture')
+  assert.equal(popup.location.href, 'http://127.0.0.1:3080/?token=fixture')
+  assert.match(source, /useState\(19387\)/)
+  assert.match(source, /dshWebPort === undefined/)
+  assert.match(source, /tr\('dshWebPort'\)/)
 })

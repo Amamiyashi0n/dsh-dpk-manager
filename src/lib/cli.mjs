@@ -11,7 +11,7 @@
 import { existsSync } from 'node:fs'
 import { readFile, readdir, rename, rmdir, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, resolve, sep } from 'node:path'
-import { packDirectory } from './pack.mjs'
+import { packDirectory, packInstalledDirectory } from './pack.mjs'
 import { archiveFileName } from './dpk-manifest.mjs'
 import { describeManifest, verifyArchive } from './verify.mjs'
 import { DpkInstallError, applyToRunning, installArchive } from './install.mjs'
@@ -42,7 +42,7 @@ export const DPK_ACTIONS = ['update', 'upgrade', 'install', 'remove', 'purge', '
  *
  * One source for the convention, because the panel needs the same name for the
  * file it hands to the browser: `all` scope gives an archive (`dpks.dpks` /
- * `snap.dpks`), one package gives `<package>-data.json` / `<package>-snap.json`.
+ * `snap.dpks`), one package gives `<package>-data.dpk` / `<package>-snap.dpk`.
  * The verb is in the name so that taking an export and then a snapshot cannot
  * land on one file.
  *
@@ -51,7 +51,7 @@ export const DPK_ACTIONS = ['update', 'upgrade', 'install', 'remove', 'purge', '
  */
 export function defaultExportName(verb, packageName) {
   if (packageName === undefined) return verb === 'snap' ? 'snap.dpks' : 'dpks.dpks'
-  return `${packageName.replace(/^@[^/]+\//u, '')}-${verb === 'snap' ? 'snap' : 'data'}.json`
+  return `${packageName.replace(/^@[^/]+\//u, '')}-${verb === 'snap' ? 'snap' : 'data'}.dpk`
 }
 
 /** A store directory is named by its content digest, always. */
@@ -861,13 +861,20 @@ export async function runDpkAction(action, args = {}, context = {}) {
       }
       const entry = ledgerEntry(index.entries, args.name)
       if (entry === undefined) throw new DpkActionError(`no stored package matches ${args.name}`)
-      const single = await carryVolumes(home, root, entry, { classes })
+      const packageDir = join(storeDir(root, entry.digest), 'package')
+      const packed = await packInstalledDirectory(packageDir, {
+        home,
+        packageName: entry.name,
+        classes,
+      })
+      const single = {
+        package: entry.name,
+        files: packed.data.files.map(file => ({ path: file.path })),
+      }
       const output = typeof args.output === 'string' && args.output !== ''
         ? resolve(args.output)
         : join(process.cwd(), defaultExportName(action, single.package))
-      // The one-package scope always writes the document form: it carries
-      // exactly one package by construction.
-      await writeFile(output, buildDataFile([single], { form: 'dpk' }).buffer)
+      await writeFile(output, packed.buffer)
       const counts = countClasses(single.files)
       const lines = [
         snapshot

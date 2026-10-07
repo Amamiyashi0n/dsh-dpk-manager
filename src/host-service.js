@@ -18,11 +18,14 @@
  */
 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { spawn as spawnChild } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
-import { defaultExportName, runDpkAction } from './lib/cli.mjs'
+import { dirname, join } from 'node:path'
+import { runDpkAction } from './lib/cli.mjs'
 import { serviceInstall } from './lib/install.mjs'
-import { packDirectory } from './lib/pack.mjs'
+import { importDataVolumes, parseDataDeclaration } from './lib/data.mjs'
+import { packInstalledDirectory } from './lib/pack.mjs'
+import { inspectArchive } from './lib/verify.mjs'
 import { readIndex, pendingRestarts, storeDir, defaultDshHome, dpkRoot, matchEntries } from './lib/store.mjs'
 import { latestByName, latestEntry } from './lib/versions.mjs'
 import { detectProfileName } from './lib/profile-policy.mjs'
@@ -36,12 +39,13 @@ const REMOTE_METHOD_DESCRIPTOR = '@deepseek-ai/dsh-typert-protocol/remote-method
 
 /** Decoded upload ceiling; the DPK format itself caps content far below this. */
 const MAX_UPLOAD_BYTES = 128 * 1024 * 1024
+const DSH_WEB_PORT = 3080
+const DSH_WEB_READY_TIMEOUT_MS = 30_000
 
 /**
- * Resolve the live DSH Web endpoint instead of creating a second server.
- * Desktop and `dsh web` both expose the same official services to plugins;
- * the connection adds the process token that the browser needs for its first
- * request.
+ * Resolve the live Desktop Web Host endpoint. The Desktop Host stays on its
+ * own port; the debug switch starts a second, official `dsh web` process on
+ * the fixed Web port below.
  * @param ctx - plugin context carrying the current Web services.
  * @returns the loopback endpoint and its authenticated launch URL.
  */
@@ -60,6 +64,82 @@ function liveWebEndpoint(ctx) {
   }
   const baseUrl = `http://127.0.0.1:${String(port)}`
   return { port, url: connection.authenticatedUrl(baseUrl) }
+}
+
+/** Locate the packaged DSH CLI entry without depending on a shell launcher. */
+function dshWebCommand() {
+  const resources = typeof process.resourcesPath === 'string' && process.resourcesPath !== ''
+    ? process.resourcesPath
+    : join(dirname(process.execPath), 'resources')
+  const runtimeRoot = process.env.DSH_DESKTOP_DSH_DIR ?? join(resources, 'app.asar', 'dsh')
+  return {
+    command: process.env.DSH_DESKTOP_NODE_EXECUTABLE ?? process.execPath,
+    args: [
+      '--expose-internals',
+      join(runtimeRoot, 'node_modules', '@deepseek-ai', 'dsh-desktop-host', 'lib', 'cli.js'),
+      'web', '--no-open', '--port', String(DSH_WEB_PORT),
+    ],
+  }
+}
+
+/** Start the official standalone Web profile and wait for its authenticated URL. */
+function startDshWeb(home, spawnProcess) {
+  const { command, args } = dshWebCommand()
+  const child = spawnProcess(command, args, {
+    cwd: home,
+    env: {
+      ...process.env,
+      DSH_HOME: home,
+      DSH_PROFILE: 'web',
+      ELECTRON_RUN_AS_NODE: '1',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  })
+  let output = ''
+  const append = chunk => { output = (output + String(chunk)).slice(-16 * 1024) }
+  return new Promise((resolve, reject) => {
+    let settled = false
+    let timer
+    const finish = (callback, value) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      callback(value)
+    }
+    const ready = chunk => {
+      append(chunk)
+      const match = /(?:^|\s)dsh web:\s+(http:\/\/127\.0\.0\.1:3080\/\?[^\s]+)/u.exec(output)
+      if (match !== null) finish(resolve, { child, port: DSH_WEB_PORT, url: match[1] })
+    }
+    child.stdout?.setEncoding?.('utf8')
+    child.stderr?.setEncoding?.('utf8')
+    child.stdout?.on('data', ready)
+    child.stderr?.on('data', ready)
+    child.once('error', error => finish(reject, error))
+    child.once('close', code => {
+      if (!settled) finish(reject, new Error(`dpk: dsh web exited before readiness (code ${String(code)}): ${output.trim()}`))
+    })
+    timer = setTimeout(() => {
+      finish(reject, new Error(`dpk: dsh web did not become ready within ${DSH_WEB_READY_TIMEOUT_MS}ms`))
+      try { child.kill() } catch {}
+    }, DSH_WEB_READY_TIMEOUT_MS)
+  })
+}
+
+/** Stop only the standalone Web process created by this DPK service. */
+async function stopDshWeb(state) {
+  if (state === undefined || state.child === undefined) return
+  const child = state.child
+  if (child.exitCode !== null || child.signalCode !== null) return
+  await new Promise(resolve => {
+    const timer = setTimeout(resolve, 5_000)
+    child.once('close', () => {
+      clearTimeout(timer)
+      resolve()
+    })
+    try { child.kill() } catch { clearTimeout(timer); resolve() }
+  })
 }
 
 /**
@@ -90,6 +170,10 @@ function markRemote(prototype, methodName) {
  */
 export function createDpkRemoteService(ctx, config = {}) {
   const home = config.home ?? defaultDshHome()
+  const spawnProcess = config.spawnProcess ?? spawnChild
+  let dshWebProcess
+  let dshWebStart
+  let debugGeneration = 0
   /** An omitted mode lets installArchive choose pnpm only when dependencies require it. */
   const installMode = config.installMode === 'service' || config.installMode === 'profile'
     ? config.installMode
@@ -163,8 +247,13 @@ export function createDpkRemoteService(ctx, config = {}) {
       }
     }
 
-    /** Return the current opt-in state without exposing a token while disabled. */
+    /** Return the Desktop Host and standalone dsh web state. */
     debugStatus() {
+      if (dshWebProcess !== undefined
+        && (dshWebProcess.child.exitCode !== null || dshWebProcess.child.signalCode !== null)) {
+        dshWebProcess = undefined
+        this.debugMode = false
+      }
       let endpoint
       let error
       try {
@@ -173,25 +262,71 @@ export function createDpkRemoteService(ctx, config = {}) {
         error = reason instanceof Error ? reason.message : String(reason)
       }
       return {
-        enabled: this.debugMode,
+        enabled: this.debugMode && dshWebProcess !== undefined,
         available: endpoint !== undefined,
         ...(endpoint === undefined ? { error } : { port: endpoint.port }),
-        ...(this.debugMode && endpoint !== undefined ? { url: endpoint.url } : {}),
+        ...(this.debugMode && dshWebProcess !== undefined
+          ? { dshWebPort: dshWebProcess.port, url: dshWebProcess.url }
+          : {}),
       }
     }
 
-    /** Enable or disable the external Web handoff immediately. */
-    setDebugMode(enabled) {
+    /** Start or stop the standalone dsh web debug profile. */
+    async setDebugMode(enabled) {
       if (typeof enabled !== 'boolean') throw new Error('dpk: debug mode expects a boolean')
       if (!enabled) {
+        const generation = ++debugGeneration
         this.debugMode = false
+        const running = dshWebProcess
+        dshWebProcess = undefined
+        const starting = dshWebStart
+        await stopDshWeb(running)
+        if (starting !== undefined) {
+          void starting.then(state => {
+            if (debugGeneration === generation) return stopDshWeb(state)
+            return undefined
+          }).catch(() => {})
+        }
         let available = true
-        try { liveWebEndpoint(ctx) } catch { available = false }
-        return { enabled: false, available }
+        let port
+        try {
+          const endpoint = liveWebEndpoint(ctx)
+          port = endpoint.port
+        } catch { available = false }
+        return { enabled: false, available, ...(port === undefined ? {} : { port }) }
       }
       const endpoint = liveWebEndpoint(ctx)
+      if (endpoint.port === DSH_WEB_PORT) {
+        throw new Error('dpk: standalone dsh web is already the current Web Host')
+      }
+      const generation = ++debugGeneration
+      if (dshWebProcess === undefined) {
+        const starting = dshWebStart ?? (dshWebStart = startDshWeb(home, spawnProcess))
+        try {
+          const started = await starting
+          if (generation !== debugGeneration) {
+            await stopDshWeb(started)
+            return { enabled: false, available: true, port: endpoint.port }
+          }
+          dshWebProcess = started
+          dshWebProcess.child.once('close', () => {
+            if (dshWebProcess?.child === started.child) {
+              dshWebProcess = undefined
+              this.debugMode = false
+            }
+          })
+        } finally {
+          if (dshWebStart === starting) dshWebStart = undefined
+        }
+      }
       this.debugMode = true
-      return { enabled: true, available: true, port: endpoint.port, url: endpoint.url }
+      return {
+        enabled: true,
+        available: true,
+        port: endpoint.port,
+        dshWebPort: dshWebProcess.port,
+        url: dshWebProcess.url,
+      }
     }
 
     /**
@@ -212,6 +347,9 @@ export function createDpkRemoteService(ctx, config = {}) {
       const path = join(incoming, fileName.replace(/[^\w.@-]+/gu, '_'))
       await writeFile(path, bytes)
       try {
+        // Validate the optional data payload before changing the profile. The
+        // package install below still performs the full DSH verification.
+        const inspected = inspectArchive(bytes)
         const manager = ctx.get('pluginManager')
         // Self-contained by default: the panel writes the profile through dpk,
         // so an import costs no pnpm run and works while a bundle is live. The
@@ -233,6 +371,14 @@ export function createDpkRemoteService(ctx, config = {}) {
           requireLive: true,
           log: message => { ctx.logger?.info?.(`dpk(ui): ${message.trim()}`) },
         })
+        if (inspected.data !== undefined && inspected.data.files.length > 0) {
+          const packageDir = result.data.storePath
+          const packageJson = JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8'))
+          const volumes = parseDataDeclaration(packageJson.dsh?.data, `${result.data.name}: package.json`)
+          await importDataVolumes(home, result.data.name, volumes, inspected.data.files, {
+            log: message => { ctx.logger?.info?.(`dpk(ui): ${message.trim()}`) },
+          })
+        }
         return { ...result.data, text: result.text }
       } finally {
         await rm(incoming, { recursive: true, force: true })
@@ -240,12 +386,10 @@ export function createDpkRemoteService(ctx, config = {}) {
     }
 
     /**
-     * Write one package's volumes to a data file and hand back its bytes.
+     * Re-pack one package and attach its managed volumes as DPK data.
      *
-     * `verb` is the dpk verb that decides which classes travel: `export` carries
-     * app volumes, `snap` carries app and data volumes. The file is built by the
-     * same action the tool runs, in a scratch directory that does not survive the
-     * call — the panel is transport, not a second implementation.
+     * `export` carries app volumes and `snap` carries app and data volumes.
+     * Both results are `.dpk` archives and can be fed back to the import action.
      *
      * @param request - `{ name, verb }`.
      */
@@ -258,24 +402,20 @@ export function createDpkRemoteService(ctx, config = {}) {
       const entry = latestEntry((await readIndex(dpkRoot(home))).entries, requested)
       if (entry === undefined) throw new Error(`dpk: no stored package matches ${requested}`)
 
-      const outgoing = await mkdtemp(join(tmpdir(), 'dpk-outgoing-'))
-      try {
-        const output = join(outgoing, defaultExportName(verb, entry.name))
-        const result = await runDpkAction(verb, { name: entry.name, output }, {
-          home,
-          log: message => { ctx.logger?.info?.(`dpk(ui): ${message.trim()}`) },
-        })
-        const bytes = await readFile(result.data.output)
-        return {
-          fileName: basename(result.data.output),
-          base64: bytes.toString('base64'),
-          bytes: bytes.length,
-          name: entry.name,
-          verb,
-          text: result.text,
-        }
-      } finally {
-        await rm(outgoing, { recursive: true, force: true })
+      const packageDir = storeDir(dpkRoot(home), entry.digest) + '/package'
+      const packed = await packInstalledDirectory(packageDir, {
+        home,
+        packageName: entry.name,
+        classes: verb === 'export' ? ['app'] : undefined,
+      })
+      return {
+        fileName: packed.fileName,
+        base64: packed.buffer.toString('base64'),
+        bytes: packed.buffer.length,
+        name: entry.name,
+        version: packed.manifest.version,
+        digest: packed.manifest.integrity.digest,
+        verb,
       }
     }
 
@@ -291,7 +431,11 @@ export function createDpkRemoteService(ctx, config = {}) {
         : matchEntries((await readIndex(root)).entries, `${requested}@${request.version}`)[0]
       if (entry === undefined) throw new Error(`dpk: no stored package matches ${requested}`)
       const packageDir = storeDir(root, entry.digest) + '/package'
-      const packed = await packDirectory(packageDir)
+      const packed = await packInstalledDirectory(packageDir, {
+        home,
+        packageName: entry.name,
+        classes: ['app'],
+      })
       return {
         fileName: packed.fileName,
         base64: packed.buffer.toString('base64'),

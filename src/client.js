@@ -50,14 +50,16 @@ window.__ModuleLoader__.load({
       profileState: '当前状态',
       store: '本地 DPK 仓库',
       restartNotice: '以下插件包将在下一次 DeepSeek Harness 启动后生效：',
-      debugTitle: 'DPK 调试模式',
-      debugEnable: '开启 DPK 调试模式',
-      debugDisable: '关闭 DPK 调试模式',
-      debugEnabling: '打开 DSH Web 中…',
-      debugEnabled: 'DSH Web 已打开',
-      debugDisabled: 'DPK 调试模式已关闭',
+      debugTitle: 'dsh web 调试模式',
+      debugEnable: '开启 dsh web 调试模式',
+      debugDisable: '关闭 dsh web 调试模式',
+      debugEnabling: '启动 dsh web 中…',
+      debugEnabled: 'dsh web 已开启',
+      debugDisabled: 'dsh web 调试模式已关闭',
       debugBlocked: '浏览器阻止了新窗口，请允许后重试',
-      debugHint: '使用 DSH 官方 Web 端口打开调试界面；Electron 主界面继续运行。',
+      debugHint: 'Desktop 内置 Web Host 默认使用 19387；开启后额外启动独立 dsh web（3080）。',
+      desktopPort: 'Desktop Web Host',
+      dshWebPort: 'dsh web',
     }
     const en = {
       importTitle: 'Import a DPK package',
@@ -93,14 +95,16 @@ window.__ModuleLoader__.load({
       profileState: 'State',
       store: 'Local DPK store',
       restartNotice: 'These packages take effect at the next DeepSeek Harness start:',
-      debugTitle: 'DPK debug mode',
-      debugEnable: 'Enable DPK debug mode',
-      debugDisable: 'Disable DPK debug mode',
-      debugEnabling: 'Opening DSH Web…',
-      debugEnabled: 'DSH Web opened',
-      debugDisabled: 'DPK debug mode disabled',
+      debugTitle: 'dsh web debug mode',
+      debugEnable: 'Enable dsh web debug mode',
+      debugDisable: 'Disable dsh web debug mode',
+      debugEnabling: 'Starting dsh web…',
+      debugEnabled: 'dsh web enabled',
+      debugDisabled: 'dsh web debug mode disabled',
       debugBlocked: 'The browser blocked the new window; allow it and try again',
-      debugHint: 'Open the DSH Web debug surface on its official port while Electron keeps running.',
+      debugHint: 'The Desktop Web Host uses 19387 by default; enabling this starts a separate dsh web on 3080.',
+      desktopPort: 'Desktop Web Host',
+      dshWebPort: 'dsh web',
     }
 
     const requestCodec = method => ({
@@ -187,7 +191,7 @@ window.__ModuleLoader__.load({
           if (debugWindow && !debugWindow.closed) debugWindow.close()
           debugWindow = undefined
           void callDpk('setDebugMode', false).catch(() => {})
-        }, 'dsh-package-manager: close DPK debug Web handoff')
+        }, 'dsh-package-manager: close dsh web debug handoff')
 
         if (ctx.locale) ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-package-manager: dictionaries')
         const tr = ctx.locale ? ctx.locale.bind(NS) : key => (zh[key] ?? en[key] ?? key)
@@ -301,21 +305,30 @@ window.__ModuleLoader__.load({
           ])
         }
 
-        // The Host already owns the DSH Web server. This switch only opts the
-        // user into an authenticated browser handoff; it never starts a second
-        // server or interrupts the embedded Electron surface.
+        // Desktop already owns the embedded Host on 19387. This switch starts
+        // a separate official dsh web profile on 3080 for browser debugging.
         function DpkDebugSection() {
           const [enabled, setEnabled] = React.useState(false)
           const [busy, setBusy] = React.useState(false)
           const [status, setStatus] = React.useState(undefined)
           const [available, setAvailable] = React.useState(true)
+          const [desktopPort, setDesktopPort] = React.useState(19387)
+          const [dshWebPort, setDshWebPort] = React.useState(undefined)
+
+          function applyDebugStatus(answer) {
+            setEnabled(answer.enabled === true)
+            setAvailable(answer.available !== false)
+            if (Number.isSafeInteger(answer.port)) setDesktopPort(answer.port)
+            setDshWebPort(answer.enabled === true && Number.isSafeInteger(answer.dshWebPort)
+              ? answer.dshWebPort
+              : undefined)
+          }
 
           React.useEffect(() => {
             let current = true
             void callDpk('debugStatus').then(answer => {
               if (!current) return
-              setEnabled(answer.enabled === true)
-              setAvailable(answer.available !== false)
+              applyDebugStatus(answer)
             }).catch(error => {
               if (current) {
                 setAvailable(false)
@@ -339,8 +352,7 @@ window.__ModuleLoader__.load({
             setStatus(tr('debugEnabling'))
             try {
               const answer = await callDpk('setDebugMode', next)
-              setEnabled(answer.enabled === true)
-              setAvailable(answer.available !== false)
+              applyDebugStatus(answer)
               if (answer.enabled === true) {
                 const opened = desktopHandoff
                   ? (typeof window.open === 'function' ? window.open(answer.url, 'dsh-dpk-debug') : null)
@@ -378,6 +390,10 @@ window.__ModuleLoader__.load({
           return h('section', { style: { display: 'grid', gap: 8, marginBottom: 18 } }, [
             h('h4', { key: 'title', style: { margin: 0 } }, tr('debugTitle')),
             h('div', { key: 'hint', style: mutedStyle }, tr('debugHint')),
+            h('div', { key: 'desktop-port', style: mutedStyle }, `${tr('desktopPort')}: ${desktopPort ?? '—'}`),
+            dshWebPort === undefined
+              ? null
+              : h('div', { key: 'dsh-web-port', style: mutedStyle }, `${tr('dshWebPort')}: ${dshWebPort}`),
             h('div', { key: 'row', style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } }, [
               h('button', {
                 key: 'toggle', type: 'button', disabled: busy || !available, style: buttonStyle,
@@ -426,14 +442,14 @@ window.__ModuleLoader__.load({
             }
           }
 
-          // The migration action carries runtime data volumes, which are not
-          // part of the standard .dpk package format.
+          // Migration carries the same package plus its runtime data volumes
+          // in the optional DPK data section.
           async function onExportVolumes(verb) {
             setBusy(verb)
             setStatus(tr(verb === 'snap' ? 'migrating' : 'exporting'))
             try {
               const result = await callDpk('exportVolumes', { name, verb })
-              downloadResult(result, 'application/json')
+              downloadResult(result, 'application/octet-stream')
               setStatus(`${tr(verb === 'snap' ? 'migrated' : 'exported')} ${result.fileName} (${result.bytes} B)`)
             } catch (error) {
               setStatus(`${tr('failed')}: ${String(error?.message ?? error)}`)

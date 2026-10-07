@@ -118,12 +118,12 @@ test('pkg set renames the package the file records, volumes untouched', async ()
 
   // `set` adjusts what the file says about a package: its name. The volumes are
   // not re-read from this machine, so they survive the rename byte for byte.
-  const before = JSON.parse(await readFile(path, 'utf8'))
+  const before = readDataFile(await readFile(path))[0]
   const renamed = await runDpkAction('pkg', { file: path, op: 'set', name: 'two', to: '@local/two-renamed' }, { home })
 
   assert.deepEqual(renamed.data.renamed, { from: '@local/two', to: '@local/two-renamed' })
   assert.match(renamed.text, /@local\/two → @local\/two-renamed/)
-  const after = JSON.parse(await readFile(path, 'utf8'))
+  const after = readDataFile(await readFile(path))[0]
   assert.equal(after.package, '@local/two-renamed')
   assert.deepEqual(after.files, before.files, 'the carried bytes are exactly what they were')
 
@@ -187,7 +187,7 @@ test('pkg add refreshes an entry the file already carries', async () => {
   const { home } = await twoPackages()
   const path = join(home, 'one.json')
   await runDpkAction('export', { name: 'two', output: path }, { home })
-  assert.deepEqual(JSON.parse(await readFile(path, 'utf8')).files.map(file => file.path), ['app/sessions.json'])
+  assert.deepEqual(readDataFile(await readFile(path))[0].files.map(file => file.path), ['app/sessions.json'])
 
   // `add` is the one operation that reads this machine, so an entry that is
   // already there is brought up to date instead of being refused: that is how a
@@ -196,13 +196,13 @@ test('pkg add refreshes an entry the file already carries', async () => {
   assert.equal(refreshed.data.refreshed, true)
   assert.match(refreshed.text, /refresh @local\/two/)
   assert.deepEqual(
-    JSON.parse(await readFile(path, 'utf8')).files.map(file => file.path).sort(),
+    readDataFile(await readFile(path))[0].files.map(file => file.path).sort(),
     ['app/sessions.json', 'data/settings.json'],
   )
 
   const narrowed = await runDpkAction('pkg', { file: path, op: 'add', name: 'two', verb: 'export' }, { home })
   assert.equal(narrowed.data.form, 'dpk')
-  assert.deepEqual(JSON.parse(await readFile(path, 'utf8')).files.map(file => file.path), ['app/sessions.json'])
+  assert.deepEqual(readDataFile(await readFile(path))[0].files.map(file => file.path), ['app/sessions.json'])
 
   // A bare name resolves through the ledger, so `two` and `@local/two` are the
   // same package to every verb here.

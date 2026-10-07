@@ -5,12 +5,14 @@
  */
 
 import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import {
   archiveFileName, buildManifest, compareManifestToPackage, DPK_FORMAT_VERSION, DpkManifestError,
   PACKAGE_PREFIX, REPRODUCIBLE_EPOCH,
 } from './dpk-manifest.mjs'
 import { validateDshPackage } from './dsh-package.mjs'
+import { exportVolumes, parseDataDeclaration } from './data.mjs'
+import { appendDpkData } from './dpk-data.mjs'
 import { writeZip } from './zip.mjs'
 
 /**
@@ -74,5 +76,27 @@ export async function packDirectory(directory, options = {}) {
     source,
     format: DPK_FORMAT_VERSION,
     root: resolve(directory),
+  }
+}
+
+/**
+ * Re-pack an installed package and attach its current managed data volumes.
+ * `classes: ['app']` creates the portable runtime export; omitted classes
+ * carries both app and data for migration.
+ */
+export async function packInstalledDirectory(directory, options = {}) {
+  if (typeof options.home !== 'string' || options.home === '') {
+    throw new Error('packInstalledDirectory needs the DSH home')
+  }
+  const packed = await packDirectory(directory, options)
+  const packageJson = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'))
+  const packageName = options.packageName ?? packed.manifest.name
+  const declaration = parseDataDeclaration(packageJson.dsh?.data, `${packageName}: package.json`)
+  const files = await exportVolumes(options.home, packageName, declaration, { classes: options.classes })
+  const withData = appendDpkData(packed.buffer, packed.manifest.name, files)
+  return {
+    ...packed,
+    buffer: withData.buffer,
+    data: withData.manifest,
   }
 }

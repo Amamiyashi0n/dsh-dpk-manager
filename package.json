@@ -1,6 +1,6 @@
 {
   "name": "dsh-dpk-manager",
-  "version": "2.1.67",
+  "version": "2.1.68",
   "type": "module",
   "main": "./src/index.js",
   "bin": {
