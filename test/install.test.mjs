@@ -6,12 +6,12 @@ import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { packDirectory } from '../lib/pack.mjs'
-import { installArchive, installOverwriting, serviceInstall } from '../lib/install.mjs'
-import { linkSpecifier, profileDir, readProfileManifest, referencedDigests } from '../lib/profile-install.mjs'
-import { disableReleaseAgeCooldown } from '../lib/profile-policy.mjs'
-import { dpkRoot, readIndex, storeDir } from '../lib/store.mjs'
-import { compareVersions } from '../lib/versions.mjs'
+import { packDirectory } from '../src/lib/pack.mjs'
+import { installArchive, installOverwriting, serviceInstall } from '../src/lib/install.mjs'
+import { linkSpecifier, profileDir, readProfileManifest, referencedDigests } from '../src/lib/profile-install.mjs'
+import { disableReleaseAgeCooldown } from '../src/lib/profile-policy.mjs'
+import { dpkRoot, readIndex, storeDir } from '../src/lib/store.mjs'
+import { compareVersions } from '../src/lib/versions.mjs'
 import { archiveCopies, makeHome, makePackage } from './helpers.mjs'
 
 /** A profile directory with the parts every real profile has. */
@@ -489,7 +489,7 @@ test('version comparison follows SemVer prerelease and build rules', () => {
 })
 
 test('writeIndex leaves no temp file behind and reads back identically', async () => {
-  const { writeIndex, readIndex, dpkRoot } = await import('../lib/store.mjs')
+  const { writeIndex, readIndex, dpkRoot } = await import('../src/lib/store.mjs')
   const { readdir } = await import('node:fs/promises')
   const home = await makeHome()
   const root = dpkRoot(home)
@@ -501,7 +501,7 @@ test('writeIndex leaves no temp file behind and reads back identically', async (
 })
 
 test('the ledger is read back as written', async () => {
-  const { writeIndex, readIndex, dpkRoot } = await import('../lib/store.mjs')
+  const { writeIndex, readIndex, dpkRoot } = await import('../src/lib/store.mjs')
   const home = await makeHome()
   const root = dpkRoot(home)
   await writeIndex(root, {
@@ -518,7 +518,7 @@ test('the ledger is read back as written', async () => {
 })
 
 test('concurrent ledger writes serialize: both apply in order, no temp left, no lost rename', async () => {
-  const { writeIndex, readIndex, dpkRoot } = await import('../lib/store.mjs')
+  const { writeIndex, readIndex, dpkRoot } = await import('../src/lib/store.mjs')
   const { readdir } = await import('node:fs/promises')
   const home = await makeHome()
   const root = dpkRoot(home)

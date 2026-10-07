@@ -12,11 +12,11 @@ import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { runDpkAction } from '../lib/actions.mjs'
-import { packDirectory } from '../lib/pack.mjs'
-import { readZipIndex } from '../lib/zip.mjs'
-import { dpkRoot, readIndex, recordInstall, storeDir } from '../lib/store.mjs'
-import { linkSpecifier, profileDir, readProfileManifest } from '../lib/profile-install.mjs'
+import { runDpkAction } from '../src/lib/actions.mjs'
+import { packDirectory } from '../src/lib/pack.mjs'
+import { readZipIndex } from '../src/lib/zip.mjs'
+import { dpkRoot, readIndex, recordInstall, storeDir } from '../src/lib/store.mjs'
+import { linkSpecifier, profileDir, readProfileManifest } from '../src/lib/profile-install.mjs'
 import { archiveCopies, makeHome, makePackage, profileUsing, storeEntry } from './helpers.mjs'
 
 /** A scratch source directory holding one version of the fixture package. */
@@ -294,7 +294,7 @@ test('show names the data volumes an installed package declares', async () => {
     version: '1.0.0',
     dsh: { data: { volumes: [{ id: 'providers', class: 'data', path: 'providers.json' }] } },
   })}\n`)
-  const { recordInstall } = await import('../lib/store.mjs')
+  const { recordInstall } = await import('../src/lib/store.mjs')
   await recordInstall(root, { name: '@local/x', version: '1.0.0', digest: 'd'.repeat(64), source: 'x.dpk' })
   await profileUsing(home, 'probe', { '@local/x': packageDir })
   const link = join(profileDir(home, 'probe'), 'node_modules', '@local', 'x')
@@ -318,7 +318,7 @@ test('update asks the npm registry about packages no local .dpk answers for', as
   // so it is the one that goes to the registry.
   const root = dpkRoot(home)
   const other = await storeEntry(root, 'c'.repeat(64), { manifest: { name: '@local/npm-pkg', version: '0.3.0' } })
-  const { recordInstall } = await import('../lib/store.mjs')
+  const { recordInstall } = await import('../src/lib/store.mjs')
   await recordInstall(root, { name: '@local/npm-pkg', version: '0.3.0', digest: 'c'.repeat(64), source: 'C:/gone/npm-pkg-0.3.0.dpk' })
   await profileUsing(home, 'probe', { '@local/npm-pkg': other, 'npm-pkg': '^0.3.0', '@local/dpk-fixture': join(storeDir(root, built[0].digest), 'package') })
   const asked = []
@@ -342,7 +342,7 @@ test('update without a registry view still reports, and says the registry side w
   const home = await makeHome()
   const root = dpkRoot(home)
   const other = await storeEntry(root, 'c'.repeat(64), { manifest: { name: '@local/npm-pkg', version: '0.3.0' } })
-  const { recordInstall } = await import('../lib/store.mjs')
+  const { recordInstall } = await import('../src/lib/store.mjs')
   await recordInstall(root, { name: '@local/npm-pkg', version: '0.3.0', digest: 'c'.repeat(64), source: 'C:/gone/x.dpk' })
   await profileUsing(home, 'probe', { '@local/npm-pkg': other, 'npm-pkg': '^0.3.0' })
 
@@ -357,7 +357,7 @@ test('upgrade installs registry packages one by one through the official manager
   const home = await makeHome()
   const root = dpkRoot(home)
   const other = await storeEntry(root, 'c'.repeat(64), { manifest: { name: '@local/npm-pkg', version: '0.3.0' } })
-  const { recordInstall } = await import('../lib/store.mjs')
+  const { recordInstall } = await import('../src/lib/store.mjs')
   await recordInstall(root, { name: '@local/npm-pkg', version: '0.3.0', digest: 'c'.repeat(64), source: 'C:/gone/x.dpk' })
   await profileUsing(home, 'probe', { '@local/npm-pkg': other, 'npm-pkg': '^0.3.0' })
   const calls = []
@@ -381,7 +381,7 @@ test('a registry upgrade opts the profile out of the release-age cooldown first'
   const home = await makeHome()
   const root = dpkRoot(home)
   const other = await storeEntry(root, 'c'.repeat(64), { manifest: { name: '@local/npm-pkg', version: '0.3.0' } })
-  const { recordInstall } = await import('../lib/store.mjs')
+  const { recordInstall } = await import('../src/lib/store.mjs')
   await recordInstall(root, { name: '@local/npm-pkg', version: '0.3.0', digest: 'c'.repeat(64), source: 'C:/gone/x.dpk' })
   await profileUsing(home, 'probe', { '@local/npm-pkg': other, 'npm-pkg': '^0.3.0' })
   const order = []
@@ -403,7 +403,7 @@ test('a failing registry upgrade is reported per package and does not stop the r
   const root = dpkRoot(home)
   const first = await storeEntry(root, 'c'.repeat(64), { manifest: { name: '@local/npm-a', version: '1.0.0' } })
   const second = await storeEntry(root, 'd'.repeat(64), { manifest: { name: '@local/npm-b', version: '1.0.0' } })
-  const { recordInstall } = await import('../lib/store.mjs')
+  const { recordInstall } = await import('../src/lib/store.mjs')
   await recordInstall(root, { name: '@local/npm-a', version: '1.0.0', digest: 'c'.repeat(64), source: 'C:/gone/a.dpk' })
   await recordInstall(root, { name: '@local/npm-b', version: '1.0.0', digest: 'd'.repeat(64), source: 'C:/gone/b.dpk' })
   await profileUsing(home, 'probe', { '@local/npm-a': first, '@local/npm-b': second, 'npm-a': '^1.0.0', 'npm-b': '^1.0.0' })
@@ -430,7 +430,7 @@ test('a registry upgrade without the manager service fails that package with the
   const home = await makeHome()
   const root = dpkRoot(home)
   const other = await storeEntry(root, 'c'.repeat(64), { manifest: { name: '@local/npm-pkg', version: '0.3.0' } })
-  const { recordInstall } = await import('../lib/store.mjs')
+  const { recordInstall } = await import('../src/lib/store.mjs')
   await recordInstall(root, { name: '@local/npm-pkg', version: '0.3.0', digest: 'c'.repeat(64), source: 'C:/gone/x.dpk' })
   await profileUsing(home, 'probe', { '@local/npm-pkg': other, 'npm-pkg': '^0.3.0' })
 

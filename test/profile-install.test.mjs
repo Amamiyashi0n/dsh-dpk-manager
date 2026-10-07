@@ -8,13 +8,13 @@ import { test } from 'node:test'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { packDirectory } from '../lib/pack.mjs'
-import { installArchive, installOverwriting } from '../lib/install.mjs'
+import { packDirectory } from '../src/lib/pack.mjs'
+import { installArchive, installOverwriting } from '../src/lib/install.mjs'
 import {
   applyProfileInstall, applyProfileRemove, ensurePackageLink, installedState, isBundlePackage,
   linkSpecifier, patchLockfileImporter, profileDir, readProfileManifest,
-} from '../lib/profile-install.mjs'
-import { dpkRoot, readIndex } from '../lib/store.mjs'
+} from '../src/lib/profile-install.mjs'
+import { dpkRoot, readIndex } from '../src/lib/store.mjs'
 import { makeHome, makePackage } from './helpers.mjs'
 
 /** A profile directory with the parts every real profile has. */

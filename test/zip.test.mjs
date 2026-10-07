@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto'
 import { deflateRawSync } from 'node:zlib'
 import {
   ZIP_LIMITS, crc32, looksLikeZip, readZipEntry, readZipIndex, validateArchivePath, writeZip, ZipError,
-} from '../lib/zip.mjs'
+} from '../src/lib/zip.mjs'
 
 const file = (path, text) => ({ path, data: Buffer.from(text, 'utf8') })
 

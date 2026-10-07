@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import vm from 'node:vm'
 
-const source = await readFile(new URL('../client.js', import.meta.url), 'utf8')
+const source = await readFile(new URL('../src/client.js', import.meta.url), 'utf8')
 
 test('client mounts its local Remote contribution before reading the namespace', async () => {
   let registration

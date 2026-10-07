@@ -6,9 +6,9 @@
 
 | 形态 | 入口 | 用法 |
 | --- | --- | --- |
-| 插件页面板 | `client.js` → 「本地 DPK」侧栏 | 导入 `.dpk`、导出插件（仅 app）/ 迁移插件（app+data）、卸载，人点按钮即可 |
-| 官方插件页徽章 | `client.js` → `plugins.detail.badge` | 由本管理器装好的包，在官方插件页标题旁显示「该插件由 dpk 管理器安装和管理」 |
-| 会话内工具 | `index.js` → 注册 `dpk` 工具 | 装进 profile 后，agent 可直接 `dpk action=verify/install/…` |
+| 插件页面板 | `src/client.js` → 「本地 DPK」侧栏 | 导入 `.dpk`、导出插件（仅 app）/ 迁移插件（app+data）、卸载，人点按钮即可 |
+| 官方插件页徽章 | `src/client.js` → `plugins.detail.badge` | 由本管理器装好的包，在官方插件页标题旁显示「该插件由 dpk 管理器安装和管理」 |
+| 会话内工具 | `src/index.js` → 注册 `dpk` 工具 | 装进 profile 后，agent 可直接 `dpk action=verify/install/…` |
 
 ```text
 dpk update                 检查已装的包有没有新版本。npm 包（官方插件页装的，profile 里是 ^range 行）经官方管理器问 registry；.dpk 文件包看来源目录。有新版就提醒，`upgrade` 逐个装
@@ -60,7 +60,7 @@ dpk pkg op=set name=<包> to=<新名>
 **形态由内容决定。** 一个包 = 单包 JSON，两个及以上 = `.dpks` 归档；`dpk pkg` 增删包时文件就在这两个形态
 之间迁移，扩展名跟着改（`.json` ↔ `.dpks`），旧名随即删除。所以读取端从不只信文件名或清单里的 `format`：
 一份手写的、写着单包却列了多个包条目的文件照样能读（条目自带 `package` 时以条目为准，见
-[data-file.mjs](lib/data-file.mjs)）——拒绝一份完全可读的数据没有道理。
+[data-file.mjs](src/lib/data-file.mjs)）——拒绝一份完全可读的数据没有道理。
 
 一个 `data` 卷和一个 `app` 卷**共用同一条相对路径**是合法的（两类目录各自成根），所以条目一律带 `<class>/`
 前缀：导入先按"类 + 路径"精确匹配，认不出时才按路径匹配（覆盖包在两个版本之间把某个卷换了类的情况）。
@@ -321,7 +321,7 @@ $DSH_HOME/dpk/
    目录校验 → 丢掉 → 再解压进 store"，同一批文件写两遍。
 2. **同 digest 复用**：digest 已在 store 里时，只需重新哈希归档（内容寻址已保证内容同一），
    深校验由当初落库时那次负责。
-3. **不跑 pnpm**：`lib/profile-install.mjs` 直接写 Harness loader 读的那四处。`installedState()`
+3. **不跑 pnpm**：`src/lib/profile-install.mjs` 直接写 Harness loader 读的那四处。`installedState()`
    先确认四处都已指向同一个目录，成立就一个字节都不写；否则写依赖行、`node_modules` 链接与
    lockfile 行。官方服务保留为 `via: "service"`。
 
@@ -368,24 +368,25 @@ pnpm 那条路真正的问题不是慢，而是**在运行时不可用**：官�
 
 ```
 dpk/
-  index.js                     DSH 插件入口：注册会话内 `dpk` 工具（零 harness 导入）
-  client.js                    「本地 DPK」侧栏面板（导入 / 导出 / 迁移 / 卸载）
-  host-service.js              面板后端：Typert Remote 服务（dpk.* 五个方法）
+  package.json                 npm/DSH 包清单，入口与导出均指向 src/
+  src/index.js                 DSH 插件入口：注册会话内 `dpk` 工具（零 harness 导入）
+  src/client.js                「本地 DPK」侧栏面板（导入 / 导出 / 迁移 / 卸载）
+  src/host-service.js          面板后端：Typert Remote 服务（dpk.* 五个方法）
   cordis.patch.yml             bundle 层：插入 Loader 行 dsh-dpk-manager
   locale/{en,zh}.json          插件卡片文案（zh 标题即「DSH 安装包管理助手」）
   icon.svg                     插件卡片图标
   SPEC.md                      格式规范 v1（设计正本）
   README.md                    本文件
-  lib/zip.mjs                  纯 Node zip 读写（store+deflate、CRC32、路径与限额校验）
-  lib/dsh-package.mjs          DSH 包严格合规（逐条镜像 DSH 规则，带出处）
-  lib/dpk-manifest.mjs         dpk.json 构造/校验 + 声明交叉校验 + 完整性摘要
-  lib/pack.mjs                 pack
-  lib/verify.mjs               verify（含深度合规复检；extractTo 时校验与解压合成一次）
-  lib/store.mjs                内容寻址仓库 + 账本
-  lib/install.mjs              安装编排：解包（单次解压校验）+ profile 写入/官方服务交接 + 记账
-  lib/profile-install.mjs      自洽 profile 写入：依赖行、dsh.profile.bundles、node_modules 链接、lockfile importer 行
-  lib/profile-policy.mjs       profile 的 pnpm-workspace.yaml 冷却期豁免写入（仅 via: "service" 需要）
-  lib/actions.mjs              动作层：工具与面板共用
+  src/lib/zip.mjs              纯 Node zip 读写（store+deflate、CRC32、路径与限额校验）
+  src/lib/dsh-package.mjs      DSH 包严格合规（逐条镜像 DSH 规则，带出处）
+  src/lib/dpk-manifest.mjs     dpk.json 构造/校验 + 声明交叉校验 + 完整性摘要
+  src/lib/pack.mjs             pack
+  src/lib/verify.mjs           verify（含深度合规复检；extractTo 时校验与解压合成一次）
+  src/lib/store.mjs            内容寻址仓库 + 账本
+  src/lib/install.mjs          安装编排：解包（单次解压校验）+ profile 写入/官方服务交接 + 记账
+  src/lib/profile-install.mjs  自洽 profile 写入：依赖行、dsh.profile.bundles、node_modules 链接、lockfile importer 行
+  src/lib/profile-policy.mjs   profile 的 pnpm-workspace.yaml 冷却期豁免写入（仅 via: "service" 需要）
+  src/lib/actions.mjs          动作层：工具与面板共用
   schemas/dpk-1.schema.json    dpk.json 的 JSON Schema
   examples/hello-bundle/       自包含示例包（发布时用 `dpk build` 打包成 dpk-dist/dpk-hello@1.0.0.dpk）
   scripts/deprecate-previous.mjs  npm 发布后自动废弃旧版本

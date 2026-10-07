@@ -11,8 +11,8 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { compareManifestToPackage } from '../lib/dpk-manifest.mjs'
-import { validateDshPackage } from '../lib/dsh-package.mjs'
+import { compareManifestToPackage } from '../src/lib/dpk-manifest.mjs'
+import { validateDshPackage } from '../src/lib/dsh-package.mjs'
 import { makePackage } from './helpers.mjs'
 
 /** Facts of the fixture package, as the archive scanner reads them. */

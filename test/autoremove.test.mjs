@@ -9,9 +9,9 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { runDpkAction } from '../lib/actions.mjs'
-import { referencedDigests } from '../lib/profile-install.mjs'
-import { dpkRoot, readIndex, recordInstall, storeDir } from '../lib/store.mjs'
+import { runDpkAction } from '../src/lib/actions.mjs'
+import { referencedDigests } from '../src/lib/profile-install.mjs'
+import { dpkRoot, readIndex, recordInstall, storeDir } from '../src/lib/store.mjs'
 import { makeHome } from './helpers.mjs'
 
 const A = 'a'.repeat(64)

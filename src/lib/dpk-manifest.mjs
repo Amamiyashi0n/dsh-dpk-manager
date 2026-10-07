@@ -23,7 +23,7 @@ export const DPK_FORMAT_VERSION = 1
  * an archive follows when a verification fails, so it has to track the release
  * rather than stay a constant. A test holds it equal to `package.json`.
  */
-const PACKAGE_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
+const PACKAGE_VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version
 if (typeof PACKAGE_VERSION !== 'string' || PACKAGE_VERSION === '') {
   throw new Error('package.json must declare a non-empty version')
 }

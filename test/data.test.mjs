@@ -6,13 +6,13 @@ import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { packDirectory } from '../lib/pack.mjs'
-import { installArchive } from '../lib/install.mjs'
-import { verifyArchive } from '../lib/verify.mjs'
+import { packDirectory } from '../src/lib/pack.mjs'
+import { installArchive } from '../src/lib/install.mjs'
+import { verifyArchive } from '../src/lib/verify.mjs'
 import {
   parseDataDeclaration, dataRoot, volumePath, materializeVolumes,
   describeVolumes, purgeVolumes, exportVolumes, importDataVolumes,
-} from '../lib/data.mjs'
+} from '../src/lib/data.mjs'
 import { makeHome, makePackage, snapshot } from './helpers.mjs'
 
 const VOLUMES = declaration => parseDataDeclaration({ volumes: declaration })
@@ -277,7 +277,7 @@ test('the manifest carries the declaration and verify still passes', async () =>
   // The written archive itself carries the declaration in exactly one place:
   // the verbatim dsh copy. A top-level `data` key is an unknown field and
   // every reader rejects the whole archive over it.
-  const { readZipEntry, readZipIndex } = await import('../lib/zip.mjs')
+  const { readZipEntry, readZipIndex } = await import('../src/lib/zip.mjs')
   const written = JSON.parse(readZipEntry(packed.buffer, readZipIndex(packed.buffer).entries.find(entry => entry.path === 'dpk.json')))
   assert.equal(written.data, undefined, 'no top-level data key is written')
   assert.equal(JSON.stringify(written.dsh.data.volumes), JSON.stringify(packed.manifest.dsh.data.volumes), 'dsh.data.volumes carries the declaration')
@@ -285,7 +285,7 @@ test('the manifest carries the declaration and verify still passes', async () =>
 
 test('a top-level data key is rejected as an unknown field', async () => {
   const packed = await packDirectory(await makeManagedPackage())
-  const { readZipEntry, readZipIndex, writeZip } = await import('../lib/zip.mjs')
+  const { readZipEntry, readZipIndex, writeZip } = await import('../src/lib/zip.mjs')
   const index = readZipIndex(packed.buffer)
   const entries = index.entries.map(entry => ({
     path: entry.path,
@@ -411,7 +411,7 @@ test('a trailing slash on a volume path is normalized on both sides', async () =
 
 test('a declaration that really differs is still refused, and names the volume', async () => {
   const packed = await packDirectory(await makeManagedPackage())
-  const { readZipEntry, readZipIndex, writeZip } = await import('../lib/zip.mjs')
+  const { readZipEntry, readZipIndex, writeZip } = await import('../src/lib/zip.mjs')
   const index = readZipIndex(packed.buffer)
   const entries = index.entries.map(entry => ({
     path: entry.path,
@@ -447,7 +447,7 @@ test('export/import actions round-trip app volumes through the tool layer', asyn
   const root = dataRoot(home, '@local/dpk-fixture')
   await mkdir(join(root, 'app'), { recursive: true })
   await writeFile(join(root, 'app', 'providers.json'), '{"provider":{"edited":true}}\n', 'utf8')
-  const { runDpkAction } = await import('../lib/actions.mjs')
+  const { runDpkAction } = await import('../src/lib/actions.mjs')
   const outDir = await mkdtemp(join(tmpdir(), 'dpk-export-'))
   try {
     // An export is generated on demand and leaves no trace in dpk's own state:

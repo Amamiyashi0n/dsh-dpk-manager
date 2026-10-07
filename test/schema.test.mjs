@@ -9,8 +9,8 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { packDirectory } from '../lib/pack.mjs'
-import { FILE_KEYS, INTEGRITY_KEYS, MANIFEST_KEYS, validateManifest } from '../lib/dpk-manifest.mjs'
+import { packDirectory } from '../src/lib/pack.mjs'
+import { FILE_KEYS, INTEGRITY_KEYS, MANIFEST_KEYS, validateManifest } from '../src/lib/dpk-manifest.mjs'
 import { makePackage } from './helpers.mjs'
 
 const SCHEMA_PATH = join(import.meta.dirname, '..', 'schemas', 'dpk-1.schema.json')

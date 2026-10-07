@@ -49,7 +49,7 @@ export async function disableReleaseAgeCooldown(profileDir) {
 export function detectProfileName(home) {
   if (process.env.DSH_PROFILE !== undefined && process.env.DSH_PROFILE !== '') return process.env.DSH_PROFILE
   try {
-    const self = realpathSync(join(fileURLToPath(new URL('..', import.meta.url))))
+    const self = realpathSync(join(fileURLToPath(new URL('../..', import.meta.url))))
     const profiles = join(home, 'profiles')
     for (const name of readdirSync(profiles)) {
       try {
