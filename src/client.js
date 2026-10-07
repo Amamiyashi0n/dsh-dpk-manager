@@ -50,6 +50,14 @@ window.__ModuleLoader__.load({
       profileState: '当前状态',
       store: '本地 DPK 仓库',
       restartNotice: '以下插件包将在下一次 DeepSeek Harness 启动后生效：',
+      debugTitle: 'DPK 调试模式',
+      debugEnable: '开启 DPK 调试模式',
+      debugDisable: '关闭 DPK 调试模式',
+      debugEnabling: '打开 DSH Web 中…',
+      debugEnabled: 'DSH Web 已打开',
+      debugDisabled: 'DPK 调试模式已关闭',
+      debugBlocked: '浏览器阻止了新窗口，请允许后重试',
+      debugHint: '使用 DSH 官方 Web 端口打开调试界面；Electron 主界面继续运行。',
     }
     const en = {
       importTitle: 'Import a DPK package',
@@ -85,6 +93,14 @@ window.__ModuleLoader__.load({
       profileState: 'State',
       store: 'Local DPK store',
       restartNotice: 'These packages take effect at the next DeepSeek Harness start:',
+      debugTitle: 'DPK debug mode',
+      debugEnable: 'Enable DPK debug mode',
+      debugDisable: 'Disable DPK debug mode',
+      debugEnabling: 'Opening DSH Web…',
+      debugEnabled: 'DSH Web opened',
+      debugDisabled: 'DPK debug mode disabled',
+      debugBlocked: 'The browser blocked the new window; allow it and try again',
+      debugHint: 'Open the DSH Web debug surface on its official port while Electron keeps running.',
     }
 
     const requestCodec = method => ({
@@ -113,6 +129,8 @@ window.__ModuleLoader__.load({
       package: 'dsh-dpk-manager',
       descriptors: [
         descriptor('managed'),
+        descriptor('debugStatus'),
+        descriptor('setDebugMode', 'enabled'),
         descriptor('importArchive', 'input'),
         descriptor('exportVolumes', 'request'),
         descriptor('exportArchive', 'request'),
@@ -163,6 +181,13 @@ window.__ModuleLoader__.load({
           if (outcome?.ok === false) throw outcome.error
           throw new Error(`dsh-package-manager: ${method} returned an invalid Remote result`)
         }
+
+        let debugWindow
+        ctx.effect(() => () => {
+          if (debugWindow && !debugWindow.closed) debugWindow.close()
+          debugWindow = undefined
+          void callDpk('setDebugMode', false).catch(() => {})
+        }, 'dsh-package-manager: close DPK debug Web handoff')
 
         if (ctx.locale) ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-package-manager: dictionaries')
         const tr = ctx.locale ? ctx.locale.bind(NS) : key => (zh[key] ?? en[key] ?? key)
@@ -273,6 +298,93 @@ window.__ModuleLoader__.load({
             ]),
             h('div', { key: 'store', style: mutedStyle }, `${tr('store')}: ${state.store || '—'} (${state.entries.length})`),
             snapshot === undefined ? null : null,
+          ])
+        }
+
+        // The Host already owns the DSH Web server. This switch only opts the
+        // user into an authenticated browser handoff; it never starts a second
+        // server or interrupts the embedded Electron surface.
+        function DpkDebugSection() {
+          const [enabled, setEnabled] = React.useState(false)
+          const [busy, setBusy] = React.useState(false)
+          const [status, setStatus] = React.useState(undefined)
+          const [available, setAvailable] = React.useState(true)
+
+          React.useEffect(() => {
+            let current = true
+            void callDpk('debugStatus').then(answer => {
+              if (!current) return
+              setEnabled(answer.enabled === true)
+              setAvailable(answer.available !== false)
+            }).catch(error => {
+              if (current) {
+                setAvailable(false)
+                setStatus(`${tr('failed')}: ${String(error?.message ?? error)}`)
+              }
+            })
+            return () => { current = false }
+          }, [])
+
+          async function onToggle() {
+            const next = !enabled
+            const desktopHandoff = window.location?.protocol === 'dsh-app:'
+            // A normal browser consumes the user gesture before an awaited
+            // Remote call returns. Reserve the popup synchronously, then
+            // navigate that same window after the authenticated URL arrives.
+            let reservedWindow
+            if (next && !desktopHandoff && typeof window.open === 'function') {
+              reservedWindow = window.open('about:blank', 'dsh-dpk-debug')
+            }
+            setBusy(true)
+            setStatus(tr('debugEnabling'))
+            try {
+              const answer = await callDpk('setDebugMode', next)
+              setEnabled(answer.enabled === true)
+              setAvailable(answer.available !== false)
+              if (answer.enabled === true) {
+                const opened = desktopHandoff
+                  ? (typeof window.open === 'function' ? window.open(answer.url, 'dsh-dpk-debug') : null)
+                  : reservedWindow
+                if (opened && !desktopHandoff) opened.location.href = answer.url
+                // Electron's official `setWindowOpenHandler` hands this URL
+                // to the system browser and deliberately returns no window
+                // handle. The Web browser returns a handle when its popup is
+                // allowed, so only that surface can be closed programmatically.
+                if (opened || desktopHandoff) {
+                  debugWindow = opened
+                  if (opened) {
+                    try { opened.opener = null } catch {}
+                  }
+                  setStatus(tr('debugEnabled'))
+                } else {
+                  await callDpk('setDebugMode', false).catch(() => {})
+                  setEnabled(false)
+                  setStatus(tr('debugBlocked'))
+                }
+              } else {
+                if (debugWindow && !debugWindow.closed) debugWindow.close()
+                debugWindow = undefined
+                setStatus(tr('debugDisabled'))
+              }
+            } catch (error) {
+              if (reservedWindow && !reservedWindow.closed) reservedWindow.close()
+              setAvailable(false)
+              setStatus(`${tr('failed')}: ${String(error?.message ?? error)}`)
+            } finally {
+              setBusy(false)
+            }
+          }
+
+          return h('section', { style: { display: 'grid', gap: 8, marginBottom: 18 } }, [
+            h('h4', { key: 'title', style: { margin: 0 } }, tr('debugTitle')),
+            h('div', { key: 'hint', style: mutedStyle }, tr('debugHint')),
+            h('div', { key: 'row', style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } }, [
+              h('button', {
+                key: 'toggle', type: 'button', disabled: busy || !available, style: buttonStyle,
+                'aria-pressed': enabled, onClick: () => { void onToggle() },
+              }, tr(enabled ? 'debugDisable' : 'debugEnable')),
+              status === undefined ? null : h('span', { key: 'status', style: mutedStyle, role: 'status' }, status),
+            ]),
           ])
         }
 
@@ -411,6 +523,7 @@ window.__ModuleLoader__.load({
               state.notice === undefined
                 ? null
                 : h('div', { key: 'notice', role: 'status', style: { marginBottom: 16, padding: 12, border: '1px solid color-mix(in srgb, currentColor 24%, transparent)', borderRadius: 6 } }, state.notice),
+              h(DpkDebugSection, { key: 'debug' }),
               h(DpkImportSection, { key: 'import' }),
               state.error === undefined
                 ? null

@@ -55,13 +55,65 @@ test('host service registers the structural Typert source-mode contract', () => 
   assert.equal(descriptor.version, 1)
   assert.deepEqual(
     descriptor.methods,
-    ['managed', 'importArchive', 'exportVolumes', 'exportArchive', 'removeArchive'].map(method => ({
+    ['managed', 'debugStatus', 'setDebugMode', 'importArchive', 'exportVolumes', 'exportArchive', 'removeArchive'].map(method => ({
       method,
       invocation: { kind: 'direct' },
     })),
   )
   assert.equal(Object.isFrozen(descriptor), true)
   assert.equal(Object.isFrozen(descriptor.methods), true)
+})
+
+test('debug mode is off by default and reuses the official DSH Web endpoint', () => {
+  const calls = []
+  const service = createDpkRemoteService({
+    provide() {},
+    get(name) {
+      if (name === 'webServer') return { port: 19387 }
+      if (name === 'connection') return {
+        authenticatedUrl(baseUrl) {
+          calls.push(baseUrl)
+          return `${baseUrl}/?token=fixture-token`
+        },
+      }
+      return undefined
+    },
+  }, { home: 'unused-by-debug-test' })
+
+  assert.deepEqual(service.debugStatus(), { enabled: false, available: true, port: 19387 })
+  const enabled = service.setDebugMode(true)
+  assert.deepEqual(enabled, {
+    enabled: true,
+    available: true,
+    port: 19387,
+    url: 'http://127.0.0.1:19387/?token=fixture-token',
+  })
+  assert.deepEqual(service.debugStatus(), {
+    enabled: true,
+    available: true,
+    port: 19387,
+    url: 'http://127.0.0.1:19387/?token=fixture-token',
+  })
+  assert.deepEqual(service.setDebugMode(false), { enabled: false, available: true })
+  assert.deepEqual(service.debugStatus(), { enabled: false, available: true, port: 19387 })
+  assert.deepEqual(calls, [
+    'http://127.0.0.1:19387',
+    'http://127.0.0.1:19387',
+    'http://127.0.0.1:19387',
+    'http://127.0.0.1:19387',
+    'http://127.0.0.1:19387',
+  ])
+})
+
+test('debug mode reports an unavailable Web service without changing state', () => {
+  const service = createDpkRemoteService({ provide() {}, get() { return undefined } }, { home: 'unused-by-debug-test' })
+
+  const status = service.debugStatus()
+  assert.equal(status.enabled, false)
+  assert.equal(status.available, false)
+  assert.match(status.error, /Web service is unavailable/)
+  assert.throws(() => service.setDebugMode(true), /Web service is unavailable/)
+  assert.equal(service.debugStatus().enabled, false)
 })
 
 test('managed ranks versions numerically, not by ledger order', async () => {

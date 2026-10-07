@@ -7,7 +7,7 @@
 
 | 形态 | 入口 | 用法 |
 | --- | --- | --- |
-| 插件页面板 | `src/client.js` → 「本地 DPK」侧栏 | 导入/导出 `.dpk`、迁移插件运行期数据（app+data）、卸载，人点按钮即可 |
+| 插件页面板 | `src/client.js` → 「本地 DPK」侧栏 | 导入/导出 `.dpk`、迁移插件运行期数据（app+data）、卸载、按需打开 DSH Web 调试界面，人点按钮即可 |
 | 官方插件页徽章 | `src/client.js` → `plugins.detail.badge` | 由本管理器装好的包，在官方插件页标题旁显示「该插件由 dpk 管理器安装和管理」 |
 | npm CLI | `src/cli.mjs` → `dpk` | `npm install -g dsh-dpk-manager` 后执行 `dpk build ./my-plugin` |
 | 会话内工具 | `src/index.js` → 注册 `dpk` 工具 | 装进 profile 后，agent 可直接 `dpk action=verify/install/…` |
@@ -149,6 +149,10 @@ CLI 是 `src/cli.mjs` 的薄入口，实际动作仍由 `src/lib/cli.mjs` 统一
   `dependencies`** 时自动走 `service`：链接一个 store 目录只能给出包本身，给不出它期望的 registry
   依赖树，那是 pnpm 唯一不可替代的地方。SPEC 要求的自包含包（含本仓库的两个）都不声明 runtime
   依赖，所以它们走的是零 pnpm 的那条路。
+- **DPK 调试模式**：面板默认关闭。点击「开启 DPK 调试模式」时，manager 复用当前 Desktop
+  或 `dsh web` 已经监听的官方 `webServer` 端口，并用 `connection.authenticatedUrl()` 打开
+  DSH Web；Electron 内嵌界面继续运行。点击关闭会立即撤销 manager 的调试状态，并关闭由普通
+  浏览器面板打开且仍可控的窗口；共享 Web 服务本身不被插件停止，因为 Electron 仍依赖它。
 - **打包**（对任意标准 DSH 包目录）：`dpk build directory=<包目录>` —— 归档默认落在**该包目录下的
   `dpk-dist/<name>-<version>.dpk`**（目录自动创建，与源在同一棵树里，不用管当前目录在哪）。
   需要别的落点就写 `output=<文件路径>`；`output` 也可以写成**目录**（已存在的目录，或以分隔符结尾的路径），
@@ -388,8 +392,8 @@ pnpm 那条路真正的问题不是慢，而是**在运行时不可用**：官�
 dpk/
   package.json                 npm/DSH 包清单，入口与导出均指向 src/
   src/index.js                 DSH 插件入口：注册会话内 `dpk` 工具（零 harness 导入）
-  src/client.js                「本地 DPK」侧栏面板（导入 / 导出 / 迁移 / 卸载）
-  src/host-service.js          面板后端：Typert Remote 服务（dpk.* 五个方法）
+  src/client.js                「本地 DPK」侧栏面板（调试模式 / 导入 / 导出 / 迁移 / 卸载）
+  src/host-service.js          面板后端：Typert Remote 服务（dpk.* 七个方法）
   cordis.patch.yml             bundle 层：插入 Loader 行 dsh-dpk-manager
   locale/{en,zh}.json          插件卡片文案（zh 标题即「DSH 安装包管理助手」）
   icon.svg                     插件卡片图标

@@ -38,6 +38,31 @@ const REMOTE_METHOD_DESCRIPTOR = '@deepseek-ai/dsh-typert-protocol/remote-method
 const MAX_UPLOAD_BYTES = 128 * 1024 * 1024
 
 /**
+ * Resolve the live DSH Web endpoint instead of creating a second server.
+ * Desktop and `dsh web` both expose the same official services to plugins;
+ * the connection adds the process token that the browser needs for its first
+ * request.
+ * @param ctx - plugin context carrying the current Web services.
+ * @returns the loopback endpoint and its authenticated launch URL.
+ */
+function liveWebEndpoint(ctx) {
+  const webServer = ctx.get('webServer')
+  const connection = ctx.get('connection')
+  if (webServer === undefined || connection === undefined) {
+    throw new Error('dpk: the DSH Web service is unavailable in this profile')
+  }
+  const port = webServer.port
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
+    throw new Error('dpk: the DSH Web service has not finished listening')
+  }
+  if (typeof connection.authenticatedUrl !== 'function') {
+    throw new Error('dpk: the DSH connection cannot create an authenticated Web URL')
+  }
+  const baseUrl = `http://127.0.0.1:${String(port)}`
+  return { port, url: connection.authenticatedUrl(baseUrl) }
+}
+
+/**
  * Add one direct Remote marker in the protocol's versioned structural format.
  * @param prototype - the class prototype to mark.
  * @param methodName - the public instance method name.
@@ -80,6 +105,9 @@ export function createDpkRemoteService(ctx, config = {}) {
   }
 
   class DpkRemoteService {
+    /** The external DSH Web handoff is opt-in and process-local by design. */
+    debugMode = false
+
     /** Packages this assistant installed locally, joined with what the profile really holds. */
     async managed() {
       let bundles = []
@@ -133,6 +161,37 @@ export function createDpkRemoteService(ctx, config = {}) {
           }
         }),
       }
+    }
+
+    /** Return the current opt-in state without exposing a token while disabled. */
+    debugStatus() {
+      let endpoint
+      let error
+      try {
+        endpoint = liveWebEndpoint(ctx)
+      } catch (reason) {
+        error = reason instanceof Error ? reason.message : String(reason)
+      }
+      return {
+        enabled: this.debugMode,
+        available: endpoint !== undefined,
+        ...(endpoint === undefined ? { error } : { port: endpoint.port }),
+        ...(this.debugMode && endpoint !== undefined ? { url: endpoint.url } : {}),
+      }
+    }
+
+    /** Enable or disable the external Web handoff immediately. */
+    setDebugMode(enabled) {
+      if (typeof enabled !== 'boolean') throw new Error('dpk: debug mode expects a boolean')
+      if (!enabled) {
+        this.debugMode = false
+        let available = true
+        try { liveWebEndpoint(ctx) } catch { available = false }
+        return { enabled: false, available }
+      }
+      const endpoint = liveWebEndpoint(ctx)
+      this.debugMode = true
+      return { enabled: true, available: true, port: endpoint.port, url: endpoint.url }
     }
 
     /**
@@ -277,7 +336,7 @@ export function createDpkRemoteService(ctx, config = {}) {
     }
   }
 
-  for (const method of ['managed', 'importArchive', 'exportVolumes', 'exportArchive', 'removeArchive']) markRemote(DpkRemoteService.prototype, method)
+  for (const method of ['managed', 'debugStatus', 'setDebugMode', 'importArchive', 'exportVolumes', 'exportArchive', 'removeArchive']) markRemote(DpkRemoteService.prototype, method)
   const service = new DpkRemoteService()
   service.typertRemote = Object.freeze({
     service,

@@ -84,13 +84,15 @@ test('client mounts its local Remote contribution before reading the namespace',
     [...contribution.descriptors].map(value => [value.namespace, value.method, value.parameters.length]),
     [
       ['dpk', 'managed', 0],
+      ['dpk', 'debugStatus', 0],
+      ['dpk', 'setDebugMode', 1],
       ['dpk', 'importArchive', 1],
       ['dpk', 'exportVolumes', 1],
       ['dpk', 'exportArchive', 1],
       ['dpk', 'removeArchive', 1],
     ],
   )
-  for (const value of contribution.descriptors.slice(1)) {
+  for (const value of contribution.descriptors.filter(value => value.parameters.length > 0)) {
     assert.equal(value.parameters[0].codec.mode, 'strict')
     assert.equal(typeof value.parameters[0].codec.create, 'function')
   }
@@ -157,6 +159,14 @@ test('export downloads a dpk and migration downloads app plus data', async () =>
   }
   let page
   const dictionary = {
+    debugTitle: 'DPK 调试模式',
+    debugEnable: '开启 DPK 调试模式',
+    debugDisable: '关闭 DPK 调试模式',
+    debugEnabling: '打开 DSH Web 中…',
+    debugEnabled: 'DSH Web 已打开',
+    debugDisabled: 'DPK 调试模式已关闭',
+    debugBlocked: '浏览器阻止了新窗口，请允许后重试',
+    debugHint: '使用 DSH 官方 Web 端口打开调试界面；Electron 主界面继续运行。',
     export: '导出插件（.dpk）',
     migrate: '迁移插件（app+data）',
     exporting: '导出中…',
@@ -179,6 +189,13 @@ test('export downloads a dpk and migration downloads app plus data', async () =>
               entries: [{ name: '@local/known', version: '1.0.0', digest: 'd'.repeat(64), installed: true, enabled: true, store: '' }],
               store: '',
             },
+          }),
+          debugStatus: async () => ({ ok: true, value: { enabled: false, available: true, port: 19387 } }),
+          setDebugMode: async enabled => ({
+            ok: true,
+            value: enabled
+              ? { enabled: true, available: true, port: 19387, url: 'http://127.0.0.1:19387/?token=fixture' }
+              : { enabled: false, available: true },
           }),
           // The Host builds the file; the browser only downloads it. Recording
           // the request is what proves which verb each button asks for.
@@ -231,7 +248,7 @@ test('export downloads a dpk and migration downloads app plus data', async () =>
   // First render: no ledger yet, so the rows are absent — this is what registers
   // the effect that fetches it.
   walk(page())
-  assert.deepEqual(buttons.map(button => button.props.children), ['选择 .dpk 文件'])
+  assert.deepEqual(buttons.map(button => button.props.children), ['开启 DPK 调试模式', '选择 .dpk 文件'])
   for (const fn of effects) await fn()
   await new Promise(resolve => setImmediate(resolve))
 
@@ -240,13 +257,13 @@ test('export downloads a dpk and migration downloads app plus data', async () =>
 
   assert.deepEqual(
     buttons.map(button => button.props.children),
-    ['选择 .dpk 文件', '导出插件（.dpk）', '迁移插件（app+data）', '卸载'],
+    ['开启 DPK 调试模式', '选择 .dpk 文件', '导出插件（.dpk）', '迁移插件（app+data）', '卸载'],
   )
   // A disabled button swallows the click and still looks alive: `busy` idles
   // at `undefined`, so `disabled: busy !== undefined` must start out false.
   // A `false` initialiser would weld these buttons shut from the first render.
   assert.deepEqual(
-    buttons.slice(1).map(button => button.props.disabled),
+    buttons.slice(2).map(button => button.props.disabled),
     [false, false, false],
   )
   // Export re-packs the installed store copy into a real `.dpk`; migration
@@ -351,4 +368,75 @@ test('a completed import or uninstall schedules one delayed settling refresh', a
   // schedules one delayed refresh to settle the cards.
   assert.equal((source.match(/refreshSettled\(\)/g) || []).length, 2, 'import and uninstall both settle')
   assert.match(source, /settleTimer = setTimeout\(\(\) => \{ void refresh\(\) \}, delay\)/)
+})
+
+test('debug mode reserves a browser popup before the Remote call and navigates it', async () => {
+  let registration
+  const window = {
+    location: { protocol: 'http:' },
+    __ModuleLoader__: { load(value) { registration = value } },
+  }
+  const popup = { location: { href: 'about:blank' }, closed: false }
+  const order = []
+  window.open = (url, target) => {
+    order.push(['open', url, target])
+    return popup
+  }
+  vm.runInNewContext(source, { window })
+
+  const react = {
+    createElement: (type, props, ...children) => ({ type, props: { ...props, children: children.length === 1 ? children[0] : children } }),
+    useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}],
+    useEffect: () => {},
+  }
+  let page
+  const remote = {
+    $mount: async () => {
+      remote.dpk = {
+        managed: async () => ({ ok: true, value: { entries: [], store: '' } }),
+        debugStatus: async () => ({ ok: true, value: { enabled: false, available: true } }),
+        setDebugMode: async enabled => {
+          order.push(['remote', enabled])
+          return { ok: true, value: enabled
+            ? { enabled: true, available: true, url: 'http://127.0.0.1:19387/?token=fixture' }
+            : { enabled: false, available: true } }
+        },
+      }
+      return async () => {}
+    },
+  }
+  const services = {
+    locale: { bind: () => key => key, register: () => () => {} },
+    remote,
+    slots: {
+      inject(_name, factory) { factory() },
+      register(spec, component) { if (spec.name === 'main') page = component },
+    },
+  }
+  const ctx = new Proxy({
+    effect() {},
+    get() { return remote.dpk },
+  }, {
+    get(target, property) {
+      if (Reflect.has(target, property)) return Reflect.get(target, property)
+      return services[property]
+    },
+  })
+  const plugin = registration.factory(name => (name === 'react' ? react : { IconArchiveOutlineRegular() {} }))
+  await plugin.apply(ctx)
+
+  const walk = node => {
+    if (node === null || node === undefined || typeof node === 'boolean') return []
+    if (Array.isArray(node)) return node.flatMap(walk)
+    if (typeof node !== 'object') return []
+    if (node.type === 'button') return [node, ...walk(node.props?.children)]
+    if (typeof node.type === 'function') return walk(node.type(node.props))
+    return walk(node.props?.children)
+  }
+  const debug = walk(page()).find(button => button.props.children === 'debugEnable')
+  assert.notEqual(debug, undefined)
+  debug.props.onClick()
+  assert.deepEqual(order, [['open', 'about:blank', 'dsh-dpk-debug'], ['remote', true]])
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(popup.location.href, 'http://127.0.0.1:19387/?token=fixture')
 })
