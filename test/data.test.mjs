@@ -447,7 +447,7 @@ test('export/import actions round-trip app volumes through the tool layer', asyn
   const root = dataRoot(home, '@local/dpk-fixture')
   await mkdir(join(root, 'app'), { recursive: true })
   await writeFile(join(root, 'app', 'providers.json'), '{"provider":{"edited":true}}\n', 'utf8')
-  const { runDpkAction } = await import('../src/lib/actions.mjs')
+  const { runDpkAction } = await import('../src/lib/cli.mjs')
   const outDir = await mkdtemp(join(tmpdir(), 'dpk-export-'))
   try {
     // An export is generated on demand and leaves no trace in dpk's own state:

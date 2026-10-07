@@ -2,12 +2,14 @@
 
 `dsh-dpk-manager` —— 把**一个标准 DSH 包目录**打包成单个 `.dpk` 文件（本质是 zip），
 并在本地可靠地安装它。它是一个**标准 DSH 插件**（`dsh.bundle.patch` + 中文标题的插件卡片 +
-图标），按 DSH 桌面版插件的规范安装与更新，**不向系统注入任何命令**：
+图标），按 DSH 桌面版插件的规范安装与更新；同时也提供一个独立的标准 Node `dpk` 命令，
+用于本地包作者打包和验真：
 
 | 形态 | 入口 | 用法 |
 | --- | --- | --- |
 | 插件页面板 | `src/client.js` → 「本地 DPK」侧栏 | 导入 `.dpk`、导出插件（仅 app）/ 迁移插件（app+data）、卸载，人点按钮即可 |
 | 官方插件页徽章 | `src/client.js` → `plugins.detail.badge` | 由本管理器装好的包，在官方插件页标题旁显示「该插件由 dpk 管理器安装和管理」 |
+| npm CLI | `src/cli.mjs` → `dpk` | `npm install -g dsh-dpk-manager` 后执行 `dpk build ./my-plugin` |
 | 会话内工具 | `src/index.js` → 注册 `dpk` 工具 | 装进 profile 后，agent 可直接 `dpk action=verify/install/…` |
 
 ```text
@@ -101,10 +103,25 @@ dpk **不借** apt 的仓库面：没有远端索引、`sources.list`、优先�
 
 ## 安装这个助手本身
 
-它是普通 npm 包，就用 DSH 自己的插件页安装（与任何官方插件同一规范）：
+作为 DSH 插件使用时，它是普通 npm 包，就用 DSH 自己的插件页安装（与任何官方插件同一规范）：
 
 DSH 桌面版 / Web → **插件** → **添加插件** → 填 `dsh-dpk-manager` → 安装。
-更新同样走插件页。它不再提供 `dpk` 命令行，也不再把命令装进系统。
+更新同样走插件页；插件页负责把它作为 DSH 插件加载，npm 安装则额外提供本地包作者使用的 `dpk` CLI。
+
+作为本地包作者使用 CLI 时，也可以直接安装标准 Node 命令：
+
+```bash
+npm install -g dsh-dpk-manager
+dpk build ./my-plugin
+dpk verify ./my-plugin/dpk-dist/my-plugin@1.0.0.dpk
+```
+
+`dpk build <目录>` 会先按 DSH 插件规范校验目录，再在该目录的 `dpk-dist/` 下生成
+`<name>@<version>.dpk`；也可以用 `--output <文件或目录>` 指定输出位置。构建默认可复现，
+不会执行插件代码。需要临时使用而不安装时，可运行 `npx --package dsh-dpk-manager dpk build ./my-plugin`。
+
+CLI 是 `src/cli.mjs` 的薄入口，实际动作仍由 `src/lib/cli.mjs` 统一实现，因此 npm CLI、会话内工具和 Web Remote
+不会产生三套命令逻辑。
 
 > **生效条件**：bundle 的 **config** 改动会热生效；插件的**启停**由官方服务的
 > `setBundleEnabled` 当场 reconcile。DPK 的安装、覆盖升级和卸载只接受
@@ -386,7 +403,9 @@ dpk/
   src/lib/install.mjs          安装编排：解包（单次解压校验）+ profile 写入/官方服务交接 + 记账
   src/lib/profile-install.mjs  自洽 profile 写入：依赖行、dsh.profile.bundles、node_modules 链接、lockfile importer 行
   src/lib/profile-policy.mjs   profile 的 pnpm-workspace.yaml 冷却期豁免写入（仅 via: "service" 需要）
-  src/lib/actions.mjs          动作层：工具与面板共用
+  src/cli.mjs                  npm 安装后的 `dpk` 命令行入口（薄适配层）
+  src/lib/cli.mjs              命令核心：工具、面板与 CLI 共用的动作编排
+  src/lib/actions.mjs          兼容导出：转发到 cli.mjs，不重复实现命令逻辑
   schemas/dpk-1.schema.json    dpk.json 的 JSON Schema
   examples/hello-bundle/       自包含示例包（发布时用 `dpk build` 打包成 dpk-dist/dpk-hello@1.0.0.dpk）
   scripts/deprecate-previous.mjs  npm 发布后自动废弃旧版本

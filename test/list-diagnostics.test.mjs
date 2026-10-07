@@ -10,7 +10,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { mkdir, rm, symlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { runDpkAction } from '../src/lib/actions.mjs'
+import { runDpkAction } from '../src/lib/cli.mjs'
 import { dpkRoot, recordInstall } from '../src/lib/store.mjs'
 import { makeHome, profileUsing, storeEntry } from './helpers.mjs'
 

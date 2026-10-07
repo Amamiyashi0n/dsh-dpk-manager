@@ -20,7 +20,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { defaultExportName, runDpkAction } from './lib/actions.mjs'
+import { defaultExportName, runDpkAction } from './lib/cli.mjs'
 import { serviceInstall } from './lib/install.mjs'
 import { packDirectory } from './lib/pack.mjs'
 import { readIndex, pendingRestarts, storeDir, defaultDshHome, dpkRoot, matchEntries } from './lib/store.mjs'

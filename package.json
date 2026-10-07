@@ -1,8 +1,11 @@
 {
   "name": "dsh-dpk-manager",
-  "version": "2.1.62",
+  "version": "2.1.63",
   "type": "module",
   "main": "./src/index.js",
+  "bin": {
+    "dpk": "src/cli.mjs"
+  },
   "description": "DPK manager for DeepSeek Harness — pack, verify and install local DSH plugin packages (.dpk) from the Plugins-page panel and the in-session dpk tool",
   "license": "MIT",
   "engines": {
@@ -14,6 +17,7 @@
   },
   "exports": {
     ".": "./src/index.js",
+    "./cli": "./src/cli.mjs",
     "./client": "./src/client.js",
     "./src/*": "./src/*",
     "./lib/*": "./src/lib/*",

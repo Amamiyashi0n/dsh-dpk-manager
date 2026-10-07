@@ -2,7 +2,7 @@
  * DSH 安装包管理助手 — the `dpk` tool as a Host plugin.
  *
  * Registers one agent-facing tool, `dpk`, over the pure action layer in
- * `lib/actions.mjs`. Actions that change the profile or persistent data ask
+ * `lib/cli.mjs`. Commands that change the profile or persistent data ask
  * for danger-full-access escalation first, through the same
  * `sandboxPolicy`/`approval` services the official `plugin_manager` tool uses;
  * read-only actions need no gate. Installation writes the profile itself by
@@ -18,7 +18,7 @@
  * @module dsh-dpk-manager
  */
 
-import { DPK_ACTIONS, runDpkAction } from './lib/actions.mjs'
+import { DPK_ACTIONS, runDpkAction } from './lib/cli.mjs'
 import { REMOTE_NAMESPACE, createDpkRemoteService } from './host-service.js'
 import { serviceInstall } from './lib/install.mjs'
 import { detectProfileName } from './lib/profile-policy.mjs'

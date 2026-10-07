@@ -1,11 +1,11 @@
-/** Action layer: the behaviour shared by the in-session `dpk` tool and the panel. */
+/** CLI core: the behaviour shared by the in-session `dpk` tool and the panel. */
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, sep } from 'node:path'
-import { DpkActionError, runDpkAction } from '../src/lib/actions.mjs'
+import { DpkActionError, runDpkAction } from '../src/lib/cli.mjs'
 import { archiveFileName } from '../src/lib/dpk-manifest.mjs'
 import { packDirectory } from '../src/lib/pack.mjs'
 import { dpkRoot, readIndex, recordInstall, restartPending, storeDir } from '../src/lib/store.mjs'
