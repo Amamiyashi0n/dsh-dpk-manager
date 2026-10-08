@@ -21,7 +21,7 @@
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { localizeName } from './dsh-package.mjs'
+import { isOfficialManagerName, localizeName, registryName } from './dsh-package.mjs'
 import { verifyArchive, inspectArchive } from './verify.mjs'
 import { readZipEntry } from './zip.mjs'
 import { cacheDir, pruneCache, stageIn } from './staging.mjs'
@@ -241,6 +241,13 @@ export async function installArchive(options) {
   // store path and whether the store already holds this package.
   const inspected = inspectArchive(bytes)
   const { manifest } = inspected
+  if (isOfficialManagerName(manifest.name)) {
+    throw new DpkInstallError(
+      'dsh-dpk-manager is provided by the official plugin installer; it is not a DPK-local package',
+      'DPK_MANAGER_SELF_INSTALL',
+      { name: manifest.name },
+    )
+  }
   const digest = manifest.integrity.digest
   const packageDir = join(storeDir(root, digest), 'package')
   const stored = existsSync(join(packageDir, 'package.json'))
@@ -342,6 +349,7 @@ export async function installArchive(options) {
   let volumeOutcomes = []
   let installOutcome
   let liveOutcome
+  let displacedLiveOutcome
   let appliedChanged = false
   let live = false
   let liveApplied = false
@@ -405,6 +413,31 @@ export async function installArchive(options) {
         log(`unchanged the profile already resolves store/${placed.digest}/package; pnpm was not run`)
       }
     } else {
+      // A DPK-local package intentionally takes over the same plugin's
+      // registry name. Unload that official bundle before changing the profile,
+      // otherwise both client files can execute and register one factory id.
+      const displacedPackageName = packageName.startsWith('@local/')
+        ? registryName(packageName)
+        : undefined
+      if (displacedPackageName !== undefined && displacedPackageName !== packageName) {
+        let current
+        try { current = await readProfileManifest(profileDir) } catch (_missingProfile) { current = undefined }
+        const hasOfficial = Object.hasOwn(current?.dependencies ?? {}, displacedPackageName)
+          || (Array.isArray(current?.dsh?.profile?.bundles)
+            && current.dsh.profile.bundles.includes(displacedPackageName))
+        if (hasOfficial) {
+          displacedLiveOutcome = await applyToRunning(options.apply, displacedPackageName, false, log, profile)
+          if (options.requireLive === true
+            && displacedLiveOutcome?.application !== 'applied'
+            && displacedLiveOutcome?.application !== 'unchanged') {
+            throw new DpkInstallError(
+              `dpk: the official ${displacedPackageName} bundle was not unloaded; replacement was refused`,
+              'DPK_LIVE_REQUIRED',
+              { packageName, displacedPackageName, profile },
+            )
+          }
+        }
+      }
       const applied = await applyProfileInstall({ home, profile, packageName, packageDir: placed.packageDir, transaction: profileTransaction })
       appliedChanged = applied.changed
       installOutcome = {
@@ -483,6 +516,12 @@ export async function installArchive(options) {
     }
     if (liveApplied) {
       await applyToRunning(options.apply, packageName, false, log, profile)
+    }
+    if (displacedLiveOutcome?.application === 'applied' || displacedLiveOutcome?.changed === true) {
+      const displacedPackageName = packageName.startsWith('@local/') ? registryName(packageName) : undefined
+      if (displacedPackageName !== undefined) {
+        await applyToRunning(options.apply, displacedPackageName, true, log, profile)
+      }
     }
     // Nothing half-installed survives: the copy this call placed goes, so a
     // failed install leaves the store exactly as it found it (the profile was

@@ -26,6 +26,7 @@ import { lstat, mkdir, readFile, readlink, readdir, realpath, rename, rm, symlin
 import { dirname, isAbsolute, join, relative, resolve, basename, win32 } from 'node:path'
 import { cacheDir, pruneCache, stageIn } from './staging.mjs'
 import { dpkRoot } from './store.mjs'
+import { registryName } from './dsh-package.mjs'
 
 /** A profile that could not be written as asked. */
 export class DpkProfileError extends Error {
@@ -430,36 +431,56 @@ export async function applyProfileInstall(options) {
   const manifest = await readProfileManifest(dir)
   const specifier = linkSpecifier(options.packageDir)
   const previousRow = manifest.dependencies?.[options.packageName]
-  const dependencies = { ...manifest.dependencies, [options.packageName]: specifier }
+  const registryPackageName = options.packageName.startsWith('@local/')
+    ? registryName(options.packageName)
+    : undefined
+  const replacedOfficial = registryPackageName !== undefined
+    && registryPackageName !== options.packageName
+    && (Object.hasOwn(manifest.dependencies ?? {}, registryPackageName)
+      || (Array.isArray(manifest.dsh?.profile?.bundles)
+        && manifest.dsh.profile.bundles.includes(registryPackageName)))
+  const dependencies = { ...manifest.dependencies }
+  if (replacedOfficial) delete dependencies[registryPackageName]
+  dependencies[options.packageName] = specifier
   let next = sortDependencies({ ...manifest, dependencies })
 
   let bundlesChanged = false
   const previousBundles = Array.isArray(next.dsh?.profile?.bundles) ? next.dsh.profile.bundles : []
+  let nextBundles = replacedOfficial
+    ? previousBundles.filter(name => name !== registryPackageName)
+    : previousBundles
   if (await isBundlePackage(options.packageDir)) {
-    if (!previousBundles.includes(options.packageName)) {
-      next = { ...next, dsh: { ...next.dsh, profile: { ...next.dsh?.profile, bundles: [...previousBundles, options.packageName] } } }
-      bundlesChanged = true
-    }
-  } else if (previousBundles.includes(options.packageName)) {
-    next = { ...next, dsh: { ...next.dsh, profile: { ...next.dsh?.profile, bundles: previousBundles.filter(name => name !== options.packageName) } } }
+    if (!nextBundles.includes(options.packageName)) nextBundles = [...nextBundles, options.packageName]
+  } else {
+    nextBundles = nextBundles.filter(name => name !== options.packageName)
+  }
+  if (nextBundles.length !== previousBundles.length
+    || nextBundles.some((name, index) => name !== previousBundles[index])) {
+    next = { ...next, dsh: { ...next.dsh, profile: { ...next.dsh?.profile, bundles: nextBundles } } }
     bundlesChanged = true
   }
 
-  const manifestChanged = previousRow !== specifier || bundlesChanged
-  const transaction = await captureProfileTransaction(dir, options.packageName)
+  const manifestChanged = previousRow !== specifier || replacedOfficial || bundlesChanged
+  const transaction = await captureProfileTransaction(dir, [options.packageName, ...(replacedOfficial ? [registryPackageName] : [])])
   let link
   let lockfile
+  let replacedLink
   try {
     // Link first, dependency row second. The loader reads the row first, but
     // every mutation is covered by the transaction so an upgrade failure can
     // restore the old link and manifest instead of leaving a broken profile.
     link = await ensurePackageLink({ profileDir: dir, packageName: options.packageName, packageDir: options.packageDir })
+    if (replacedOfficial) {
+      replacedLink = await removePackageLink({ profileDir: dir, packageName: registryPackageName })
+    }
     if (manifestChanged) await writeProfileManifest(dir, next, options.home)
-    lockfile = await updateLockfile(dir, {
+    const lockfileStatuses = [await updateLockfile(dir, {
       name: options.packageName,
       specifier,
       version: `link:${toPosix(relative(dir, resolve(options.packageDir)))}`,
-    })
+    })]
+    if (replacedOfficial) lockfileStatuses.push(await updateLockfile(dir, { name: registryPackageName, remove: true }))
+    lockfile = mergeLockfileStatuses(lockfileStatuses)
   } catch (error) {
     await transaction.restore()
     throw error
@@ -468,6 +489,8 @@ export async function applyProfileInstall(options) {
   return {
     changed: manifestChanged || link.changed || lockfile === 'updated',
     linkPath: link.linkPath,
+    replacedPackageName: replacedOfficial ? registryPackageName : undefined,
+    replacedLinkPath: replacedLink?.linkPath,
     bundlesChanged,
     lockfile,
   }
@@ -508,17 +531,20 @@ export async function applyProfileRemove(options) {
 }
 
 /** Capture the profile files and package link touched by one operation. */
-async function captureProfileTransaction(dir, packageName) {
+async function captureProfileTransaction(dir, packageNames) {
   const manifest = await captureFile(join(dir, 'package.json'))
   const lockfile = await captureFile(join(dir, 'pnpm-lock.yaml'))
-  const linkPath = join(dir, 'node_modules', ...packageName.split('/'))
-  let link
-  try {
-    const info = await lstat(linkPath)
-    if (!info.isSymbolicLink()) throw new DpkProfileError(`${linkPath} exists and is not a link`, 'DPK_PROFILE_LINK_CONFLICT', { linkPath })
-    link = { path: linkPath, target: await readlink(linkPath) }
-  } catch (error) {
-    if (error?.code !== 'ENOENT') throw error
+  const names = Array.isArray(packageNames) ? packageNames : [packageNames]
+  const paths = [...new Set(names.map(packageName => join(dir, 'node_modules', ...packageName.split('/'))))]
+  const links = []
+  for (const linkPath of paths) {
+    try {
+      const info = await lstat(linkPath)
+      if (!info.isSymbolicLink()) throw new DpkProfileError(`${linkPath} exists and is not a link`, 'DPK_PROFILE_LINK_CONFLICT', { linkPath })
+      links.push({ path: linkPath, target: await readlink(linkPath) })
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
   }
   let restored = false
   return {
@@ -527,13 +553,21 @@ async function captureProfileTransaction(dir, packageName) {
       restored = true
       await restoreFile(join(dir, 'package.json'), manifest)
       await restoreFile(join(dir, 'pnpm-lock.yaml'), lockfile)
-      await rm(linkPath, { recursive: true, force: true })
-      if (link !== undefined) {
-        await mkdir(dirname(linkPath), { recursive: true })
-        await symlink(link.target, linkPath, 'junction')
+      for (const linkPath of paths) await rm(linkPath, { recursive: true, force: true })
+      for (const link of links) {
+        await mkdir(dirname(link.path), { recursive: true })
+        await symlink(link.target, link.path, 'junction')
       }
     },
   }
+}
+
+/** Combine the per-row lockfile outcomes into the operation's public status. */
+function mergeLockfileStatuses(statuses) {
+  if (statuses.includes('updated')) return 'updated'
+  if (statuses.includes('unrecognised')) return 'unrecognised'
+  if (statuses.includes('unchanged')) return 'unchanged'
+  return 'absent'
 }
 
 async function captureFile(path) {

@@ -79,6 +79,39 @@ test('applyProfileInstall writes the dependency row, the bundle list, the link a
   assert.ok(lockfile.trimEnd().endsWith('snapshots:'), 'the rest of the file is untouched')
 })
 
+test('a local bundle takes over and removes the official package with the same registry name', async () => {
+  const home = await makeHome()
+  const officialDir = join(home, 'official', 'x')
+  const packageDir = join(home, 'dpk', 'store', 'deadbeef', 'package')
+  await mkdir(officialDir, { recursive: true })
+  await mkdir(packageDir, { recursive: true })
+  await writeFile(join(officialDir, 'package.json'), `${JSON.stringify({ name: 'x', version: '1.0.0' })}\n`)
+  await writeFile(join(packageDir, 'package.json'), `${JSON.stringify({ name: '@local/x', version: '2.0.0', dsh: { bundle: { patch: './cordis.patch.yml' } } })}\n`)
+  const dir = await makeProfile(home, 'probe', {
+    dependencies: { x: '1.0.0' },
+    bundles: ['x'],
+    lockfile: [
+      'lockfileVersion: \'9.0\'', '', 'importers:', '', '  .:', '    dependencies:',
+      '      x:', '        specifier: 1.0.0', '        version: 1.0.0', '',
+      'packages:', '', 'snapshots:', '',
+    ].join('\n'),
+  })
+  await symlink(officialDir, join(dir, 'node_modules', 'x'), 'junction')
+
+  const applied = await applyProfileInstall({ home, profile: 'probe', packageName: '@local/x', packageDir })
+
+  assert.equal(applied.replacedPackageName, 'x')
+  const manifest = await readProfileManifest(dir)
+  assert.equal(Object.hasOwn(manifest.dependencies, 'x'), false)
+  assert.equal(manifest.dependencies['@local/x'], linkSpecifier(packageDir))
+  assert.deepEqual(manifest.dsh.profile.bundles, ['@local/x'])
+  assert.equal(existsSync(join(dir, 'node_modules', 'x')), false)
+  assert.equal(await (await import('node:fs/promises')).realpath(join(dir, 'node_modules', '@local', 'x')), await (await import('node:fs/promises')).realpath(packageDir))
+  const lockfile = await readFile(join(dir, 'pnpm-lock.yaml'), 'utf8')
+  assert.doesNotMatch(lockfile, /^      x:/m)
+  assert.match(lockfile, /^      '@local\/x':/m)
+})
+
 test('profileDir accepts one safe directory name and rejects traversal forms', async () => {
   const home = await makeHome()
   assert.equal(profileDir(home, 'desktop'), join(home, 'profiles', 'desktop'))

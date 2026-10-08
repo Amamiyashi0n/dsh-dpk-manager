@@ -97,6 +97,19 @@ test('verifies, extracts into the store, and hands the official installer an abs
   assert.equal(Object.hasOwn(index.entries[0], 'path'), false, 'the store path stays derivable from the digest')
 })
 
+test('does not install dsh-dpk-manager as a second local bundle', async () => {
+  const home = await makeHome()
+
+  for (const name of ['dsh-dpk-manager', '@local/dsh-dpk-manager']) {
+    const archive = await packFixture({ name })
+    await assert.rejects(
+      installArchive({ file: `${name}.dpk`, buffer: archive.buffer, home, profile: 'test', log: () => {} }),
+      error => error.code === 'DPK_MANAGER_SELF_INSTALL',
+    )
+  }
+  assert.equal(existsSync(dpkRoot(home)), false, 'the rejected self-install does not create a store')
+})
+
 test('is idempotent: the same digest is extracted once', async () => {
   const home = await makeHome()
   const packed = await packFixture()

@@ -22,6 +22,12 @@ export const PACKAGE_NAME_MAX_LENGTH = 214
  * shadows a name on the public registry. A name without it is not refused:
  * {@link localizeName} adds the scope for every layer the format writes. */
 const LOCAL_SCOPE = '@local/'
+const OFFICIAL_MANAGER_NAME = 'dsh-dpk-manager'
+
+/** The manager is installed by the official DSH plugin installer. */
+export function isOfficialManagerName(name) {
+  return name === OFFICIAL_MANAGER_NAME || name === `${LOCAL_SCOPE}${OFFICIAL_MANAGER_NAME}`
+}
 
 /**
  * Normalize a package name to the local scope: an unscoped or foreign-scoped
