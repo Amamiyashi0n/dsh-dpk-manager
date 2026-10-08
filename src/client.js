@@ -538,7 +538,24 @@ window.__ModuleLoader__.load({
               h('h2', { key: 'title', style: { margin: '0 0 20px', fontSize: 22 } }, tr('pageTitle')),
               state.notice === undefined
                 ? null
-                : h('div', { key: 'notice', role: 'status', style: { marginBottom: 16, padding: 12, border: '1px solid color-mix(in srgb, currentColor 24%, transparent)', borderRadius: 6 } }, state.notice),
+                : h('div', {
+                    key: 'notice',
+                    role: 'status',
+                    style: {
+                      marginBottom: 16,
+                      padding: '12px 16px',
+                      border: '1px solid #f79009',
+                      background: 'color-mix(in srgb, #f79009 12%, transparent)',
+                      borderRadius: 6,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      fontWeight: 500,
+                    },
+                  }, [
+                    h('span', { key: 'icon', 'aria-hidden': 'true', style: { fontSize: '1.2em' } }, '⚠️'),
+                    h('span', { key: 'text' }, state.notice),
+                  ]),
               h(DpkDebugSection, { key: 'debug' }),
               h(DpkImportSection, { key: 'import' }),
               state.error === undefined
