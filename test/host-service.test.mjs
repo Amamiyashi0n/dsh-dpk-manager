@@ -190,7 +190,7 @@ test('managed reports the installed version over the ledger record when they dif
   await writeFile(join(root, 'index.json'), `${JSON.stringify({
     version: 1,
     entries: [
-      { name: 'dsh-dpk-manager', version: '2.0.0', digest: 'c', installedAt: '', source: 'fallback.dpk', profiles: ['web'], path: '' },
+      { name: '@local/sample-plugin', version: '2.0.0', digest: 'c', installedAt: '', source: 'fallback.dpk', profiles: ['web'], path: '' },
     ],
   }, undefined, 2)}
 `)
@@ -198,7 +198,7 @@ test('managed reports the installed version over the ledger record when they dif
   const ctx = makeCtx({
     pluginManager: {
       listBundles: async () => [
-        { name: 'dsh-dpk-manager', version: '2.1.1', installed: true, enabled: true },
+        { name: '@local/sample-plugin', version: '2.1.1', installed: true, enabled: true },
       ],
     },
   })
@@ -208,6 +208,34 @@ test('managed reports the installed version over the ledger record when they dif
   assert.equal(listed.entries[0].version, '2.1.1', 'the card shows the version that actually runs')
   assert.equal(listed.entries[0].dpkVersion, '2.0.0', 'the ledger import version stays as provenance')
   assert.equal(listed.entries[0].installed, true)
+})
+
+test('managed excludes legacy self-install records of dsh-dpk-manager and @local/dsh-dpk-manager', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'dpk-home-'))
+  const root = join(home, 'dpk')
+  await mkdir(root, { recursive: true })
+  await writeFile(join(root, 'index.json'), `${JSON.stringify({
+    version: 1,
+    entries: [
+      { name: 'dsh-dpk-manager', version: '2.1.67', digest: '1'.repeat(64), installedAt: '', source: 'fallback.dpk', profiles: ['web'], path: '' },
+      { name: '@local/dsh-dpk-manager', version: '2.1.68', digest: '2'.repeat(64), installedAt: '', source: 'fallback.dpk', profiles: ['web'], path: '' },
+      { name: '@local/custom-provider', version: '1.0.0', digest: '3'.repeat(64), installedAt: '', source: 'custom.dpk', profiles: ['web'], path: '' },
+    ],
+  }, undefined, 2)}
+`)
+
+  const ctx = makeCtx({
+    pluginManager: {
+      listBundles: async () => [
+        { name: 'dsh-dpk-manager', version: '2.1.70', installed: true, enabled: true },
+        { name: '@local/custom-provider', version: '1.0.0', installed: true, enabled: true },
+      ],
+    },
+  })
+  const service = createDpkRemoteService(ctx, { home })
+  const listed = await service.managed()
+  assert.equal(listed.entries.length, 1)
+  assert.equal(listed.entries[0].name, '@local/custom-provider')
 })
 
 test('managed reports a restart only while the ledger holds an install this process has not loaded', async () => {

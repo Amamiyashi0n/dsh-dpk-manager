@@ -30,6 +30,7 @@ import { readIndex, pendingRestarts, storeDir, defaultDshHome, dpkRoot, matchEnt
 import { latestByName, latestEntry } from './lib/versions.mjs'
 import { detectProfileName } from './lib/profile-policy.mjs'
 import { referencedDigests } from './lib/profile-install.mjs'
+import { isOfficialManagerName } from './lib/dsh-package.mjs'
 
 /** Wire namespace: the browser calls `ctx.remote.dpk.<method>`. */
 export const REMOTE_NAMESPACE = 'dpk'
@@ -202,17 +203,20 @@ export function createDpkRemoteService(ctx, config = {}) {
       }
       const byName = new Map(bundles.map(bundle => [bundle.name, bundle]))
       const index = await readIndex(dpkRoot(home))
+      // The manager is an official DSH plugin, never a local DPK package: filter
+      // any legacy self-install records out so they never surface as local cards.
+      const entries = index.entries.filter(entry => !isOfficialManagerName(entry.name))
       // Both answers come from their owner: "which profile uses this digest" is
       // read from the profiles, and "does the running Harness need a restart" is
       // read from the ledger's install times against this process's start.
       const { references } = await referencedDigests({ home, root: dpkRoot(home) })
       // The reminder names the packages, not just the fact: whichever the
       // running Harness has not loaded is what the next start will bring.
-      const awaitingRestart = pendingRestarts(index.entries)
+      const awaitingRestart = pendingRestarts(entries)
       const referenced = new Set([...references.keys()])
-      const visible = index.entries.filter(entry => referenced.has(entry.digest))
+      const visible = entries.filter(entry => referenced.has(entry.digest))
       const visibleNames = new Set(visible.map(entry => entry.name))
-      const unreferencedLatest = latestByName(index.entries).filter(entry => !visibleNames.has(entry.name))
+      const unreferencedLatest = latestByName(entries).filter(entry => !visibleNames.has(entry.name))
       const managedEntries = [...visible, ...unreferencedLatest]
       return {
         store: dpkRoot(home),
@@ -399,7 +403,8 @@ export function createDpkRemoteService(ctx, config = {}) {
       if (verb !== 'export' && verb !== 'snap') throw new Error('dpk: exportVolumes needs verb "export" or "snap"')
       // Resolve the name first so the file is named after the package the ledger
       // records, not after whatever spelling the caller passed (`pkg@1.0.0`).
-      const entry = latestEntry((await readIndex(dpkRoot(home))).entries, requested)
+      const entries = (await readIndex(dpkRoot(home))).entries.filter(entry => !isOfficialManagerName(entry.name))
+      const entry = latestEntry(entries, requested)
       if (entry === undefined) throw new Error(`dpk: no stored package matches ${requested}`)
 
       const packageDir = storeDir(dpkRoot(home), entry.digest) + '/package'
@@ -426,9 +431,10 @@ export function createDpkRemoteService(ctx, config = {}) {
     async exportArchive(request) {
       const root = dpkRoot(home)
       const requested = String(request?.name ?? '')
+      const entries = (await readIndex(root)).entries.filter(entry => !isOfficialManagerName(entry.name))
       const entry = request?.version === undefined
-        ? latestEntry((await readIndex(root)).entries, requested)
-        : matchEntries((await readIndex(root)).entries, `${requested}@${request.version}`)[0]
+        ? latestEntry(entries, requested)
+        : matchEntries(entries, `${requested}@${request.version}`)[0]
       if (entry === undefined) throw new Error(`dpk: no stored package matches ${requested}`)
       const packageDir = storeDir(root, entry.digest) + '/package'
       const packed = await packInstalledDirectory(packageDir, {

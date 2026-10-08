@@ -20,7 +20,7 @@ import { dpkRoot, readIndex, removeStoreDir, storeDir, updateIndex, defaultDshHo
 import { latestByName, latestEntry } from './versions.mjs'
 import { planUpgrades } from './upgrade.mjs'
 import { cacheDir, staleStagingPid, staleStagingsIn, stagingPid } from './staging.mjs'
-import { PACKAGE_NAME, PACKAGE_NAME_MAX_LENGTH, localizeName, registryName } from './dsh-package.mjs'
+import { PACKAGE_NAME, PACKAGE_NAME_MAX_LENGTH, isOfficialManagerName, localizeName, registryName } from './dsh-package.mjs'
 import { dataRoot, describeVolumes, exportVolumes, importDataVolumes, parseDataDeclaration, purgeVolumes } from './data.mjs'
 import { buildDataFile, countClasses, formOf, readDataFile } from './data-file.mjs'
 
@@ -363,9 +363,9 @@ async function sweepUnreferenced(options) {
   // The ledger write stages in the cache too, so it has to happen before the
   // empty-cache check: otherwise it recreates the directory this is about to
   // remove.
-  const kept = index.entries.filter(entry => references.has(entry.digest))
+  const kept = index.entries.filter(entry => references.has(entry.digest) && !isOfficialManagerName(entry.name))
   if (kept.length !== index.entries.length) {
-    await updateIndex(root, current => ({ ...current, entries: current.entries.filter(entry => references.has(entry.digest)) }))
+    await updateIndex(root, current => ({ ...current, entries: current.entries.filter(entry => references.has(entry.digest) && !isOfficialManagerName(entry.name)) }))
   }
   // Rule 1 for the collector's side: an empty cache is not worth keeping. `rmdir`
   // is the tool — `rm` refuses a directory without `recursive`, and `recursive`
