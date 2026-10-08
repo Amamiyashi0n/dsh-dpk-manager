@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { packDirectory } from '../src/lib/pack.mjs'
 import { archiveFileName } from '../src/lib/dpk-manifest.mjs'
-import { verifyArchive } from '../src/lib/verify.mjs'
+import { inspectArchive, verifyArchive } from '../src/lib/verify.mjs'
 import { buildManifest, validateManifest, DPK_GENERATOR } from '../src/lib/dpk-manifest.mjs'
 import { validateDshPackage } from '../src/lib/dsh-package.mjs'
 import { writeZip } from '../src/lib/zip.mjs'
@@ -63,6 +63,42 @@ test('packs reproducibly: identical input, identical bytes', async () => {
   const first = await packDirectory(root)
   const second = await packDirectory(root)
   assert.ok(first.buffer.equals(second.buffer), 'two packs of one directory must be byte-identical')
+})
+
+test('keeps runtime files in package and carries non-runtime source inside archive', async () => {
+  const root = await makePackage({
+    extraFiles: {
+      'src/source.ts': 'export const source = true\n',
+      'scripts/build.mjs': 'console.log("build")\n',
+      'README.md': '# fixture\n',
+      'tsconfig.json': '{}\n',
+      'tests/should-not-ship.mjs': 'throw new Error("test")\n',
+    },
+  })
+  const packed = await packDirectory(root)
+  const repeated = await packDirectory(root)
+  assert.ok(packed.buffer.equals(repeated.buffer), 'the archive with source is reproducible too')
+  const packagePaths = packed.manifest.files.map(file => file.path)
+  assert.ok(packagePaths.includes('package/index.js'))
+  assert.ok(!packagePaths.some(path => path.includes('/tests/')))
+  assert.ok(!packagePaths.includes('package/src/source.ts'))
+  const sourceEntry = packed.sourceArchive
+  assert.deepEqual(
+    sourceEntry.files.map(file => file.path),
+    ['README.md', 'scripts/build.mjs', 'src/source.ts', 'tsconfig.json'],
+  )
+  assert.equal(packed.manifest.dpk, 1)
+  assert.equal(Object.hasOwn(packed.manifest, 'source'), false)
+  assert.equal(inspectArchive(packed.buffer).filePaths.some(path => path === 'source.tar.gz'), true)
+  assert.equal(sourceEntry.files.some(file => file.path.startsWith('tests/')), false)
+
+  const target = join(await makeHome(), 'package')
+  const verified = await verifyArchive(packed.buffer, { extractTo: target })
+  assert.equal(verified.manifest.dpk, 1)
+  assert.ok(existsSync(join(target, 'index.js')))
+  assert.equal(existsSync(join(target, 'src')), false)
+  assert.equal(existsSync(join(target, 'tests')), false)
+  assert.equal(existsSync(join(target, 'source.tar.gz')), true, 'source.tar.gz is carried in target directory as dormant archive')
 })
 
 test('detects one flipped content byte at the same size', async () => {
@@ -257,7 +293,7 @@ test('rejects an unexpected top-level entry', async () => {
   const packed = await packDirectory(root)
   const forged = writeZip([
     { path: 'dpk.json', data: Buffer.from(`${JSON.stringify(packed.manifest)}\n`) },
-    { path: 'README.md', data: Buffer.from('stray\n') },
+    { path: 'stray.txt', data: Buffer.from('stray\n') },
   ])
   await assert.rejects(verifyArchive(forged), error => error.code === 'DPK_LAYOUT')
 })

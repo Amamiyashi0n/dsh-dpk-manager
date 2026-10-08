@@ -563,6 +563,7 @@ export async function runDpkAction(action, args = {}, context = {}) {
           `package  ${describeManifest(packed.manifest)}`,
           `digest   ${packed.manifest.integrity.digest}`,
           `bytes    ${packed.buffer.length} (${packed.manifest.files.length} files)`,
+          ...(packed.sourceArchive === undefined ? [] : [`source   carried inside (${packed.sourceArchive.files.length} files)`]),
           ...packed.source.checkNotes.map(note => `note     ${note}`),
           ...packed.source.warnings.map(warning => `warn     ${warning}`),
         ].join('\n'),
@@ -573,6 +574,7 @@ export async function runDpkAction(action, args = {}, context = {}) {
           digest: packed.manifest.integrity.digest,
           roles: packed.manifest.roles,
           bytes: packed.buffer.length,
+          source: packed.sourceArchive !== undefined,
         },
       }
     }

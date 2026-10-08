@@ -65,12 +65,12 @@ const TARBALL_SPEC = /\.(?:tgz|tar\.gz)(?:#.*)?$/i
 
 | 规则 | 说明 |
 | --- | --- |
-| 顶层只允许四类 | `dpk.json`、可选的 `dpk-data.json`、`data/` 与 `package/`；其他顶层条目拒绝 |
+| 顶层只允许五类 | `dpk.json`、可选的 `dpk-data.json`、`data/`、可选的 `source.tar.gz` 与 `package/`；其他顶层条目拒绝 |
 | `package/` 必须存在 | 且其中必须有 `package.json` |
 | 归档内**恰好一个**包 | 一个 DPK 只装一个包；套件用多个 DPK |
 | 目录条目可省略 | 解包器按文件路径隐式创建目录；出现目录条目时必须以 `/` 结尾且通过路径校验 |
 | 空目录不保留 | zip 不承载空目录语义，不承诺保留 |
-| 打包范围 | 包根下的**所有文件**，排除 `node_modules/`、`.git/`、`dist/` 与 `dpk-dist/` 四个目录（依赖树、版本库元数据、构建产物）；不解释 npm 的 `files` / `.npmignore`（DPK 做内容忠实打包，不做发布裁剪），且拒绝符号链接与特殊文件 |
+| 打包范围 | 运行时文件进入 `package/`；README、非运行时源码、构建脚本与配置文件压成 `source.tar.gz` 额外打包进 `.dpk` 顶层，不参与运行时处理，只是单纯附带；`test/`、`tests/` 及测试文件完全不进入任一产物。排除 `node_modules/`、`.git/`、`dist/` 与 `dpk-dist/`，且拒绝符号链接与特殊文件 |
 
 `package/` 前缀的两个理由：与 npm tarball 的 `package/` 约定一致；给将来的同级扩展（`signature/`、`docs/`）留位置，同时避免包内文件与 DPK 元数据重名。
 
@@ -139,11 +139,13 @@ DPK 是**标准 zip**，可以被任何 zip 工具读取（`unzip -l`、`tar -tf
 | 重复路径 | 拒绝 |
 | 符号链接 | 禁止（unix 模式含 `S_IFLNK` 即拒绝）；本规范不支持归档内链接 |
 | CRC32 | 每个条目必须与内容一致，解包时校验 |
-| 时间戳 | 打包时默认写成固定时间 `1980-01-01 00:00:00`（DOS epoch），使**同一输入产出逐字节相同的 DPK**；`--timestamp <ISO>` 可覆盖 |
+| 时间戳 | zip 使用固定时间，使**同一输入产出逐字节相同的 DPK**；`--timestamp <ISO>` 可覆盖 |
 | 条目顺序 | 按路径字节升序写入，保证可复现 |
 | 压缩比 | deflate 单条目压缩比 > 200:1 拒绝（zip 炸弹护栏） |
 | 目录条目 | 可省略；若存在必须 `/` 结尾且 external attrs 标记目录 |
 | 权限位 | 文件 `0644`、目录 `0755`（Windows 无 POSIX 权限，可执行位不承诺保留） |
+
+源码归档 `source.tar.gz` 是 `dpk build` 额外打包进 `.dpk` 内部的确定性 ustar.gz 归档；它不进入 manifest 的 `files` 列表与内容摘要计算。在 DPK 安装释放到 store 目录时，`source.tar.gz` 作为只读归档文件随包释放存放在该目录下，DSH 运行时不加载也不执行它。原本的 DPK 架构与处理方式保持不变。
 
 **可复现性**：`pack` 对同一目录两次产出的 DPK **逐字节相同**。为此 zip 时间戳与 `dpk.json.createdAt` 都取固定时刻；需要记录真实构建时间时显式 `--created-at now`，那时代价是失去逐字节可复现（内容摘要 `integrity.digest` 不受影响，仍然相同）。
 
@@ -229,13 +231,13 @@ digest = sha256( join("\n", files.map(f => `${f.path}\0${f.size}\0${f.sha256}`))
 
 - `files` 必须先按 `path` 的 UTF-8 字节序升序排列；
 - 行内分隔用 `\0`，行间用 `\n`，**末尾不加换行**；
-- 算法名写在 `integrity.algorithm`，v1 固定 `sha256`。
+- 算法名写在 `integrity.algorithm`，固定 `sha256`。
 
 这个摘要同时被用于本地仓库的目录名（§8.2），因此"同一份 DPK"在两个地方必然得到同一个路径。
 
 ### 7.3 不覆盖的范围
 
-`createdAt`、`generator`、zip 时间戳**不参与**摘要——它们是来源信息，不是内容。签名（数字签名）在 v1 中**未定义**；`dpk.json` 顶层预留字段名 `signatures`，v2 再定，v1 出现该字段即拒绝。
+`createdAt`、`generator`、zip 时间戳**不参与摘要**——它们是来源信息。签名（数字签名）在 v1 中**未定义**；`dpk.json` 顶层预留字段名 `signatures`，v2 再定，v1 出现该字段即拒绝。
 
 摘要只覆盖 `files[]`，即 `package/` 下的内容，**不覆盖 `dpk.json` 自身**。因此清单被改写（例如凭空加一条数据卷声明）不会让摘要失配，拦住它的是 §8.1 第 2 步的交叉校验：清单的每一项声明都必须与 `package/package.json` 的实际事实相符。
 
@@ -369,7 +371,7 @@ profile `package.json` 里的 `link:` 依赖行，以及 `node_modules/<name>` �
 | `.dpks` 清单内联 base64（2.1.35–2.1.36） | 拒绝：只认"清单列路径、内容在 `data/` 条目"这一种形态 |
 | 打包期烧入 `@local` 的归档、`dist/` 入包的归档 | 交叉校验直接判不匹配 |
 | 旧类名（`config`/`state`/`cache`）声明与旧类名目录 | 声明报错；旧目录不读、不搬迁 |
-| 加字段 | 升 `dpk` 到 2，并在实现中同时支持 1 与 2 |
+| 加字段 | 升 `dpk` 到 2，并在实现中按兼容策略处理旧版 |
 
 `generator` 的版本部分随实现发布递增（§4.2），它是同一个 `dpk: 1` 之下区分语义年代的线索：归档带着
 自己世代的 `generator`，而读取端只认当前世代的语义，所以两侧版本不同时先对齐工具版本再谈包本身有没有问题。
@@ -385,7 +387,7 @@ profile `package.json` 里的 `link:` 依赖行，以及 `node_modules/<name>` �
 | 大小写碰撞覆盖 | 拒绝仅大小写不同的路径 |
 | 符号链接逃逸 | 禁止归档内符号链接 |
 | 元数据欺骗 | `dpk.json` 与 `package.json` 的 name/version 必须一致；文件清单覆盖全部文件，多一个少一个都拒绝 |
-| 供应链 | v1 无签名：DPK 提供**完整性**（内容未被改动），不提供**真实性**（谁打的包）。分发渠道的可信度仍由渠道负责；`signatures` 字段留给 v2 |
+| 供应链 | v1 无签名：DPK 提供**完整性**（包内容未被改动），不提供**真实性**（谁打的包）。分发渠道的可信度仍由渠道负责；`signatures` 字段留给 v2 |
 | 执行代码 | `verify`/`show` 不执行包内任何代码、不加载包内任何模块 |
 
 ---

@@ -13,6 +13,7 @@ import { createHash } from 'node:crypto'
 import { readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { extname, isAbsolute, join, relative, resolve, sep, win32 } from 'node:path'
 import { parseDataDeclaration } from './data.mjs'
+import { splitPackageFiles } from './source-archive.mjs'
 
 /** npm package-name grammar, copied from the Harness install-spec reader. */
 export const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/
@@ -75,6 +76,8 @@ const ICON_MEDIA_TYPES = new Map([
  * content) nor carried into the next archive.
  */
 export const NEVER_PACKED = new Set(['node_modules', '.git', 'dist', 'dpk-dist'])
+/** Generated sidecars are never treated as source package content. */
+export const NEVER_PACKED_FILES = new Set(['source.tar.gz', 'source.tgz'])
 
 /** A package that cannot be packed or installed. */
 export class PackageError extends Error {
@@ -143,6 +146,7 @@ async function collectPackageFiles(dir) {
       if (!entry.isFile()) {
         throw new PackageError(`unsupported file type: ${relative(root, absolute)}`, 'PACKAGE_FILE_TYPE')
       }
+      if (NEVER_PACKED_FILES.has(entry.name) || /\.source\.(?:tar\.gz|tgz)$/iu.test(entry.name)) continue
       // An archive is never package content. A `.dpk` inside a package is the
       // signature of build outputs accumulated in the source tree (the
       // nested-archive incident: every rebuild swept the previous archives);
@@ -416,6 +420,7 @@ export async function validateDshPackage(directory) {
   if (checkNote !== undefined) checkNotes.push(checkNote)
 
   const files = await hashFiles(await collectPackageFiles(root))
+  const { runtimeFiles, sourceFiles } = splitPackageFiles(files, manifest)
   return {
     root,
     name: manifest.name,
@@ -430,6 +435,8 @@ export async function validateDshPackage(directory) {
     icon,
     manifest,
     files,
+    runtimeFiles,
+    sourceFiles,
     warnings,
     checkNotes,
   }

@@ -34,7 +34,7 @@ export const DPK_GENERATOR = `dpk/${DPK_TOOL_VERSION}`
 export const DPK_ENTRY = 'package/package.json'
 /** Every package file lives under this prefix. */
 export const PACKAGE_PREFIX = 'package/'
-/** The only integrity algorithm defined by v1. */
+/** The only integrity algorithm defined by DPK v1. */
 const INTEGRITY_ALGORITHM = 'sha256'
 /** Roles derived from a package's own manifest. */
 const ROLES = new Set(['bundle', 'client', 'plain'])
@@ -43,7 +43,7 @@ const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/
 const SHA256_HEX = /^[0-9a-f]{64}$/
 
 /**
- * The top-level fields format 1 accepts, and nothing else.
+ * The top-level fields the current format accepts, and nothing else.
  *
  * Exported because `schemas/dpk-1.schema.json` describes the same format for
  * readers: with no code validating against the schema, the two descriptions

@@ -30,6 +30,7 @@ test('the schema and the validator name the same top-level keys', async () => {
     'a key the schema allows but the validator refuses (or the reverse) is the drift this pins',
   )
   assert.equal(schema.additionalProperties, false)
+  assert.equal(Object.hasOwn(schema.properties, 'source'), false, 'source archives are not DPK manifest fields')
 })
 
 test('the schema and the validator agree on which keys are required', async () => {

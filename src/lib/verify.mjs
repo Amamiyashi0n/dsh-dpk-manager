@@ -26,6 +26,7 @@ import { PACKAGE_PREFIX, validateManifest, compareManifestToPackage, DpkManifest
 import { validateDshPackage, sha256 } from './dsh-package.mjs'
 import { parseDataDeclaration } from './data.mjs'
 import { DPK_DATA_ENTRY, readDpkData } from './dpk-data.mjs'
+import { SOURCE_ARCHIVE_ENTRY } from './source-archive.mjs'
 import { readZipEntry, readZipIndex } from './zip.mjs'
 
 /** The manifest file at the archive root (`DPK_ENTRY` is the *package* entry, not this). */
@@ -64,8 +65,8 @@ export function inspectArchive(buffer) {
 
   const filePaths = index.entries.filter(entry => !entry.path.endsWith('/')).map(entry => entry.path)
   for (const path of filePaths) {
-    if (path === MANIFEST_ENTRY || path === DPK_DATA_ENTRY || path.startsWith(PACKAGE_PREFIX) || path.startsWith('data/')) continue
-    throw new DpkArchiveError(`unexpected top-level entry: ${path} (only ${MANIFEST_ENTRY}, ${DPK_DATA_ENTRY}, ${PACKAGE_PREFIX} and data/ are allowed)`, 'DPK_LAYOUT')
+    if (path === MANIFEST_ENTRY || path === DPK_DATA_ENTRY || path === SOURCE_ARCHIVE_ENTRY || path.startsWith(PACKAGE_PREFIX) || path.startsWith('data/')) continue
+    throw new DpkArchiveError(`unexpected top-level entry: ${path} (only ${MANIFEST_ENTRY}, ${DPK_DATA_ENTRY}, ${SOURCE_ARCHIVE_ENTRY}, ${PACKAGE_PREFIX} and data/ are allowed)`, 'DPK_LAYOUT')
   }
   if (!filePaths.includes(MANIFEST_ENTRY)) throw new DpkArchiveError(`archive has no ${MANIFEST_ENTRY}`, 'DPK_LAYOUT')
   if (filePaths.filter(path => path === MANIFEST_ENTRY).length !== 1) {
@@ -96,11 +97,12 @@ export function inspectArchive(buffer) {
   }
   checks.push(`manifest: ${manifest.name}@${manifest.version}, format ${manifest.dpk}, roles ${manifest.roles.join('+')}`)
   checks.push(`integrity: digest ${manifest.integrity.digest} matches the declared file list`)
+  if (filePaths.includes(SOURCE_ARCHIVE_ENTRY)) checks.push('source: carried inside archive')
 
   // The archive must contain exactly the manifest's files.
   const manifestPaths = new Set(manifest.files.map(file => file.path))
   for (const path of filePaths) {
-    if (path === MANIFEST_ENTRY || path === DPK_DATA_ENTRY || path.startsWith('data/')) continue
+    if (path === MANIFEST_ENTRY || path === DPK_DATA_ENTRY || path === SOURCE_ARCHIVE_ENTRY || path.startsWith('data/')) continue
     if (!manifestPaths.has(path)) {
       throw new DpkArchiveError(`archive contains ${path}, which ${MANIFEST_ENTRY} does not list`, 'DPK_UNLISTED_FILE')
     }
@@ -180,6 +182,13 @@ export async function extractTree(buffer, index, manifest, targetDir, options = 
     }
     await writeFile(destination, data, { flag: 'wx' })
     written.push(relative)
+  }
+  const sourceEntry = findEntry(index, SOURCE_ARCHIVE_ENTRY)
+  if (sourceEntry !== undefined) {
+    await mkdir(root, { recursive: true })
+    const sourceData = readZipEntry(buffer, sourceEntry)
+    await writeFile(join(root, SOURCE_ARCHIVE_ENTRY), sourceData, { flag: 'wx' })
+    written.push(SOURCE_ARCHIVE_ENTRY)
   }
   return written
 }

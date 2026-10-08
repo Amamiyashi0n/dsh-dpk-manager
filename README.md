@@ -160,6 +160,9 @@ CLI 是 `src/cli.mjs` 的薄入口，实际动作仍由 `src/lib/cli.mjs` 统一
   此时同样按 `<name>-<version>.dpk` 命名写进去，目录同样会被自动创建。
   归档留在包目录里就用 `dpk-dist/` 或 `dist/` —— 这四个目录（连同 `node_modules/`、`.git/`）
   永不入包，所以刚生成的 `.dpk` 不会被当成包内容，也不会让下一次打包撞上"包内不允许归档"。
+  运行时文件进入 `package/`；源码、README、脚本和构建配置单独压成 `source.tar.gz` 额外打包进 `.dpk` 顶层
+  （`test/`、`tests/` 和测试文件完全排除）。源码归档在安装释放时随包存放在 store 插件目录下，单纯存放备查，
+  DSH 运行时不加载也不执行它。原本的 DPK 架构和处理方式不变。
   也可以编程调用 `dsh-dpk-manager/lib/pack.mjs` 的 `packDirectory()`（库随包发布，`exports` 已导出）。
 - **验真**：`dpk` 工具 `action=verify file=…`，不需要执行包内任何代码。
 
@@ -302,18 +305,19 @@ dpk 是这条链里 **dpkg 那一半**（装一个本地文件、记清楚自己
 ```
 <name>-<version>.dpk          （zip；store + deflate，UTF-8 名，无 zip64，无加密）
 ├── dpk.json                  格式版本、身份、每个文件的 size+sha256、整体摘要
+├── source.tar.gz             可选：额外打包的源码归档（单纯带着，不参与运行时处理）
 ├── dpk-data.json             可选：迁移数据清单
 ├── data/app/…                可选：app 卷
 ├── data/data/…               可选：data 卷
-└── package/                  一个标准 DSH 包目录，逐字节原样
+└── package/                  一个标准 DSH 运行时包目录
     ├── package.json          （必需）
     ├── cordis.patch.yml      bundle 角色的加载器补丁
-    └── lib/ locale/ icon.svg README.md …
+    └── lib/ locale/ icon.svg …
 ```
 
 - 归档层限制：≤20000 条目、单文件 ≤64 MiB、总量 ≤512 MiB、压缩比 >200:1 拒绝、拒绝符号链接、
   拒绝仅大小写不同的路径、拒绝盘符/绝对路径/`..`（SPEC §5）。
-- 完整性：逐文件 sha256 + `integrity.digest = sha256(files.map(f => `${path}\0${size}\0${sha256}`).join("\n"))`（SPEC §7）。
+- 完整性：运行时文件逐文件 sha256 + `integrity.digest = sha256(files.map(f => `${path}\0${size}\0${sha256}`).join("\n"))`（SPEC §7）。源码归档单纯携带，不参与 DPK 运行时校验或导入。
 - 可复现：同目录两次 `pack` 产出**逐字节相同**的文件（zip 时间戳与 `createdAt` 都取固定时刻）。
 - 严格性：`dpk.json` 顶层与 `files[]` 的未知字段一律拒绝，不做静默兼容（SPEC §9）。
 
@@ -359,7 +363,7 @@ pnpm 那条路真正的问题不是慢，而是**在运行时不可用**：官�
 
 ## 安全模型
 
-- **完整性有，真实性没有**：DPK 能证明"内容自打包后未被改动"，不能证明"是谁打的包"。
+- **完整性有，真实性没有**：DPK 能证明"运行时内容自打包后未被改动"，不能证明"是谁打的包"。
   v1 没有签名（`dpk.json` 顶层出现 `signatures` 会被拒绝，字段名留给 v2）。
 - 解包前逐路径校验 + 解包后 `realpath` 复核，双重防 zip slip。
 - 四重炸弹护栏（条目数/单文件/总量/压缩比）。
